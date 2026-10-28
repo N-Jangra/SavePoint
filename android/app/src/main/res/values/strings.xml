@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SavePoint</string>
+    <string name="title_activity_main">SavePoint</string>
+    <string name="package_name">com.cuemark.savepoint</string>
+    <string name="custom_url_scheme">com.cuemark.savepoint</string>
+</resources>

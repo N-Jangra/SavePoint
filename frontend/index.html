@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#02080d">
+  <link rel="icon" href="icons/controller.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/app-icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>SavePoint</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles/cuemark-legacy.css">
+  <link rel="stylesheet" href="styles/details.css">
+  <script defer src="lucide.min.js"></script>
+  <script defer src="app-config.js"></script>
+  <script defer src="backend/app.js"></script>
+  <script defer src="backend/features/metadata.js"></script>
+  <script defer src="backend/features/sources.js"></script>
+  <script defer src="backend/features/discover.js"></script>
+  <script defer src="backend/features/show-detail-controller.js"></script>
+  <script defer src="backend/features/show-detail.js"></script>
+  <script defer src="components/library.js"></script>
+  <script defer src="pages/dashboard.js"></script>
+  <script defer src="pages/search.js"></script>
+  <script defer src="pages/discover.js"></script>
+  <script defer src="pages/explore.js"></script>
+  <script defer src="pages/details.js"></script>
+  <script defer src="pages/add.js"></script>
+  <script defer src="pages/timeline.js"></script>
+  <script defer src="pages/statistics.js"></script>
+  <script defer src="pages/settings.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar" id="app-sidebar" aria-label="Sidebar navigation">
+      <a class="sidebar-brand" href="#dashboard" aria-label="SavePoint dashboard"><img src="icons/controller.svg" alt=""><span>SavePoint</span></a>
+      <nav class="sidebar-nav" id="sidebar-nav" aria-label="Main navigation"></nav>
+    </aside>
+    <div class="app-shell">
+    <header class="topbar">
+      <div><p class="eyebrow" id="app-kicker"></p><h1 id="page-title">Dashboard</h1></div>
+      <button class="icon-button" id="header-filter" aria-label="Filter games" title="Filter games"><i data-lucide="list-filter" aria-hidden="true"></i></button>
+    </header>
+    <main id="page-content" tabindex="-1"></main>
+    <button class="floating-add-button" id="floating-add" type="button" aria-label="Add game" title="Add game"><i data-lucide="plus" aria-hidden="true"></i></button>
+    <nav class="bottom-bar" id="bottom-bar" aria-label="Main navigation">
+      <button data-page="dashboard" class="nav-button active"><span class="nav-icon">⌂</span><span>Home</span></button>
+      <button data-page="discover" class="nav-button"><span class="nav-icon">✧</span><span>Discover</span></button>
+      <button data-page="explore" class="nav-button"><span class="nav-icon">◎</span><span>Explore</span></button>
+      <button data-page="settings" class="nav-button"><span class="nav-icon">⚙</span><span>Settings</span></button>
+    </nav>
+    </div>
+  </div>
+  <dialog id="setting-picker-dialog" class="choice-dialog" aria-labelledby="setting-picker-title"><div class="choice-dialog-grabber" aria-hidden="true"></div><header class="choice-dialog-header"><h2 id="setting-picker-title" data-setting-picker-title>Choose an option</h2><button type="button" class="choice-dialog-close" data-close-setting-picker aria-label="Close">×</button></header><div class="setting-picker-list" data-setting-picker-list></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <section class="storage-folder-gate" id="storage-folder-gate" hidden role="dialog" aria-modal="true" aria-labelledby="storage-folder-gate-title">
+    <div class="storage-folder-gate-card">
+      <span class="storage-folder-gate-icon" aria-hidden="true">▣</span>
+      <h2 id="storage-folder-gate-title">Choose SavePoint storage</h2>
+      <p id="storage-folder-gate-message">Select a folder for your library database. SavePoint will use it on future launches.</p>
+      <button type="button" class="button primary" id="storage-folder-gate-retry">Choose folder</button>
+    </div>
+  </section>
+</body>
+</html>

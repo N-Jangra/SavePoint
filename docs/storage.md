@@ -1,0 +1,30 @@
+# SavePoint storage
+
+## Library state
+
+The app state is `{ items, history, preferences }` under the localStorage key `splitapp_savepoint_v1`.
+
+- **Browser preview:** localStorage is the state store.
+- **Android:** `frontend/backend/app.js` still writes the full state to localStorage as a compatibility mirror. When the `EncryptedStore` plugin is available, it also stores each item as an individually encrypted native record and stores history/preferences together as encrypted metadata. On load, existing native item records replace mirror items; native history/preferences merge over mirror values.
+- **Android folder database:** SavePoint opens directly from its app-private local store, so the library remains usable if no shared folder has been selected yet. A shared Storage Access Framework folder can be selected in Settings → Backups; its permission is remembered in Android preferences and its URI in localStorage. Once selected, the folder contains `<app-key>_database.json` and `<app-key>-db/database.json`, each with `{ items, history, preferences }`. The in-folder database takes precedence on startup, then the root compatibility database, so the same folder can restore the library after reinstalling. If neither database exists, SavePoint can rebuild the collection from `<app-key>-db/games/<item-id>/index.json` records. A dated `<app-key>-backup-YYYY-MM-DD.json` export can also initialize the database when the main files are absent. If a previously selected folder becomes unavailable, startup asks the user to choose it again rather than silently switching away from that folder's data.
+- **Android item and image mirror:** every saved game is mirrored to `<app-key>-db/games/<item-id>/index.json`, including its description, provider identifiers, status, progress, cached provider details, and other item fields. The Add Game gallery and camera controls place picked cover bytes in app state; folder sync writes the cover and cached detail/gallery images as adjacent `.thumbnail` and `.image-*` files. Images are reduced to a maximum 500-pixel WebP when supported; each file's MIME type and the JSON paths it serves are recorded in `localImageFiles`. Inline image data is removed from portable JSON, including image data nested inside cached provider details, so the same bytes are not duplicated in JSON. If WebView cannot fetch a provider image because of CORS, the Android plugin downloads and downsizes it natively. Startup hydrates the cover for collection cards; details load their image files on demand. The central `database.json` is the collection index; each per-game `index.json` is the full portable game record and is written first, allowing startup to recover the latest item fields if a save was interrupted before the central index was updated. A `.nomedia` marker keeps Android gallery apps from indexing app artwork.
+- **Folder traversal:** the Android SAF bridge accepts both the selected root URI and child-folder URIs when listing files. It uses the URI's current document ID so restore can descend from the database folder into the games directory and each game's image files.
+- **Browser-only artwork:** when Android folder storage is unavailable, the localStorage mirror retains locally selected cover bytes so a browser reload does not lose them. Transient detail-gallery bytes are loaded from the folder when requested and are not duplicated into the browser mirror.
+- **Timeline:** the timeline records status changes to Dropped, Completed, On Hold, and Playing. Other library edits and progress updates remain in activity history storage but are not shown as timeline events.
+- **Android encryption:** `EncryptedStorePlugin` encrypts values with AES-GCM. API 23+ uses an AES key in Android Keystore; API 22 uses a randomly generated AES key wrapped by an RSA key held in Android Keystore.
+
+The Android plugin encrypts native records, but the app continues to maintain a localStorage mirror and plain JSON databases in the user-selected folder. Neither should be treated as encrypted storage. Exported JSON and folder TAR backups are also plaintext unless protected separately by the user.
+
+## Metadata cache
+
+JSON GET metadata responses are stored in browser Cache Storage under `splitapp_savepoint_metadata`. Fresh cache entries are reused for six hours, and stale entries can be used after request failures unless the Offline Fallback preference is set to `none`. Requests with an API key in `key`/`apikey` query parameters, HowLongToBeat POST searches, and HTML text requests are not cached by this JSON cache. See [metadata analysis](metadata-analysis.md).
+
+## Backups and secrets
+
+When `Backup Schedule` is set to Daily, changed data refreshes one `<app-key>_backup-YYYY-MM-DD.tar` snapshot in the selected folder. It contains the full `<app-key>-db` tree (central JSON database, per-game JSON records, and image files) plus a portable root JSON database copy. The configured retention count removes older SavePoint TAR snapshots. The native `.sqdb` background backup is a separate encrypted-state snapshot and does not include the separate folder image files.
+
+The JSON and TAR exports include preferences, which can contain configured API keys; treat them as sensitive. Folder TAR snapshots include local artwork and are not encrypted. The current JSON import flow imports items only; it does not restore history or preferences. Native background encrypted backups use a separate format.
+
+## Scope
+
+The key and cache names are app-specific to SavePoint. This local storage model does not provide account sync or remote backup by itself. See [database analysis](database-analysis.md) for the data model and read/write sequence.
