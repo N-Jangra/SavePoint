@@ -9,9 +9,10 @@ SavePoint/
 │   ├── pages/                      # screen renderers
 │   ├── components/                 # shared UI
 │   ├── backend/                    # storage bridge and metadata modules
-│   └── styles/                     # theme and details styles
+│   └── styles/                     # theme, details, ios-ui.css (iOS look + multi-screen), motion.css (animations, low-memory mode)
 ├── android/                        # Capacitor Android project and native plugins
 ├── docs/                           # technical documentation
+├── CHANGELOG.md                    # release notes
 ├── plans/backend-split.md          # frontend/backend module responsibility notes
 ├── dev-server.js                   # local server and allowlisted source proxy
 ├── capacitor.config.json           # application identity and webDir
@@ -19,7 +20,7 @@ SavePoint/
 └── compile_apk.py                  # Android packaging helper
 ```
 
-`capacitor.config.json` sets `frontend/` as `webDir`. The JavaScript under `frontend/backend/` is maintained in place and packaged as part of that directory; there is no separate generated copy. Native source is under `android/app/src/main/java/com/cuemark/savepoint/`.
+`capacitor.config.json` sets `frontend/` as `webDir`. The JavaScript under `frontend/backend/` is maintained in place and packaged as part of that directory; there is no separate generated copy. Native source is under `android/app/src/main/java/com/cuemark/savepoint/` (encrypted store, folder storage, backup scheduler, and `ProviderConsentPlugin`, which opens a provider consent screen and exposes its session).
 
 The app-root `.gitignore` excludes dependencies, generated Android assets/build output, local SDK configuration, APKs, and local environment files. See [requirements](requirements.md) for the preview/build commands and [storage](storage.md) for runtime state locations.
 

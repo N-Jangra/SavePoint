@@ -16,6 +16,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -38,6 +39,22 @@ public class ProviderConsentPlugin extends Plugin {
             return;
         }
         getActivity().runOnUiThread(() -> showConsentPage(call));
+    }
+
+    /** Returns the cookies and User-Agent of the in-app browser session the user
+     * just used on HowLongToBeat, so the app's own requests present the same session. */
+    @PluginMethod
+    public void getHowLongToBeatSession(PluginCall call) {
+        JSObject result = new JSObject();
+        try {
+            String cookies = CookieManager.getInstance().getCookie(HOWLONGTOBEAT_URL);
+            result.put("cookie", cookies == null ? "" : cookies);
+            result.put("userAgent", WebSettings.getDefaultUserAgent(getContext()));
+        } catch (Exception error) {
+            result.put("cookie", "");
+            result.put("userAgent", "");
+        }
+        call.resolve(result);
     }
 
     private void showConsentPage(PluginCall call) {

@@ -1,6 +1,6 @@
 {
   "name": "savepoint",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "SavePoint media tracker",
   "main": "frontend/app.js",
   "scripts": {

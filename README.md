@@ -11,7 +11,7 @@ SavePoint is a local-first game library and playtime tracker. It runs as a brows
 - Export the library to JSON and import entries from a JSON backup.
 - Use Android encrypted item and metadata storage alongside a browser-compatible localStorage mirror.
 
-See [docs/README.md](docs/README.md) for the full documentation index, including the [database analysis](docs/database-analysis.md), [metadata analysis](docs/metadata-analysis.md), [schema](docs/db-schema.md), [walkthrough](docs/app-walkthrough.md), [requirements](docs/requirements.md), and [storage details](docs/storage.md).
+See the [changelog](CHANGELOG.md) for release notes and [docs/README.md](docs/README.md) for the full documentation index, including the [database analysis](docs/database-analysis.md), [metadata analysis](docs/metadata-analysis.md), [schema](docs/db-schema.md), [walkthrough](docs/app-walkthrough.md), [requirements](docs/requirements.md), and [storage details](docs/storage.md).
 
 ## Run locally
 

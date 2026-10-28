@@ -13,14 +13,14 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "dark", textSize: "normal", reduceMotion: false, animationSpeed: "normal", font: "system", mainColor: "#6366f1", categoryColors: {},
-    showSidebar: true, bottomBarStyle: "box", bottomBarCorners: "round", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "controller", search: "search", discover: "sparkles", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
+    theme: "light", textSize: "normal", reduceMotion: false, animationSpeed: "normal", font: "system", mainColor: "#6366f1", categoryColors: {},
+    showSidebar: true, showScrollbars: false, bottomBarStyle: "box", bottomBarCorners: "round", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: navKeys, visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
-    metadataSourceOrder: ["wikidata", "freetogame", "steamdb", "howlongtobeat", "rawg"],
+    metadataSourceOrder: ["wikidata", "freetogame", "steamdb", "howlongtobeat", "rawg"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30, backupPasswordReminder: true, maximumBackupSize: 1000, validateBackupLocation: true, restorePreview: true,
-    metadataMode: "online", metadataSources: {}, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
+    metadataMode: "online", metadataSources: { wikidata: false, freetogame: true, steamdb: true, howlongtobeat: true, rawg: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
     imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
     apiKeys: {}
   };
@@ -63,7 +63,15 @@
   delete prefs.appDisplayName;
   prefs.categoryColors = { ...prefsDefaults.categoryColors, ...(stored.preferences?.categoryColors || {}) };
   prefs.apiKeys = { ...prefsDefaults.apiKeys, ...(stored.preferences?.apiKeys || {}) };
-  window.SplitAppMetadata.normalize(prefs);
+  prefs.metadataSources = { ...prefsDefaults.metadataSources, ...(stored.preferences?.metadataSources || {}) };
+  function refreshSourceRegistry() {
+    prefs.customSources = Array.isArray(prefs.customSources) ? prefs.customSources.filter(config => config && config.id && /^https?:\/\//i.test(config.searchUrl || "")) : [];
+    window.SplitAppMetadata.setCustom(prefs.customSources);
+    window.SplitAppMetadata.normalize(prefs);
+    const keys = window.SplitAppSources.list().map(source => source.key), saved = Array.isArray(prefs.metadataSourceOrder) ? prefs.metadataSourceOrder : [];
+    prefs.metadataSourceOrder = [...saved.filter((key, index) => keys.includes(key) && saved.indexOf(key) === index), ...keys.filter(key => !saved.includes(key))];
+  }
+  refreshSourceRegistry();
   normalizeNavigationPrefs();
   function normalizeNavigationPrefs() {
     if (["icon", "icons-only"].includes(prefs.bottomBarStyle) && !Object.prototype.hasOwnProperty.call(stored.preferences || {}, "bottomBarLabels")) prefs.bottomBarLabels = "icons-only";
@@ -73,6 +81,7 @@
     if (!["round", "sharp"].includes(prefs.bottomBarCorners)) prefs.bottomBarCorners = prefsDefaults.bottomBarCorners;
     if (!["icons-labels", "icons-only"].includes(prefs.bottomBarLabels)) prefs.bottomBarLabels = prefsDefaults.bottomBarLabels;
     prefs.showSidebar = prefs.showSidebar !== false;
+    prefs.showScrollbars = prefs.showScrollbars === true;
     if (prefs.bottomBarBackground === "solid") prefs.bottomBarTransparency = 100;
     prefs.navIcons = { ...prefsDefaults.navIcons, ...(prefs.navIcons || {}) };
     const legacyIcons = { "⌂": "controller", "⌕": "search", "✧": "sparkles", "◷": "calendar-days", "▥": "pie-chart", "⚙": "settings" };
@@ -95,7 +104,8 @@
   let discoverSource = new URLSearchParams(initialHashQuery).get("source") || "";
   let page = initialRoute[0] === "search" ? "dashboard" : initialRoute[0] in titles ? initialRoute[0] : "dashboard";
   let settingsGroup = page === "settings" ? (initialRoute[1] === "manage-backups" ? "backups" : initialRoute[1] || null) : null;
-  let renderedRoute = null;
+  let settingsParam = initialRoute[0] === "settings" ? new URLSearchParams(initialHashQuery).get("id") || "" : "", settingsFrom = "", renderedSettingsGroup;
+  let renderedRoute = null, inAppNav = false;
   let metadataSourceFilter = "all";
   let entryDraftId = null, addReturnPage = "dashboard";
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
@@ -112,7 +122,8 @@
   delete prefs.defaultCategory;
   let activeCategory = prefs.dashboardDefaultCategory === "remember" ? "all" : prefs.dashboardDefaultCategory || "all";
   let toastTimer;
-  let detailItemId = null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "dashboard", detailRequest = 0;
+  const detailIdFromQuery = query => { const raw = String(query || ""); return raw.startsWith("=") ? decodeURIComponent(raw.slice(1)) : new URLSearchParams(raw).get("id") || ""; };
+  let detailItemId = initialRoute[0] === "details" ? detailIdFromQuery(initialHashQuery) || null : null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "dashboard", detailRequest = 0;
   let detailImagePosition = 0;
   const dashboardPageSize = 40;
   let dashboardLazyObserver = null;
@@ -120,6 +131,7 @@
   let discoverRequestId = 0;
   let addMetadataRequestId = 0;
   let localMutationRevision = 0;
+  let discoverCache = null;
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -127,10 +139,14 @@
   const category = key => config.categories.find(item => item.key === key) || config.categories[0];
   const labelCategory = key => category(key)?.label || key;
   const defaultStatus = key => category(key)?.statuses?.[0] || "Backlog";
-  function showPopup(dialog) {
+  // Each open sheet/dialog gets a history entry so the back button (or Android back) closes it first.
+  let dialogEntries = 0, skipNextPop = false, closingFromPop = false;
+  function pushDialogEntry() { try { window.history.pushState({ dialog: true }, "", location.href); dialogEntries += 1; } catch (_) {} }
+  function popDialogEntry() { if (dialogEntries > 0 && window.history.state?.dialog) { dialogEntries -= 1; skipNextPop = true; window.history.back(); } }
+  function showPopup(dialog, { silent = false } = {}) {
     if (!dialog) return;
     if (typeof dialog.showModal === "function") {
-      try { dialog.showModal(); return; } catch (_) {}
+      try { dialog.showModal(); if (!silent) pushDialogEntry(); return; } catch (_) {}
     }
     dialog.setAttribute("open", "");
     dialog.setAttribute("aria-modal", "true");
@@ -140,7 +156,7 @@
   function closePopup(dialog) {
     if (!dialog) return;
     if (typeof dialog.close === "function") {
-      try { dialog.close(); return; } catch (_) {}
+      try { const wasOpen = dialog.open; dialog.close(); if (wasOpen && !closingFromPop) popDialogEntry(); return; } catch (_) {}
     }
     dialog.removeAttribute("open");
     dialog.removeAttribute("aria-modal");
@@ -184,6 +200,8 @@
     document.body.style.setProperty("--muted", palette.muted);
     document.body.style.setProperty("--accent-soft", `color-mix(in srgb, ${prefs.mainColor || "#6366f1"} ${palette.mode === "light" ? "12%" : "20%"}, ${palette.surface})`);
     document.body.dataset.reducedMotion = String(Boolean(prefs.reduceMotion));
+    const lowEnd = Boolean(navigator.connection?.saveData) || (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+    root.dataset.lowend = String(lowEnd);
     document.body.dataset.corners = prefs.cardCorners;
     document.body.dataset.density = prefs.dashboardDensity;
     document.body.dataset.dashboardView = prefs.dashboardView;
@@ -193,6 +211,7 @@
     document.body.dataset.barCorners = prefs.bottomBarCorners;
     document.body.dataset.barLabels = prefs.bottomBarLabels;
     document.body.dataset.sidebar = prefs.showSidebar ? "shown" : "hidden";
+    document.documentElement.dataset.showScrollbars = prefs.showScrollbars === true ? "true" : "false";
     document.body.dataset.barLayout = prefs.bottomBarLayout;
     $("#bottom-bar").dataset.bg = prefs.bottomBarBackground;
     document.body.dataset.barBackground = prefs.bottomBarBackground;
@@ -256,14 +275,15 @@
   function goto(next, updateHistory = true) {
     if (next === "search") next = "dashboard";
     page = next in titles ? next : "dashboard";
-    if (page !== "discover") { discoverSource = ""; discoverQuery = ""; discoverRequestId++; }
+    if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverRequestId++; discoverCache = null; }
     if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; }
     if (page !== "settings") settingsGroup = null;
     if (updateHistory) historyPush();
-    render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: prefs.reduceMotion ? "auto" : "smooth" });
+    document.body.dataset.navDir = "forward";
+    render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
   }
   function historyPush() {
-    const route = page === "settings" && settingsGroup ? `settings/${settingsGroup}` : page === "discover" && discoverSource ? `discover?source=${encodeURIComponent(discoverSource)}` : page;
+    const route = page === "details" && detailItemId && !detailPreview ? `details?id=${encodeURIComponent(detailItemId)}` : page === "settings" && settingsGroup ? `settings/${settingsGroup}${settingsParam ? `?id=${encodeURIComponent(settingsParam)}` : ""}` : page === "discover" && discoverSource ? `discover?source=${encodeURIComponent(discoverSource)}` : page;
     const url = new URL(location.href);
     url.search = "";
     if (page === "dashboard" && libraryQuery) url.searchParams.set("q", libraryQuery);
@@ -277,7 +297,7 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, settingsGroup, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardGroupItems(groupKey) {
@@ -334,6 +354,7 @@
     $("#header-filter").hidden = page !== "dashboard";
     const content = $("#page-content");
     $("#floating-add").hidden = page !== "dashboard";
+    if (page === "settings") { if (settingsGroup !== renderedSettingsGroup) { settingsFrom = renderedSettingsGroup || ""; renderedSettingsGroup = settingsGroup; } } else renderedSettingsGroup = undefined;
     const route = page === "settings" ? `settings/${settingsGroup || "index"}` : page;
     const preservePageState = route === renderedRoute;
     const previousControls = preservePageState ? [...content.querySelectorAll("input, textarea, select")].map(element => ({
@@ -353,24 +374,27 @@
         void content.offsetWidth;
         content.classList.add("page-route-enter");
       }
+      if (renderedRoute !== null) inAppNav = true;
       renderedRoute = route;
     }
     content.innerHTML = window.SplitAppPages[page](pageContext());
+    if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
+    else if (page === "discover" && !discoverQuery) loadDiscoverSuggestions();
     if (preservePageState) {
       const controls = [...content.querySelectorAll("input, textarea, select")];
       previousControls.forEach((saved, index) => {
-        const target = saved.id ? document.getElementById(saved.id) : saved.name ? controls.find(element => element.name === saved.name && element.type === saved.type) : controls[index];
+        const target = saved.id ? document.getElementById(saved.id) : saved.name ? controls.find(element => element.name === saved.name && element.type === saved.type && (saved.type !== "radio" || element.value === saved.value)) : controls[index];
         if (!target || target.type === "file") return;
         const stateBound = target.matches("[data-pref], #global-search, #library-search");
-        if (!stateBound || target.value === saved.value) target.value = saved.value;
-        if (saved.checked !== undefined) target.checked = saved.checked;
+        if (target.type !== "radio" && target.type !== "checkbox" && (!stateBound || target.value === saved.value)) target.value = saved.value;
+        if (saved.checked !== undefined && !target.matches("[data-pref], [data-detail-status], #dashboard-filter-form *")) target.checked = saved.checked;
         if (saved.start !== null && typeof target.setSelectionRange === "function") {
           try { target.setSelectionRange(saved.start, saved.end); } catch (_) {}
         }
       });
       openPageDialogs.forEach(id => {
         const dialog = document.getElementById(id);
-        if (dialog && !dialog.open) showPopup(dialog);
+        if (dialog && !dialog.open) showPopup(dialog, { silent: true });
       });
       if (activeControlIndex >= 0) {
         const activeControl = controls[activeControlIndex];
@@ -399,7 +423,7 @@
       saveAddForm(event.currentTarget);
     });
     content.querySelectorAll("[data-cancel-add]").forEach(button => button.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); entryDraftId = null; goto(addReturnPage); }));
-    content.querySelector("[data-save-item]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); saveAddForm($("#item-form")); });
+    content.querySelectorAll("[data-save-item]").forEach(saveButton => saveButton.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); saveAddForm($("#item-form")); }));
     content.querySelector("[data-discover-submit]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); submitDiscover(); });
     content.querySelector("#discover-query")?.addEventListener("keydown", event => {
       if (event.key !== "Enter") return;
@@ -417,7 +441,7 @@
         if (consent?.reviewHowLongToBeat) await consent.reviewHowLongToBeat();
         else window.open("https://howlongtobeat.com/", "_blank", "noopener,noreferrer");
         window.SplitAppDiscovery?.clearSourceCooldown?.("howlongtobeat");
-        if (page === "discover" && discoverSource === "howlongtobeat") toast("Returned from HowLongToBeat. Tap Search to retry.");
+        if (page === "discover" && discoverSource === "howlongtobeat") { toast("Session saved. Searching again…"); submitDiscover(); }
       } catch (error) { toast(error?.message || "Could not open HowLongToBeat."); }
     });
     content.querySelector("#detail-edit-form")?.addEventListener("submit", saveDetailEdit);
@@ -476,6 +500,12 @@
     }));
     content.querySelectorAll("[data-timeline-filter]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation(); timelineFilter = button.dataset.timelineFilter; render();
+    }));
+    content.querySelectorAll("[data-nav-icon-pick]").forEach(button => button.addEventListener("click", event => {
+      event.preventDefault(); event.stopPropagation();
+      const key = button.dataset.navIconPick, icon = button.dataset.icon;
+      prefs.navIcons[key] = icon === "controller" && key === "dashboard" ? "controller" : safeLucideName(icon, prefs.navIcons[key]);
+      persist(); applyPreferences(); render();
     }));
     content.querySelectorAll("[data-nav-icon-select]").forEach(select => select.addEventListener("change", event => {
       event.stopPropagation();
@@ -637,7 +667,7 @@
       Object.assign(prefs, JSON.parse(JSON.stringify(prefsDefaults)));
     }
     if (selected.preferences && typeof selected.preferences === "object") Object.assign(prefs, selected.preferences);
-    window.SplitAppMetadata.normalize(prefs);
+    refreshSourceRegistry();
     normalizeNavigationPrefs();
   }
   async function chooseBackupDatabaseFolder() {
@@ -681,7 +711,7 @@
       prefs.navIcons = { ...prefsDefaults.navIcons };
       prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
       prefs.categoryColors = {}; prefs.apiKeys = {};
-      window.SplitAppMetadata.normalize(prefs);
+      refreshSourceRegistry();
       persist(); applyPreferences(); render(); toast("SavePoint has been reset.");
     }
   }
@@ -839,11 +869,52 @@
     discoverQuery = $("#discover-query")?.value || discoverQuery;
     discover();
   }
+  function paintDiscoverResults(results, sourceKey) {
+    const key = config.categories[0].key;
+    const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
+    const currentMessage = $("#discover-message"), box = $("#discover-results"), empty = $("#discover-empty");
+    if (!currentMessage || !box || !empty) return false;
+    currentMessage.textContent = results.length ? `${results.length} results found${sourceName ? ` from ${sourceName}` : ""}.${results.warnings?.length ? ` ${results.warnings.length} source(s) did not respond: ${results.warnings.join("; ")}` : ""}` : `No results found${sourceName ? ` from ${sourceName}` : ""}.`;
+    box.innerHTML = results.slice(0, 12).map((result, index) => `<article class="discover-card"><img src="${esc(result.image || "")}" alt="" loading="lazy" onerror="this.hidden=true"><div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">Add</button></div></div></article>`).join("");
+    empty.hidden = results.length > 0;
+    box._results = results;
+    return true;
+  }
+  let suggestionsCache = null, suggestionsRequest = 0;
+  async function loadDiscoverSuggestions() {
+    const requestId = ++suggestionsRequest, sourceKey = discoverSource, category = config.categories[0].key;
+    const box = $("#discover-results"), empty = $("#discover-empty"), message = $("#discover-message");
+    if (!box) return;
+    if (prefs.metadataMode === "offline") return;
+    const cacheKey = `${sourceKey}|${new Date().toDateString()}|${prefs.apiKeys?.rawg ? "k" : ""}`;
+    if (empty) empty.hidden = true;
+    let sections = suggestionsCache?.key === cacheKey ? suggestionsCache.sections : null;
+    if (!sections) {
+      box.innerHTML = `<div class="discover-suggest-loading" aria-hidden="true">${"<span></span>".repeat(6)}</div>`;
+      try { sections = await window.SplitAppDiscovery.trending(category, detailSettings(), sourceKey); }
+      catch (error) {
+        if (requestId !== suggestionsRequest || page !== "discover") return;
+        box.innerHTML = ""; if (empty) empty.hidden = false;
+        if (message && navigator.onLine) message.textContent = "Could not load suggestions. Search for a game above.";
+        return;
+      }
+      suggestionsCache = { key: cacheKey, sections };
+    }
+    if (requestId !== suggestionsRequest || page !== "discover" || discoverQuery || $("#discover-query")?.value.trim()) return;
+    const flat = [];
+    const html = sections.map(section => `<section class="discover-suggest"><h2>${esc(section.title)}</h2><div class="discover-rail">${section.items.map(result => {
+      const index = flat.push(result) - 1;
+      return `<article class="discover-card discover-suggest-card"><img src="${esc(result.image || "")}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true"><div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.subtitle || result.year || "")}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">Add</button></div></div></article>`;
+    }).join("")}</div></section>`).join("");
+    box.innerHTML = html || ""; box._results = flat;
+    if (empty) empty.hidden = flat.length > 0;
+    if (message && flat.length && !message.textContent) message.textContent = "Suggestions from your enabled sources — or search above.";
+  }
   async function discover() {
     const query = String(discoverQuery || "").trim(); const key = config.categories[0].key;
     const requestId = ++discoverRequestId; const sourceKey = discoverSource;
     const message = $("#discover-message");
-    if (!query) { message.textContent = "Type a title to search."; return; }
+    if (!query) { message.textContent = ""; loadDiscoverSuggestions(); return; }
     const initialEmpty = $("#discover-empty"); if (initialEmpty?.isConnected) initialEmpty.hidden = true;
     if (prefs.metadataMode === "offline") { message.textContent = "Online metadata is disabled in Settings."; return; }
     if (!navigator.onLine) { message.textContent = "You are offline. Reconnect and try again."; return; }
@@ -853,12 +924,8 @@
       const results = sourceKey ? await exploreSourceSearch(query, sourceKey) : await discoverSearch(query, key);
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
       const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
-      const currentMessage = $("#discover-message"), box = $("#discover-results"), empty = $("#discover-empty");
-      if (!currentMessage || !box || !empty) return;
-      currentMessage.textContent = results.length ? `${results.length} results found${sourceName ? ` from ${sourceName}` : ""}.${results.warnings?.length ? ` ${results.warnings.length} source(s) did not respond: ${results.warnings.join("; ")}` : ""}` : `No results found${sourceName ? ` from ${sourceName}` : ""}.`;
-      box.innerHTML = results.slice(0, 12).map((result, index) => `<article class="discover-card"><img src="${esc(result.image || "")}" alt="" loading="lazy" onerror="this.hidden=true"><div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">Add</button></div></div></article>`).join("");
-      empty.hidden = results.length > 0;
-      box._results = results;
+      if (!paintDiscoverResults(results, sourceKey)) return;
+      discoverCache = { source: sourceKey, query, results };
     } catch (error) {
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
       const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
@@ -904,6 +971,73 @@
     const item = { ...result, metadataSource: result.source, id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
     items.unshift(item); if (["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist(); toast("Added to your library."); return item;
   }
+  // Keep the best value per fact across providers (a later source never blanks out earlier data).
+  function mergeFacts(previous = {}, next = {}) {
+    const merged = { ...previous };
+    for (const [key, value] of Object.entries(next || {})) {
+      const empty = value === "" || value == null || value === 0 || (Array.isArray(value) && !value.length);
+      if (!empty || merged[key] == null) merged[key] = value;
+    }
+    return merged;
+  }
+  // Saves provider details (play time, price, team, requirements, images) for games that never opened their details page.
+  let factsRunning = false;
+  async function fetchMissingFacts(button) {
+    if (factsRunning) return; factsRunning = true; button.disabled = true;
+    const pending = items.filter(item => item.metadataSource && item.providerId && !item.facts?.fetchedAt);
+    let done = 0;
+    for (const item of pending) {
+      button.textContent = `Fetching ${done + 1} of ${pending.length}…`;
+      try {
+        const loaded = await window.SplitAppDetails.load(item, detailSettings());
+        item.cachedDetails = loaded; item.facts = mergeFacts(item.facts, loaded.facts);
+        item.description = loaded.description || item.description; item.year = loaded.year || item.year;
+        item.image = loaded.portraitImage || loaded.image || item.image;
+        done += 1; persist();
+      } catch (error) { recordLog("warning", `Could not fetch details for ${item.title}: ${error?.message || error}`); }
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
+    factsRunning = false; render(); toast(`Saved details for ${done} of ${pending.length} games.`);
+  }
+  function readCustomSourceForm() {
+    const form = $("#custom-source-form"); if (!form) return null;
+    const get = name => String(form.elements[name]?.value || "").trim();
+    const group = prefix => Object.fromEntries([...form.elements].filter(el => el.name?.startsWith(prefix)).map(el => [el.name.slice(prefix.length), String(el.value || "").trim()]).filter(([, value]) => value));
+    return { id: get("sourceId") || crypto.randomUUID().slice(0, 8), name: get("name"), searchUrl: get("searchUrl"), apiKey: get("apiKey"), apiKeyHeader: get("apiKeyHeader"), resultsPath: get("resultsPath"), imageTemplate: get("imageTemplate"), suggestionsUrl: get("suggestionsUrl"), detailUrl: get("detailUrl"), detailRoot: get("detailRoot"), map: group("map."), detailMap: group("dmap.") };
+  }
+  function validateCustomSource(config) {
+    if (!config?.name) return "Give the source a name.";
+    if (!/^https?:\/\//i.test(config.searchUrl)) return "The search URL must start with http:// or https://.";
+    if (!/\{query\}/.test(config.searchUrl)) return "The search URL needs {query} where the search text goes.";
+    if (!config.map.title) return "Say which field holds the game title.";
+    return "";
+  }
+  async function testCustomSourceForm() {
+    const output = $("#custom-source-test-output"), config = readCustomSourceForm(), problem = validateCustomSource(config);
+    if (problem) { output.textContent = problem; output.dataset.state = "error"; return; }
+    output.textContent = "Testing…"; output.dataset.state = "";
+    try {
+      const results = await window.SplitAppDiscovery.testCustomSource(config, "zelda", detailSettings());
+      output.dataset.state = results.length ? "ok" : "error";
+      output.innerHTML = results.length ? `<strong>${results.length} result${results.length === 1 ? "" : "s"} found</strong>${results.slice(0, 4).map(row => `<div class="cs-test-row">${row.image ? `<img src="${esc(row.image)}" alt="" onerror="this.hidden=true">` : ""}<span>${esc(row.title)}<small>${esc(row.subtitle || row.year || "")}</small></span></div>`).join("")}` : "The request worked but no results matched. Check the results path and the title field.";
+    } catch (error) { output.dataset.state = "error"; output.textContent = `Failed: ${error?.message || error}`; }
+  }
+  function saveCustomSource(event) {
+    event.preventDefault();
+    const config = readCustomSourceForm(), problem = validateCustomSource(config);
+    if (problem) { const output = $("#custom-source-test-output"); output.textContent = problem; output.dataset.state = "error"; return; }
+    const list = [...(prefs.customSources || [])], index = list.findIndex(row => row.id === config.id);
+    if (index >= 0) list[index] = config; else list.push(config);
+    prefs.customSources = list; refreshSourceRegistry();
+    prefs.metadataSources[`custom:${config.id}`] = prefs.metadataSources[`custom:${config.id}`] !== false;
+    persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast(index >= 0 ? "Custom source updated." : "Custom source added.");
+  }
+  function deleteCustomSource() {
+    const id = $("#custom-source-form")?.elements.sourceId.value; if (!id || !window.confirm("Delete this custom source?")) return;
+    prefs.customSources = (prefs.customSources || []).filter(row => row.id !== id);
+    delete prefs.metadataSources[`custom:${id}`]; refreshSourceRegistry();
+    persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
+  }
   function detailSettings() { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, offlineFallback: prefs.offlineFallback }; }
   async function loadDetails() {
     const item = detailPreview || items.find(row => row.id === detailItemId);
@@ -923,6 +1057,7 @@
         detailData = loaded;
         if (!detailPreview) {
           item.cachedDetails = loaded;
+          item.facts = mergeFacts(item.facts, loaded.facts);
           item.description = loaded.description || item.description;
           item.year = loaded.year || item.year;
           item.image = loaded.portraitImage || loaded.image || item.image;
@@ -961,6 +1096,38 @@
   function requestDeleteDetails(id) {
     if (!items.some(entry => entry.id === id)) return;
     showPopup($("#detail-delete-dialog"));
+  }
+  function setItemStatus(item, status) {
+    if (!item || item.status === status) return;
+    item.status = status; item.updatedAt = Date.now();
+    if (["Dropped", "Completed", "On Hold", "Playing"].includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
+    persist();
+  }
+  function openItemActions(id) {
+    const item = items.find(entry => entry.id === id); if (!item) return;
+    let dialog = $("#item-action-dialog");
+    if (!dialog) {
+      dialog = document.createElement("dialog"); dialog.id = "item-action-dialog"; dialog.className = "ios-action-sheet";
+      document.body.appendChild(dialog);
+      dialog.addEventListener("click", event => {
+        if (event.target === dialog) { closePopup(dialog); return; }
+        const button = event.target.closest("[data-sheet-action]"); if (!button) return;
+        const target = items.find(entry => entry.id === dialog.dataset.itemId);
+        closePopup(dialog);
+        if (!target) return;
+        const action = button.dataset.sheetAction;
+        if (action === "details") openDetails(target.id);
+        else if (action === "remove") {
+          if (!window.confirm(`Remove “${target.title}” from your collection?`)) return;
+          if (prefs.backupBeforeDestructive) exportList();
+          items = items.filter(entry => entry.id !== target.id); persist(); render(); toast("Entry removed.");
+        } else if (action !== "cancel") { setItemStatus(target, action); render(); toast(`Marked as ${action}.`); }
+      });
+    }
+    dialog.dataset.itemId = id;
+    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p><button type="button" data-sheet-action="Playing" class="accent"><i data-lucide="gamepad-2"></i>Mark as Playing</button><button type="button" data-sheet-action="Completed" class="success"><i data-lucide="check-circle"></i>Mark as Completed</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
+    window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
+    showPopup(dialog);
   }
   function openDetails(id) { detailReturnPage = page === "details" ? detailReturnPage : page; detailPreview = null; detailEditMode = false; detailItemId = id; detailData = null; detailError = ""; goto("details"); loadDetails(); }
   function openDiscoverDetails(result) { if (!result) return; detailReturnPage = "discover"; detailPreview = { ...result, metadataSource: result.source }; detailEditMode = false; detailItemId = null; detailData = null; detailError = ""; goto("details"); loadDetails(); }
@@ -1128,7 +1295,7 @@
     dashboardStatusFilter = "all"; activeCategory = "all"; persist(); applyPreferences(); render(); toast("Dashboard preferences restored.");
   }
   function resetAppearance() {
-    ["theme", "textSize", "reduceMotion", "animationSpeed", "font", "mainColor", "showSidebar", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
+    ["theme", "textSize", "reduceMotion", "animationSpeed", "font", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
     prefs.categoryColors = {};
     prefs.navIcons = { ...prefsDefaults.navIcons };
     prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
@@ -1136,9 +1303,29 @@
   }
 
   $("#page-content").addEventListener("click", event => {
-    const dashboardViewChoice = event.target.closest("[data-dashboard-view]");
+    const pill = event.target.closest("[data-pill-name]");
+    if (pill) {
+      const group = pill.closest(".ios-pills");
+      group.querySelector('input[type="hidden"]').value = pill.dataset.pillValue;
+      group.querySelectorAll("[data-pill-name]").forEach(button => { const on = button === pill; button.classList.toggle("active", on); button.setAttribute("aria-pressed", String(on)); });
+      return;
+    }
+    const quickStatus = event.target.closest("[data-quick-status]");
+    if (quickStatus) { setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
+    const detailStatus = event.target.closest("[data-detail-status-btn]");
+    if (detailStatus) {
+      const item = items.find(row => row.id === detailItemId);
+      if (item) {
+        setItemStatus(item, detailStatus.dataset.detailStatusBtn);
+        detailStatus.parentElement.querySelectorAll("[data-detail-status-btn]").forEach(button => button.classList.toggle("active", button === detailStatus));
+      }
+      return;
+    }
+    const itemMenu = event.target.closest("[data-open-item-actions]");
+    if (itemMenu) { openItemActions(itemMenu.dataset.openItemActions); return; }
+    const dashboardViewChoice = event.target.closest("button[data-dashboard-view]");
     if (dashboardViewChoice) { setPreference("dashboardView", dashboardViewChoice.dataset.dashboardView); return; }
-    const dashboardSortChoice = event.target.closest("[data-dashboard-sort]");
+    const dashboardSortChoice = event.target.closest("button[data-dashboard-sort]");
     if (dashboardSortChoice) { setPreference("dashboardSort", dashboardSortChoice.dataset.dashboardSort); return; }
     if (event.target.closest("[data-close-dashboard-filter]")) { closePopup($("#dashboard-filter-dialog")); return; }
     if (event.target.closest("[data-reset-dashboard-filter]")) { dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; persist(); closePopup($("#dashboard-filter-dialog")); render(); return; }
@@ -1153,6 +1340,39 @@
     if (event.target.closest("[data-detail-image-prev]")) { showDetailImage(detailImagePosition - 1); return; }
     if (event.target.closest("[data-detail-image-next]")) { showDetailImage(detailImagePosition + 1); return; }
     if (event.target.id === "detail-image-modal") { closePopup(event.target); return; }
+    const statsFilter = event.target.closest("[data-stats-filter]");
+    if (statsFilter) { setPreference("dashboardStatusFilter", statsFilter.dataset.statsFilter); goto("dashboard"); return; }
+    const backLink = event.target.closest("[data-back]");
+    if (backLink && inAppNav) { event.preventDefault(); window.history.back(); return; }
+    const csInsert = event.target.closest("[data-cs-insert]");
+    if (csInsert) { const input = $("#custom-source-form")?.elements.searchUrl; if (input) { const at = input.selectionStart ?? input.value.length; input.setRangeText(csInsert.dataset.csInsert, at, input.selectionEnd ?? at, "end"); input.focus(); } return; }
+    if (event.target.closest("[data-custom-source-test]")) { testCustomSourceForm(); return; }
+    if (event.target.closest("[data-custom-source-delete]")) { deleteCustomSource(); return; }
+    const fetchFacts = event.target.closest("[data-stats-fetch-facts]");
+    if (fetchFacts) { fetchMissingFacts(fetchFacts); return; }
+    const adjust = event.target.closest("[data-adjust-progress]");
+    if (adjust) {
+      const item = items.find(row => row.id === detailItemId);
+      if (item) { item.progress = Math.max(0, (Number(item.progress) || 0) + Number(adjust.dataset.adjustProgress)); item.updatedAt = Date.now(); persist(); render(); }
+      return;
+    }
+    const stepper = event.target.closest("[data-step-input]");
+    if (stepper) {
+      const input = $("#item-form")?.elements[stepper.dataset.stepInput];
+      if (input) { input.value = Math.max(0, (Number(input.value) || 0) + Number(stepper.dataset.step)); input.dispatchEvent(new Event("input", { bubbles: true })); }
+      return;
+    }
+    const addStar = event.target.closest("[data-add-star]");
+    if (addStar) {
+      const select = $("#item-form")?.elements.rating;
+      if (select) {
+        const value = Number(select.value) === Number(addStar.dataset.addStar) ? "" : addStar.dataset.addStar;
+        select.value = value;
+        $$("[data-add-star]").forEach(star => star.classList.toggle("active", Number(star.dataset.addStar) <= Number(value || 0)));
+        const label = $("#add-rating-label"); if (label) label.textContent = value ? `${value} / ${select.options.length - 1}` : "No rating";
+      }
+      return;
+    }
     const detailRating = event.target.closest("[data-detail-rating]");
     if (detailRating) {
       const item = items.find(row => row.id === detailItemId);
@@ -1163,7 +1383,8 @@
       $$("[data-detail-rating]").forEach(button => {
         const active = Number(button.dataset.detailRating) <= item.rating;
         button.setAttribute("aria-checked", String(Number(button.dataset.detailRating) === item.rating));
-        button.querySelector("i")?.classList.toggle("active", active);
+        const star = button.querySelector("svg, i"); star?.classList.toggle("active", active);
+        if (button === detailRating) { star?.classList.remove("pop"); void star?.getBoundingClientRect(); star?.classList.add("pop"); }
       });
       return;
     }
@@ -1297,6 +1518,11 @@
     }
   });
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-detail-notes]")) {
+      const item = items.find(row => row.id === detailItemId);
+      if (item) { item.notes = event.target.value; item.updatedAt = Date.now(); persist(); }
+      return;
+    }
     if (event.target.matches("[data-settings-index-search]")) {
       const query = event.target.value.trim().toLowerCase();
       let hasMatch = false;
@@ -1354,6 +1580,7 @@
     }
   });
   document.addEventListener("submit", event => {
+    if (event.target.id === "custom-source-form") { saveCustomSource(event); return; }
     if (event.target.id !== "dashboard-filter-form") return;
     event.preventDefault();
     dashboardStatusFilter = event.target.elements.status.value || "all";
@@ -1397,9 +1624,31 @@
     if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; }
     discoverSource = next === "discover" ? new URLSearchParams(hashQuery).get("source") || "" : "";
     page = next; settingsGroup = next === "settings" ? (route[1] === "manage-backups" ? "backups" : route[1] || null) : null;
+    settingsParam = next === "settings" ? new URLSearchParams(hashQuery).get("id") || "" : "";
+    document.body.dataset.navDir = "back";
+    if (next === "details") { const id = detailIdFromQuery(hashQuery); if (id && id !== detailItemId) { detailItemId = id; detailPreview = null; detailData = null; detailError = ""; render(); syncPageNavigation(); loadDetails(); return; } }
     render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
   }
+  window.addEventListener("popstate", event => {
+    if (skipNextPop) { skipNextPop = false; event.stopImmediatePropagation(); return; }
+    const open = document.querySelector("dialog[open]");
+    if (open && dialogEntries > 0) { dialogEntries -= 1; closingFromPop = true; closePopup(open); closingFromPop = false; event.stopImmediatePropagation(); }
+  });
+  // Tapping the dimmed area outside a sheet/dialog closes it.
+  document.addEventListener("click", event => {
+    const dialog = event.target;
+    if (!(dialog instanceof HTMLDialogElement) || !dialog.open) return;
+    const rect = dialog.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closePopup(dialog);
+  });
   window.addEventListener("popstate", syncRouteFromHash);
+  // Android hardware back: close an open sheet, then step back through pages, then leave the app from Home.
+  window.Capacitor?.Plugins?.App?.addListener?.("backButton", () => {
+    const openDialog = document.querySelector("dialog[open]");
+    if (openDialog) { closePopup(openDialog); return; }
+    if (page !== "dashboard" || settingsGroup) { if (window.history.length > 1) window.history.back(); else goto("dashboard"); return; }
+    window.Capacitor.Plugins.App.exitApp?.();
+  });
   window.addEventListener("hashchange", syncRouteFromHash);
   window.addEventListener("storage", event => { if (event.key === storageKey) toast("Library changed in another tab."); });
   window.addEventListener("beforeunload", persist);
@@ -1441,7 +1690,7 @@
       delete prefs.defaultCategory;
       delete prefs.appLook;
       delete prefs.appDisplayName;
-      window.SplitAppMetadata.normalize(prefs);
+      refreshSourceRegistry();
       normalizeNavigationPrefs();
       await window.SplitAppBackend.save({ items, history, preferences: prefs });
       return true;
@@ -1470,6 +1719,8 @@
   });
   applyPreferences();
   render();
+  if (page === "details" && detailItemId) loadDetails();
+  requestAnimationFrame(() => requestAnimationFrame(() => window.SavePointSplash?.ready?.()));
   restoreNativeData().then(success => {
     if (!success) {
       if (nativeFolderStorage && storageFolderGate) storageFolderGate.hidden = false;
@@ -1477,5 +1728,6 @@
     }
     if (storageFolderGate) storageFolderGate.hidden = true;
     applyPreferences(); render(); syncBackupSchedule();
+    if (page === "details" && detailItemId && !detailPreview) loadDetails();
   });
 })();

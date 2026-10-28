@@ -23,7 +23,14 @@
 
     const renderSection = (section, watchedIds = new Set(), canToggleEpisodes = false, item = null, sectionIndex = 0, imageButton = () => "") => {
       const items = section.items || [];
-      const body = section.kind === "gallery"
+      const body = section.kind === "carousel"
+        ? `<div class="detail-carousel">${items.map((entry, entryIndex) => {
+            const href = safeUrl(entry.url);
+            const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image);
+            const inner = `<span class="detail-carousel-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async">` : ""}</span><strong>${esc(entry.title || "Untitled")}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}`;
+            return href ? `<a class="detail-carousel-card" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="detail-carousel-card">${inner}</div>`;
+          }).join("")}</div>`
+        : section.kind === "gallery"
         ? `<div class="detail-gallery">${items.map((entry, entryIndex) => {
             const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image || entry.url);
             return image ? imageButton(image, entry.title || "Screenshot", `<img src="${esc(image)}" alt="${esc(entry.title || "Source image")}" loading="lazy"><span>${esc(entry.title || "")}</span>`, "detail-gallery-image") : "";
@@ -41,7 +48,9 @@
             const content = `<div class="detail-source-item">${thumbnail}<div><strong>${title}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}${entry.description ? `<p>${esc(entry.description)}</p>` : ""}${href && section.kind !== "episodes" ? `<a class="detail-entry-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>` : ""}${toggle}</div></div>`;
             return content;
           }).join("")}</div>`;
-      return `<section class="detail-section"><h3>${esc(section.title || "More details")}</h3>${body}</section>`;
+      return section.collapsed
+        ? `<details class="detail-section detail-collapsible"><summary><h3>${esc(section.title || "More details")}</h3><span aria-hidden="true">›</span></summary>${body}</details>`
+        : `<section class="detail-section"><h3>${esc(section.title || "More details")}</h3>${body}</section>`;
     };
 
     function renderDetails() {
@@ -70,8 +79,9 @@
         ? `<button type="button" class="detail-image-trigger ${className}" data-detail-image-src="${esc(src)}" data-detail-image-label="${esc(label)}" aria-label="View ${esc(label)}">${content}</button>`
         : "";
       const detailImage = popupImageButton(image, `${item.title} cover`, `<img class="detail-image" src="${esc(image)}" alt="${esc(item.title)} cover" onerror="this.hidden=true">`, "detail-cover-trigger");
+      const buySub = [fields.find(row => /developer/i.test(row.label))?.value, loaded.year || item.year].filter(Boolean).map(detailValue).join(" • ");
       const purchase = loaded.purchase && safeUrl(loaded.purchase.url)
-        ? `<article class="detail-purchase-card">${landscape ? popupImageButton(landscape, `${item.title} artwork`, `<img src="${esc(landscape)}" alt="${esc(item.title)} artwork" loading="lazy">`, "detail-purchase-art") : ""}<div class="detail-purchase-copy"><h3>${loaded.purchase.isFree ? "Play" : "Buy"} ${esc(item.title)} <span>on Steam</span></h3><p>${esc(summary)}</p><div class="detail-purchase-actions"><strong>${esc(loaded.purchase.price || "Price unavailable")}</strong><a class="button primary" href="${esc(loaded.purchase.url)}" target="_blank" rel="noopener noreferrer">${loaded.purchase.isFree ? "Play on Steam" : "Buy on Steam"}</a></div></div></article>`
+        ? `<div class="ios-buy"><div class="ios-buy-copy"><p>${loaded.purchase.isFree ? "Play" : "Buy"} ${esc(item.title)} <span>on Steam</span></p>${buySub ? `<small>${esc(buySub)}</small>` : ""}</div><strong>${esc(loaded.purchase.price || "")}</strong><a class="button primary" href="${esc(loaded.purchase.url)}" target="_blank" rel="noopener noreferrer">${loaded.purchase.isFree ? "Play on Steam" : "Buy on Steam"}</a></div>`
         : "";
       const statuses = category(item.category)?.statuses || [];
       const maxRating = prefs?.ratingFormat === "10-point" ? 10 : 5;
@@ -88,25 +98,30 @@
           ${canProgress ? `<button type="button" class="button primary small" data-action="progress" data-id="${esc(item.id)}">＋ ${item.category === "series" || item.category === "anime" ? "Next episode" : item.category === "manga" ? "Log chapter" : "Log progress"}</button>` : ""}
           ${item.metadataSource && item.providerId ? `<button type="button" class="button secondary small" data-action="refresh-details" ${detailLoading ? "disabled" : ""}>${detailLoading ? "Refreshing…" : "Refresh source"}</button>` : ""}
         </div>
-        <article class="detail-hero"${landscape ? ` style="--detail-backdrop:url('${esc(landscape)}')"` : ""}>
-          ${image ? detailImage : `<div class="detail-image-placeholder">${esc(category(item.category)?.icon || "✦")}</div>`}
-          <div class="detail-hero-copy">
-            <p class="eyebrow">${esc(source?.name || item.metadataSource || "SAVEPOINT")}${source ? ` · ${esc(source.categories.map(labelCategory).join(" / "))}` : ""}</p>
-            <h2>${esc(loaded.title || item.title)}</h2>
-            <div class="detail-badges">${facts.slice(0, 3).map(([label, value]) => `<span>${esc(label === "Rating" ? value : detailValue(value))}</span>`).join("")}</div>
-            ${sourceUrl ? `<a class="detail-source-link" href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer">Open source page ↗</a>` : ""}
+        <article class="detail-hero ios-hero">
+          <div class="ios-hero-bg"${(landscape || image) ? ` style="background-image:url('${esc(landscape || image)}')"` : ""}></div>
+          <div class="ios-hero-body">
+            ${image ? detailImage : `<div class="detail-image-placeholder">${esc(category(item.category)?.icon || "✦")}</div>`}
+            <div class="detail-hero-copy">
+              <p class="eyebrow">${esc(source?.name || item.metadataSource || "SAVEPOINT")}${source ? ` • ${esc(source.categories.map(labelCategory).join(" / "))}` : ""}</p>
+              <h2>${esc(loaded.title || item.title)}</h2>
+              <div class="detail-badges">${canProgress ? `<span class="ios-status-badge">${esc(item.status)}</span>` : ""}${facts.slice(0, 3).map(([label, value]) => `<span>${esc(label === "Rating" ? value : detailValue(value))}</span>`).join("")}${loaded.badge ? `<span class="detail-age-badge">${esc(loaded.badge)}</span>` : ""}${sourceUrl ? `<a class="detail-source-link" href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer">Open source page ↗</a>` : ""}</div>
+            </div>
           </div>
+          ${purchase}
         </article>
-        ${purchase}
         ${detailLoading ? `<p class="app-info detail-loading">Loading full details from ${esc(source?.name || "the metadata source")}…</p>` : ""}
         ${detailError ? `<div class="detail-error"><p>${esc(detailError)}</p><button class="button secondary small" data-action="refresh-details">Try again</button></div>` : ""}
         ${canProgress && detailEditMode ? `<form id="detail-edit-form" class="detail-edit-form"><label>Title<input name="title" required maxlength="180" value="${esc(item.title)}"></label><label>Status<span class="detail-select-wrap"><select name="status">${statuses.map(status => `<option value="${esc(status)}" ${status === item.status ? "selected" : ""}>${esc(status)}</option>`).join("")}</select><i data-lucide="chevron-down" aria-hidden="true"></i></span></label><div class="detail-edit-numbers"><label>Progress<input name="progress" type="number" min="0" step="${esc(prefs.progressIncrement || 1)}" value="${progress}"></label><label>Goal<input name="goal" type="number" min="0" step="1" value="${goal}"></label></div></form>` : ""}
-        ${canProgress ? `<section class="detail-progress-card"><div><span>Progress</span><strong>${progress}${goal ? ` / ${goal}` : ""}${unit ? ` ${esc(unit)}` : ""}</strong></div><div class="progress-line"><span style="width:${percent}%"></span></div>${goal ? `<small>${percent}% complete</small>` : `<small>Edit entry to set a goal and track completion.</small>`}</section>` : ""}
+        ${canProgress ? `<section class="detail-progress-card"><div class="ios-progress-head"><div><span>Playtime &amp; Goal</span><strong>${progress}${goal ? `<small> / ${goal} ${esc(unit || "hrs")} goal</small>` : ""}</strong></div><div class="ios-stepper"><button type="button" data-adjust-progress="-1">-1h</button><button type="button" class="accent" data-adjust-progress="1">+1h</button><button type="button" data-adjust-progress="5">+5h</button></div></div><div class="progress-line"><span style="width:${percent}%"></span></div><small>${goal ? `${percent}% of completion goal • Tap +1h to log a quick session` : "Edit entry to set a goal and track completion."}</small></section>` : ""}
+        ${canProgress ? `<section class="detail-section detail-tracking-section"><h3>Tracking &amp; Rating</h3><span class="ios-sub">Status</span><div class="ios-pills detail-status-pills">${statuses.map(status => `<button type="button" class="ios-pill${status === item.status ? " active" : ""}" data-detail-status-btn="${esc(status)}">${esc(status)}</button>`).join("")}</div><div class="detail-tracking-row"><span>My Rating</span>${ratingControl}</div></section><dialog class="choice-dialog detail-delete-dialog" id="detail-delete-dialog"><form method="dialog"><div class="choice-dialog-grabber"></div><h2>Delete ${esc(item.title)}?</h2><p>This removes the game from your collection.</p><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-detail-delete-cancel>Cancel</button><button type="button" class="button primary" data-detail-delete-confirm>Delete</button></footer></form></dialog>` : ""}
+        ${sections.map((section, index) => renderSection(section, new Set((item.watchedEpisodeIds || []).map(String)), canProgress, item, index, popupImageButton)).join("")}
+        ${(loaded.stores || []).length ? `<section class="detail-section detail-stores"><h3>Where to buy</h3><div class="detail-store-list">${loaded.stores.map(row => safeUrl(row.url) ? `<a class="button secondary small" href="${esc(safeUrl(row.url))}" target="_blank" rel="noopener noreferrer">${esc(row.name)} ↗</a>` : "").join("")}</div></section>` : ""}
+        ${(loaded.ratingBreakdown || []).length ? `<section class="detail-section detail-rating-breakdown"><h3>Player ratings${loaded.ratingCount ? ` · ${Number(loaded.ratingCount).toLocaleString()}` : ""}</h3><div class="rating-bar" role="img" aria-label="${esc(loaded.ratingBreakdown.map(row => `${row.label} ${row.percent}%`).join(", "))}">${loaded.ratingBreakdown.map((row, index) => `<span class="rating-seg rating-seg-${index % 4}" style="width:${Math.max(2, Number(row.percent) || 0)}%"></span>`).join("")}</div><div class="rating-legend">${loaded.ratingBreakdown.map((row, index) => `<span><i class="rating-seg-${index % 4}"></i>${esc(row.label)} <b>${esc(row.percent)}%</b></span>`).join("")}</div></section>` : ""}
         <section class="detail-section"><h3>Overview</h3><p class="detail-description">${esc(summary)}</p></section>
+        ${(loaded.tags || []).length ? `<section class="detail-section"><h3>Tags</h3><div class="detail-chips">${loaded.tags.map(tag => `<span>${esc(tag)}</span>`).join("")}</div></section>` : ""}
         ${facts.length || fields.length ? `<section class="detail-section"><h3>Details</h3><div class="detail-facts">${facts.map(([label, value]) => `<div><span>${esc(label)}</span><strong>${esc(detailValue(value))}</strong></div>`).join("")}${fields.map(row => `<div><span>${esc(row.label)}</span><strong>${esc(detailValue(row.value))}</strong></div>`).join("")}</div></section>` : ""}
         ${links.length ? `<section class="detail-section"><h3>Links</h3><div class="detail-link-list">${links.map(link => `<a href="${esc(link.href)}" target="_blank" rel="noopener noreferrer">${esc(link.label || link.title || link.site || link.href)} ↗</a>`).join("")}</div></section>` : ""}
-        ${sections.map((section, index) => renderSection(section, new Set((item.watchedEpisodeIds || []).map(String)), canProgress, item, index, popupImageButton)).join("")}
-        ${canProgress ? `<section class="detail-section detail-tracking-section"><h3>Tracking</h3><label class="detail-tracking-row"><span>Status</span><span class="detail-select-wrap"><select data-detail-status>${statuses.map(status => `<option value="${esc(status)}" ${status === item.status ? "selected" : ""}>${esc(status)}</option>`).join("")}</select><i data-lucide="chevron-down" aria-hidden="true"></i></span></label><div class="detail-tracking-row"><span>Rating</span>${ratingControl}</div></section><dialog class="choice-dialog detail-delete-dialog" id="detail-delete-dialog"><form method="dialog"><div class="choice-dialog-grabber"></div><h2>Delete ${esc(item.title)}?</h2><p>This removes the game from your collection.</p><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-detail-delete-cancel>Cancel</button><button type="button" class="button primary" data-detail-delete-confirm>Delete</button></footer></form></dialog>` : ""}
         <dialog class="detail-image-modal" id="detail-image-modal" aria-label="Image viewer"><button type="button" class="detail-image-modal-close" data-detail-image-close aria-label="Close image">×</button><button type="button" class="detail-image-modal-nav detail-image-modal-prev" data-detail-image-prev aria-label="Previous image">‹</button><figure><img data-detail-modal-img alt=""><figcaption data-detail-modal-caption></figcaption></figure><button type="button" class="detail-image-modal-nav detail-image-modal-next" data-detail-image-next aria-label="Next image">›</button></dialog>
       </div>`;
     }

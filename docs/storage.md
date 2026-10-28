@@ -15,6 +15,10 @@ The app state is `{ items, history, preferences }` under the localStorage key `s
 
 The Android plugin encrypts native records, but the app continues to maintain a localStorage mirror and plain JSON databases in the user-selected folder. Neither should be treated as encrypted storage. Exported JSON and folder TAR backups are also plaintext unless protected separately by the user.
 
+## Saved provider data
+
+Opening a game's details (or **Fetch details** on Statistics) saves the provider's full response in `cachedDetails` and a compact `facts` summary on the item. Both are part of the item record, so they are stored in the encrypted Android record, the localStorage mirror and the folder `index.json`. Every image in `cachedDetails` (cover, screenshots, series, achievements, team) is converted to a thumbnail and written next to the item as `.image-N` files, so the details page and Statistics keep working offline. **Settings → Storage** shows library size and cache usage and can clear metadata and image caches.
+
 ## Metadata cache
 
 JSON GET metadata responses are stored in browser Cache Storage under `splitapp_savepoint_metadata`. Fresh cache entries are reused for six hours, and stale entries can be used after request failures unless the Offline Fallback preference is set to `none`. Requests with an API key in `key`/`apikey` query parameters, HowLongToBeat POST searches, and HTML text requests are not cached by this JSON cache. See [metadata analysis](metadata-analysis.md).

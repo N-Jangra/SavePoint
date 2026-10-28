@@ -10,4 +10,4 @@ These documents describe this SavePoint app and its current source tree.
 - [Storage](storage.md) — browser mirror, Android encrypted storage, and metadata cache.
 - [File layout](file-schema.md) — source and Android project structure.
 - [Requirements](requirements.md) — local preview and Android toolchain.
-
+- [Changelog](../CHANGELOG.md) — release notes, starting at 0.1.0.

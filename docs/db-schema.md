@@ -27,15 +27,18 @@ The add/edit flow writes these core fields. Additional source fields are retaine
 | `createdAt`, `updatedAt` | Unix epoch timestamps in milliseconds. |
 | `metadataSource`, `providerId` | Optional registry key and provider ID used for source-backed details. |
 | `thumbnailPath`, `thumbnailMime`, `localImageFiles` | Android folder mirror references for the cover and cached image files. Image bytes are kept in adjacent files, not repeated in the portable item JSON. |
+| `cachedDetails` | Last provider details (see [metadata analysis](metadata-analysis.md)), including all gallery, series, achievement and team images; their images are turned into thumbnails and stored beside the item. |
+| `facts` | Provider-independent summary (play time, price, developers, requirements, names, team) used by Statistics. |
+| `localImageData`, `localThumbnailData` | Transient in-memory image data; not written to portable JSON. |
 | `url`, `year`, `subtitle`, `fields`, … | Optional provider result/detail fields. Provider results can include additional properties and the app currently preserves them in the item JSON. |
 
 ## Activity history
 
-Each activity record has `{ "itemId", "title", "action", "at" }`. `at` is a Unix epoch timestamp in milliseconds. The app prepends records for add, update, progress changes, discovery add, and delete. Deletion history retains the item ID/title even after the corresponding item is gone.
+Each activity record has `{ "itemId", "title", "action", "status", "at" }`. The timeline joins `itemId` (or the title) to a saved game to show its cover. `at` is a Unix epoch timestamp in milliseconds. The app prepends records for add, update, progress changes, discovery add, and delete. Deletion history retains the item ID/title even after the corresponding item is gone.
 
 ## Preferences
 
-Preferences are a flat object for settings, with nested objects where needed. Important groups include appearance/navigation (`theme`, `font`, `categoryColors`, `navBar`), library display and tracking, backup/storage limits, and metadata (`metadataSources`, `metadataSourceOrder`, `apiKeys`). The metadata registry removes source toggles for unknown providers and API keys for providers that do not require a key. Current registered keys are `wikidata`, `freetogame`, `steamdb`, `howlongtobeat`, and `rawg`.
+Preferences are a flat object for settings, with nested objects where needed. Important groups include appearance/navigation (`theme`, `font`, `categoryColors`, `navBar`), library display and tracking, backup/storage limits, and metadata (`metadataSources`, `metadataSourceOrder`, `apiKeys`, `customSources`) and display (`showSidebar`, `showScrollbars`, `animationSpeed`, `reduceMotion`). The metadata registry removes source toggles for unknown providers and API keys for providers that do not require a key. Current registered keys are `wikidata`, `freetogame`, `steamdb`, `howlongtobeat`, and `rawg`.
 
 ## Export and import
 

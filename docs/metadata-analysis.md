@@ -18,6 +18,30 @@ Results carry a `source` and `providerId`; when added to the library they are sa
 
 Exact returned fields vary by provider and by what that provider has published. Missing values are omitted or shown as empty; the app keeps provider result fields in the saved JSON item.
 
+## Rich details and saved facts
+
+Every loader returns the same detail shape (`schemaVersion: 2`): title, description, artwork, year, rating, `fields`, `links`, `sections` (gallery, list or carousel; optionally collapsed), `tags`, an age-rating `badge`, a `ratingBreakdown` with `ratingCount`, `stores` (buy links) and `purchase`. A `facts` object is derived from it and saved with the game:
+
+`mainHours`, `extrasHours`, `completionistHours`, `averageHours`, `price`, `priceValue`, `developers`, `publishers`, `genres`, `platforms`, `released`, `metacritic`, `rating`, `ratingCount`, `ageRating`, `alternativeNames`, `tags`, `stores`, `minRequirements`, `recommendedRequirements`, `team`, `fetchedAt`.
+
+When several providers describe the same game, facts merge: a later provider never blanks out a value an earlier one supplied. Statistics → Time to beat uses `mainHours` (or RAWG `averageHours`) and `priceValue`; **Fetch details for N games** on that page loads facts for games whose details were never opened.
+
+### Extras by provider
+
+- **RAWG:** age rating, tags, player-rating breakdown, Metacritic overall and per platform, store links, same-series and editions/DLC carousels, achievements (collapsible), development team (collapsible), alternative names, PC requirements when substantive. Extra lists are fetched in parallel; a failed extra never blocks the page.
+- **Steam:** age requirement, Metacritic, recommendation count, achievements, controller support, languages, DLC count, system requirements, categories as tags, trailers.
+- **FreeToGame:** status, profile and play links, minimum requirements, tags.
+- **Wikidata:** developer, publisher, series, game modes, country and aliases with linked items resolved to English labels in one extra request; Wikipedia link.
+- **HowLongToBeat:** completion times plus completion, playing, backlog and retired counts when present.
+
+## Discover suggestions
+
+`SplitAppDiscovery.trending()` builds the rows shown on an empty Discover page from the enabled sources: Steam `featuredcategories`, FreeToGame popularity sort, RAWG ordered lists (when a key is set) and custom suggestions URLs. Results are cached for the day in memory and by the JSON response cache.
+
+## HowLongToBeat access
+
+HowLongToBeat rejects non-browser clients with HTTP 403, and browsers cannot call it because it sends no CORS header. In the Android app the user reviews the site's consent screen in an in-app window (`ProviderConsentPlugin`). Afterwards the app reads that window's cookies and WebView User-Agent (`getHowLongToBeatSession`) and sends them with its own search, token and detail requests. The app never accepts consent on the user's behalf. In a PC browser HowLongToBeat search and details show a short "Android app only" message instead of making failing requests. If the site still refuses, the 403 message and consent dialog appear again.
+
 ## Cache and offline behavior
 
 `frontend/backend/features/discover.js` caches successful JSON GET responses in Cache Storage under `splitapp_savepoint_metadata`, with a fixed six-hour freshness window. If the network request fails, a stale cached JSON response is used unless `offlineFallback` is set to `none`. Requests with `key` or `apikey` query parameters are not cached. This excludes RAWG requests because its API key is sent in the query string. HowLongToBeat's POST search and HTML text requests also bypass this JSON GET cache.
