@@ -29,6 +29,10 @@
       <h2 class="explore-group-title">Metadata Sources</h2>
       <label class="search-box explore-source-search"><span aria-hidden="true">⌕</span><input id="explore-source-search" type="search" placeholder="Search metadata sources" autocomplete="off" aria-label="Search metadata sources"></label>
       <div class="explore-source-list">${sourceRows}</div><p class="explore-no-sources" id="explore-no-sources" hidden>No matching metadata sources.</p>
+      <h2 class="explore-group-title">Beta</h2>
+      <div class="explore-list-group">
+        <button class="explore-list-row" type="button" data-go="mix"><span class="explore-list-icon" style="background:#7c3aed"><i data-lucide="blend" aria-hidden="true"></i></span><span class="explore-list-body"><span class="explore-list-name">Mix fetch <em class="mix-beta">EXPERIMENTAL</em></span><small class="explore-list-sub">One list from all sources; details merged when you open or add a game.</small></span><i data-lucide="chevron-right" class="explore-list-chevron" aria-hidden="true"></i></button>
+      </div>
     </section>`;
   };
 })();

@@ -2,7 +2,7 @@
 (() => {
   const metadata = window.SplitAppMetadata;
   const appKey = metadata.appKey;
-  const clean = value => String(value ?? "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+  const clean = value => String(value ?? "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&quot;/g, "\"").replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
   const baseDetails = (source, item, data = {}) => ({
     source, title: data.title || item.title || "Untitled", description: clean(data.description || data.summary || item.description || ""),
     image: data.image || data.portraitImage || data.thumbnail || item.image || "",
@@ -14,6 +14,8 @@
     links: (data.links || []).filter(row => row?.url),
     sections: (data.sections || []).filter(section => section && Array.isArray(section.items) && section.items.length),
     purchase: data.purchase && typeof data.purchase === "object" ? data.purchase : null,
+    requirements: data.requirements && (data.requirements.minimum?.length || data.requirements.recommended?.length) ? { minimum: data.requirements.minimum || [], recommended: data.requirements.recommended || [] } : null,
+    languages: (data.languages || []).filter(row => row?.name),
     tags: (data.tags || []).map(String).filter(Boolean),
     badge: data.badge ? String(data.badge) : "",
     ratingBreakdown: (data.ratingBreakdown || []).filter(row => row && Number(row.percent) > 0),
@@ -39,10 +41,31 @@
       released: field(/^(Released|Release date|Published)$/) || "", metacritic: numberFrom(field(/^Metacritic$/)),
       rating: Number(out.rating) || 0, ratingCount: out.ratingCount || 0, ageRating: out.badge || "",
       alternativeNames: toList(field(/^Also known as$/)), tags: out.tags, stores: out.stores.map(row => row.name),
-      minRequirements: requirements(/^(PC minimum|Min\. )/), recommendedRequirements: requirements(/^PC recommended/), team
+      minRequirements: out.requirements ? out.requirements.minimum.map(([label, value]) => `${label}: ${value}`).join(" · ") : requirements(/^(PC minimum|Min\. )/), recommendedRequirements: out.requirements ? out.requirements.recommended.map(([label, value]) => `${label}: ${value}`).join(" · ") : requirements(/^PC recommended/), languages: out.languages.map(row => row.name), team
     };
   };
   const details = (source, item, data = {}) => { const out = baseDetails(source, item, data); out.facts = deriveFacts(out, source); return out; };
+  // Steam gives requirements as HTML lists; RAWG as plain "Label: value" lines. Both become [label, value] rows.
+  const requirementRows = (input, kind) => {
+    const text = String(input || ""); const rows = [];
+    if (/<li/i.test(text)) {
+      const re = /<li>\s*<strong>\s*([^<:]+?)\s*:?\s*<\/strong>\s*:?\s*([\s\S]*?)<\/li>/gi; let match;
+      while ((match = re.exec(text))) { const label = clean(match[1]), value = clean(match[2]); if (label && value) rows.push([label, value]); }
+      const intro = clean(text.split(/<ul/i)[0]).replace(new RegExp(`^${kind}:?\\s*`, "i"), "");
+      if (intro) rows.unshift(["Requires", intro]);
+    } else {
+      for (const raw of clean(text.replace(/<br\s*\/?>|\r/gi, "\n")).length ? text.replace(/<br\s*\/?>|\r/gi, "\n").split(/\n+/) : []) {
+        const line = clean(raw); if (!line || new RegExp(`^${kind}:?$`, "i").test(line)) continue;
+        const match = line.match(/^([A-Za-z][A-Za-z .\/+&-]{1,30}):\s*(.+)$/);
+        if (match && !new RegExp(`^${kind}$`, "i").test(match[1])) rows.push([match[1].trim(), match[2].trim()]); else rows.push(["Requires", line.replace(new RegExp(`^${kind}:?\\s*`, "i"), "")]);
+      }
+    }
+    return rows;
+  };
+  const steamLanguages = html => {
+    const [list] = String(html || "").split(/<br\s*\/?>/i);
+    return list.split(",").map(part => { const name = clean(part); return { name: name.replace(/\*$/, "").trim(), audio: /\*$/.test(name) }; }).filter(row => row.name);
+  };
   const value = input => {
     if (input == null) return "";
     if (typeof input === "string" || typeof input === "number" || typeof input === "boolean") return String(input);
@@ -84,7 +107,7 @@
       const shots=(d.screenshots||[]).slice(0,12).map((shot,index)=>({title:`Screenshot ${index+1}`,image:shot.image,url:shot.image}));
       const mr=d.minimum_system_requirements||{};
       const links=[]; if(d.freetogame_profile_url) links.push({label:"FreeToGame page",url:d.freetogame_profile_url}); if(d.game_url) links.push({label:"Play / download",url:d.game_url});
-      return details("freetogame",item,{title:d.title,description:d.description||d.short_description,image:d.thumbnail,portraitImage:d.thumbnail,landscapeImage:d.screenshots?.[0]?.image||d.thumbnail,year:d.release_date?.slice(0,4),url:d.game_url||d.freetogame_profile_url,links,sections:shots.length?[{title:"Screenshots",kind:"gallery",items:shots}]:[],tags:[d.genre,d.platform,"Free to play"].filter(Boolean),fields:[["Status",d.status],["Genre",d.genre],["Platform",d.platform],["Publisher",d.publisher],["Developer",d.developer],["Release date",d.release_date],["Price","Free to play"],["Min. OS",mr.os],["Min. processor",mr.processor],["Min. memory",mr.memory],["Min. graphics",mr.graphics],["Min. storage",mr.storage]].map(([label,value])=>({label,value}))});
+      return details("freetogame",item,{title:d.title,description:d.description||d.short_description,image:d.thumbnail,portraitImage:d.thumbnail,landscapeImage:d.screenshots?.[0]?.image||d.thumbnail,year:d.release_date?.slice(0,4),url:d.game_url||d.freetogame_profile_url,links,sections:shots.length?[{title:"Screenshots",kind:"gallery",items:shots}]:[],requirements:{minimum:[["OS",mr.os],["Processor",mr.processor],["Memory",mr.memory],["Graphics",mr.graphics],["Storage",mr.storage]].filter(([,v])=>v),recommended:[]},tags:[d.genre,d.platform,"Free to play"].filter(Boolean),fields:[["Status",d.status],["Genre",d.genre],["Platform",d.platform],["Publisher",d.publisher],["Developer",d.developer],["Release date",d.release_date],["Price","Free to play"]].map(([label,value])=>({label,value}))});
     },
     steamdb: async (item,s) => {
       const id=String(item.providerId).replace(/^app:/,""); const steamUrl=`https://store.steampowered.com/app/${id}/`, steamDbUrl=`https://steamdb.info/app/${id}/`;
@@ -97,7 +120,7 @@
       const req=html=>String(html||"").replace(/<br\s*\/?>/gi," · ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").replace(/^(Minimum|Recommended):\s*/i,"").trim();
       const pcReq=Array.isArray(d.pc_requirements)?{}:(d.pc_requirements||{});
       const sections=[]; if(shots.length) sections.push({title:"Screenshots",kind:"gallery",items:shots}); if(trailers.length) sections.push({title:"Trailers",kind:"list",items:trailers});
-      return details("steamdb",item,{title:d.name,description:d.short_description||d.about_the_game,image:d.capsule_image||d.header_image,portraitImage:d.capsule_image||d.capsule_imagev5||d.header_image,landscapeImage:d.header_image||d.background,year:d.release_date?.date?.match(/\d{4}/)?.[0],rating:d.metacritic?.score?d.metacritic.score/20:0,url:steamDbUrl,purchase:{url:steamUrl,price:d.price_overview?.final_formatted||(d.is_free?"Free":"Price unavailable"),isFree:Boolean(d.is_free)},links:[{label:"View in SteamDB",url:steamDbUrl},...(d.website?[{label:"Website",url:d.website}]:[]),...(d.metacritic?.url?[{label:"Metacritic",url:d.metacritic.url}]:[])],sections,tags:(d.categories||[]).map(x=>x.description).slice(0,14),badge:Number(d.required_age)>0?`Age ${d.required_age}+`:"",fields:[["Developer",d.developers],["Publisher",d.publishers],["Genres",d.genres?.map(x=>x.description)],["Release date",d.release_date?.date],["Platforms",Object.entries(d.platforms||{}).filter(([,v])=>v).map(([k])=>k)],["Price",d.price_overview?.final_formatted||(d.is_free?"Free":"")],["Discount",d.price_overview?.discount_percent?`${d.price_overview.discount_percent}% off`:""],["Metacritic",d.metacritic?.score],["Steam recommendations",d.recommendations?.total?d.recommendations.total.toLocaleString():""],["Achievements",d.achievements?.total],["Controller support",d.controller_support],["Languages",req(d.supported_languages).replace(/\*languages with full audio support/i,"").trim()],["DLC",dlc?`${dlc} available`:""],["PC minimum",req(pcReq.minimum)],["PC recommended",req(pcReq.recommended)]].map(([label,value])=>({label,value}))});
+      return details("steamdb",item,{title:d.name,description:d.short_description||d.about_the_game,image:d.capsule_image||d.header_image,portraitImage:d.capsule_image||d.capsule_imagev5||d.header_image,landscapeImage:d.header_image||d.background,year:d.release_date?.date?.match(/\d{4}/)?.[0],rating:d.metacritic?.score?d.metacritic.score/20:0,url:steamDbUrl,purchase:{url:steamUrl,price:d.price_overview?.final_formatted||(d.is_free?"Free":"Price unavailable"),isFree:Boolean(d.is_free)},links:[{label:"View in SteamDB",url:steamDbUrl},...(d.website?[{label:"Website",url:d.website}]:[]),...(d.metacritic?.url?[{label:"Metacritic",url:d.metacritic.url}]:[])],sections,requirements:{minimum:requirementRows(pcReq.minimum,"Minimum"),recommended:requirementRows(pcReq.recommended,"Recommended")},languages:steamLanguages(d.supported_languages),tags:(d.categories||[]).map(x=>x.description).slice(0,14),badge:Number(d.required_age)>0?`Age ${d.required_age}+`:"",fields:[["Developer",d.developers],["Publisher",d.publishers],["Genres",d.genres?.map(x=>x.description)],["Release date",d.release_date?.date],["Platforms",Object.entries(d.platforms||{}).filter(([,v])=>v).map(([k])=>k)],["Price",d.price_overview?.final_formatted||(d.is_free?"Free":"")],["Discount",d.price_overview?.discount_percent?`${d.price_overview.discount_percent}% off`:""],["Metacritic",d.metacritic?.score],["Steam recommendations",d.recommendations?.total?d.recommendations.total.toLocaleString():""],["Achievements",d.achievements?.total],["Controller support",d.controller_support],["DLC",dlc?`${dlc} available`:""]].map(([label,value])=>({label,value}))});
     },    howlongtobeat: async (item,s) => {
       const id=String(item.providerId).replace(/^howlongtobeat:/, "");
       if(!window.Capacitor?.isNativePlatform?.()) throw new Error("HowLongToBeat details only load in the Android app. Browsers block this site.");
@@ -152,7 +175,7 @@
       const pc=(d.platforms||[]).find(x=>x.platform?.slug==="pc")?.requirements||{};
       const req=text=>String(text||"").replace(/^(Minimum|Recommended):\s*/i,"").replace(/\s+/g," ").trim();
       const mc=(d.metacritic_platforms||[]).map(row=>`${row.platform?.name||row.platform?.platform?.name||""} ${row.metascore}`.trim()).join(" · ");
-      return details("rawg",item,{title:d.name,description:d.description_raw,image:item.image||d.background_image,portraitImage:item.image||d.background_image,landscapeImage,year:d.released?.slice(0,4),rating:d.rating,url:d.website||`https://rawg.io/games/${d.slug}`,sections,links,stores:storeLinks,tags:(d.tags||[]).filter(t=>!t.language||t.language==="eng").slice(0,16).map(x=>x.name),badge:d.esrb_rating?.name?`ESRB ${d.esrb_rating.name}`:"",ratingBreakdown,ratingCount:d.ratings_count,fields:[["Released",d.released],["Metacritic",d.metacritic],["Metacritic by platform",mc],["Genres",d.genres?.map(x=>x.name)],["Platforms",d.platforms?.map(x=>x.platform?.name)],["Developers",d.developers?.map(x=>x.name)],["Publishers",d.publishers?.map(x=>x.name)],["Also known as",d.alternative_names],["Playtime",d.playtime?`${d.playtime} hours average`:""],["Achievements",d.parent_achievements_count||d.achievements_count||""],["PC minimum",req(pc.minimum).length>30?req(pc.minimum):""],["PC recommended",req(pc.recommended).length>30?req(pc.recommended):""],["Website",d.website]].map(([label,value])=>({label,value}))});
+      return details("rawg",item,{title:d.name,description:d.description_raw,image:item.image||d.background_image,portraitImage:item.image||d.background_image,landscapeImage,year:d.released?.slice(0,4),rating:d.rating,url:d.website||`https://rawg.io/games/${d.slug}`,sections,links,stores:storeLinks,requirements:{minimum:requirementRows(pc.minimum,"Minimum"),recommended:requirementRows(pc.recommended,"Recommended")},tags:(d.tags||[]).filter(t=>!t.language||t.language==="eng").slice(0,16).map(x=>x.name),badge:d.esrb_rating?.name?`ESRB ${d.esrb_rating.name}`:"",ratingBreakdown,ratingCount:d.ratings_count,fields:[["Released",d.released],["Metacritic",d.metacritic],["Metacritic by platform",mc],["Genres",d.genres?.map(x=>x.name)],["Platforms",d.platforms?.map(x=>x.platform?.name)],["Developers",d.developers?.map(x=>x.name)],["Publishers",d.publishers?.map(x=>x.name)],["Also known as",d.alternative_names],["Playtime",d.playtime?`${d.playtime} hours average`:""],["Achievements",d.parent_achievements_count||d.achievements_count||""],["Website",d.website]].map(([label,value])=>({label,value}))});
     },
   };
   const load = async (item, settings = {}) => {

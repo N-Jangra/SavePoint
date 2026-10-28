@@ -26,6 +26,10 @@ Every loader returns the same detail shape (`schemaVersion: 2`): title, descript
 
 When several providers describe the same game, facts merge: a later provider never blanks out a value an earlier one supplied. Statistics → Time to beat uses `mainHours` (or RAWG `averageHours`) and `priceValue`; **Fetch details for N games** on that page loads facts for games whose details were never opened.
 
+Details also carry two structured tables: `requirements` (`minimum` / `recommended`, each a list of `[label, value]` rows parsed from Steam HTML lists, RAWG text lines or FreeToGame fields) and `languages` (`{ name, audio }` from Steam). The details page shows them as tables; `facts` keeps flattened text and language names.
+
+Play time comes from HowLongToBeat (`mainHours`, `extrasHours`, `completionistHours`) or RAWG (`averageHours`); Steam, FreeToGame and Wikidata do not provide hours. `SplitAppMix.hours(title)` looks up only the hours (HowLongToBeat in the Android app, then RAWG) and Statistics uses it for games that lack them. Statistics treats a game's length as `mainHours`, else `averageHours`.
+
 ### Extras by provider
 
 - **RAWG:** age rating, tags, player-rating breakdown, Metacritic overall and per platform, store links, same-series and editions/DLC carousels, achievements (collapsible), development team (collapsible), alternative names, PC requirements when substantive. Extra lists are fetched in parallel; a failed extra never blocks the page.

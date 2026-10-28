@@ -29,9 +29,9 @@ A launch screen (controller icon, name, "Loading your collection", pulsing dots)
 - **Discover:** when nothing is searched it shows suggestion rows from the enabled sources: Steam (top sellers, new, on sale, coming soon), FreeToGame (popular), RAWG (trending, critically acclaimed, upcoming — needs a key) and any custom source that has a suggestions URL. Searching replaces the rows with results; each card opens details or adds the game. Opened from Explore, search is limited to one source.
 - **Add Game:** create or edit a game: metadata auto-fill search, gallery or camera cover, title, description, status, playtime and goal steppers, star rating.
 - **Details:** hero with cover and blurred backdrop, status and age-rating badges, a Buy strip, playtime card with −1h/+1h/+5h buttons, status pills and star rating (changes apply immediately), then provider data: tags, player-rating bar, where to buy, overview, facts table, links, screenshots, related games (carousels), achievements and team (collapsible). Sections shown depend on the provider.
-- **Explore:** Timeline, Statistics and the enabled metadata sources.
+- **Explore:** Timeline, Statistics, the enabled metadata sources and a **Beta** group with **Mix fetch** (see below).
 - **Timeline:** status changes to Dropped, Completed, On Hold and Playing, grouped by month, each with the game's cover and a small status icon; filter by week, month, month/year or title.
-- **Statistics:** completion rate, status cards (tap to open Home filtered), **Time to beat** (hours logged, whole-library hours, hours left to play, library price, top five longest games, weeks left at one hour a day), status breakdown, 7-day activity and top ratings.
+- **Statistics:** completion rate, status cards (tap to open Home filtered), **Time to beat** (hours logged, whole-library hours, hours left to play, library price, top five longest games, weeks left at one hour a day), status breakdown, an **Activity** chart with a Week (7 days) / Month (30 days) switch and the update count printed above every bar, and top ratings.
 - **Settings:** see below.
 
 ## Settings
@@ -42,6 +42,10 @@ The Settings index lists **Personalize** (Appearance, Dashboard, Tracking), **Yo
 - **Storage:** estimated library size, cache usage, cache clearing, and a red "Delete saved data" card (clear tracked data, factory reset). Back returns to the page you came from (Settings or Backups & sync).
 - **App Info:** app icon, version, platform, library size, enabled sources and short feature notes.
 - **Logcat:** error/warning summary with a Clear button and a list of diagnostics.
+
+### Mix fetch (experimental)
+
+**Explore → Beta → Mix fetch** (`#mix`) searches every enabled source and lists the unique games in one plain list, each with chips for the sources that know it. Opening a game (a details preview) or tapping *Add* fetches details from all enabled sources that match the title and merges them into one record (`metadataSource: "mix"`, `providerId` = normalized title). Merging: longest description, first image/rating/link, list fields (genres, platforms, developers, publishers, tags, aliases) combined, other fields first non-empty, screenshots/series/achievements/team sections combined, links and stores de-duplicated, saved facts first non-empty. It lives in `backend/features/mix.js` and `pages/mix.js` and is separate from normal Discover and details.
 
 ### Metadata Sources and custom sources
 

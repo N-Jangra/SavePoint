@@ -8,7 +8,7 @@ SavePoint/
 │   ├── app-config.js              # SavePoint identity and game category
 │   ├── pages/                      # screen renderers
 │   ├── components/                 # shared UI
-│   ├── backend/                    # storage bridge and metadata modules
+│   ├── backend/                    # storage bridge and metadata modules (incl. features/mix.js, experimental)
 │   └── styles/                     # theme, details, ios-ui.css (iOS look + multi-screen), motion.css (animations, low-memory mode)
 ├── android/                        # Capacitor Android project and native plugins
 ├── docs/                           # technical documentation

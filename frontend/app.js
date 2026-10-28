@@ -2,7 +2,7 @@
   "use strict";
 
   const config = window.APP_CONFIG;
-  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", details: "Details", add: "Add Game", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
+  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add Game", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
   const navItems = [
     { key: "dashboard", label: "Home", icon: "⌂", locked: true },
     { key: "discover", label: "Discover", icon: "✧" },
@@ -105,7 +105,7 @@
   let page = initialRoute[0] === "search" ? "dashboard" : initialRoute[0] in titles ? initialRoute[0] : "dashboard";
   let settingsGroup = page === "settings" ? (initialRoute[1] === "manage-backups" ? "backups" : initialRoute[1] || null) : null;
   let settingsParam = initialRoute[0] === "settings" ? new URLSearchParams(initialHashQuery).get("id") || "" : "", settingsFrom = "", renderedSettingsGroup;
-  let renderedRoute = null, inAppNav = false;
+  let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, statsRange = "week";
   let metadataSourceFilter = "all";
   let entryDraftId = null, addReturnPage = "dashboard";
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
@@ -265,9 +265,9 @@
   function syncPageNavigation() {
     document.body.dataset.page = page;
     document.title = `${config.name} · ${page === "settings" && settingsGroup ? settingsGroup : titles[page]}`;
-    $$("#bottom-bar .nav-button").forEach(button => button.classList.toggle("active", button.dataset.page === page));
+    $$("#bottom-bar .nav-button").forEach(button => button.classList.toggle("active", button.dataset.page === (page === "mix" ? "explore" : page)));
     $$("#sidebar-nav .sidebar-nav-button").forEach(button => {
-      const active = button.dataset.sidebarPage === page;
+      const active = button.dataset.sidebarPage === (page === "mix" ? "explore" : page);
       button.classList.toggle("active", active);
       button.setAttribute("aria-current", String(active ? "page" : "false"));
     });
@@ -297,7 +297,7 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardGroupItems(groupKey) {
@@ -380,6 +380,8 @@
     content.innerHTML = window.SplitAppPages[page](pageContext());
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
     else if (page === "discover" && !discoverQuery) loadDiscoverSuggestions();
+    if (page === "mix") paintMixResults();
+    if (page === "statistics") { const chart = $(".stats-activity-chart-month"); if (chart) chart.scrollLeft = chart.scrollWidth; }
     if (preservePageState) {
       const controls = [...content.querySelectorAll("input, textarea, select")];
       previousControls.forEach((saved, index) => {
@@ -967,7 +969,16 @@
   function addDiscoverResult(result, origin = "Discover") {
     if (!result) return null;
     const existing = items.find(item => item.category === result.category && item.title.toLowerCase() === result.title.toLowerCase());
-    if (existing) { toast("That entry is already in your library."); return existing; }
+    if (existing) {
+      // A Mix add of a game that was saved from a single source upgrades that entry to a Mix entry.
+      if (result.source === "mix" && existing.metadataSource !== "mix") {
+        const from = window.SplitAppSources.list().find(source => source.key === existing.metadataSource)?.name || existing.metadataSource || "a manual entry";
+        if (window.confirm(`“${existing.title}” is already in your library (${from}). Convert it to a Mix entry that merges every enabled source?`)) {
+          Object.assign(existing, { metadataSource: "mix", source: "mix", providerId: result.providerId, updatedAt: Date.now() }); persist(); toast("Converted to a Mix entry."); return existing;
+        }
+      }
+      toast("That entry is already in your library."); return existing;
+    }
     const item = { ...result, metadataSource: result.source, id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
     items.unshift(item); if (["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist(); toast("Added to your library."); return item;
   }
@@ -979,6 +990,56 @@
       if (!empty || merged[key] == null) merged[key] = value;
     }
     return merged;
+  }
+  // ---- Mix fetch (experimental) ----
+  const mixChips = keys => (keys || []).map(key => window.SplitAppSources.list().find(source => source.key === key)?.name || key).map(name => `<span class="mix-chip">${esc(name)}</span>`).join("");
+  function paintMixResults() {
+    const box = $("#mix-results"), message = $("#mix-message"); if (!box) return;
+    const rows = mixCache?.results || [];
+    box.innerHTML = rows.map((row, index) => `<li class="mix-row" data-mix-open="${index}" role="button" tabindex="0"><span class="mix-row-copy"><strong>${esc(row.title)}</strong><small>${esc(row.year || "")}</small><span class="mix-row-sources">${mixChips(row.sources)}</span></span><button type="button" class="button primary small" data-mix-add="${index}" aria-label="Add ${esc(row.title)}">Add</button></li>`).join("");
+    if (message && mixCache && !message.textContent) message.textContent = rows.length ? `${rows.length} games · open one to merge details from all sources.` : "No games found.";
+  }
+  async function runMixSearch() {
+    const query = ($("#mix-query")?.value || "").trim(), message = $("#mix-message"), box = $("#mix-results");
+    if (!query) { if (message) message.textContent = "Type a title to search."; return; }
+    const requestId = ++mixRequest; if (box) box.innerHTML = ""; if (message) message.textContent = "Searching all enabled sources…";
+    try {
+      const results = await window.SplitAppMix.search(query, detailSettings());
+      if (requestId !== mixRequest || page !== "mix") return;
+      mixCache = { query, results }; if (message) message.textContent = ""; paintMixResults();
+    } catch (error) { if (requestId === mixRequest && message) message.textContent = error?.message || "Search failed."; }
+  }
+  const mixItem = row => ({ title: row.title, category: config.categories[0].key, source: "mix", metadataSource: "mix", providerId: row.key, image: row.image || "", year: row.year || "", description: "", url: "" });
+  function openMixDetails(row) {
+    detailReturnPage = "mix"; detailPreview = mixItem(row); detailEditMode = false; detailItemId = null; detailData = null; detailError = "";
+    goto("details"); loadDetails();
+  }
+  async function addMixResult(row) {
+    const saved = addDiscoverResult(mixItem(row)); if (!saved) return;
+    toast("Added. Merging details from all sources…");
+    try {
+      const loaded = await window.SplitAppDetails.load(saved, detailSettings());
+      saved.metadataSource = "mix"; saved.source = "mix"; saved.mixSources = loaded.mixSources || [];
+      saved.cachedDetails = loaded; saved.facts = mergeFacts(saved.facts, loaded.facts);
+      saved.description = loaded.description || saved.description; saved.year = loaded.year || saved.year; saved.image = loaded.portraitImage || loaded.image || saved.image;
+      saved.updatedAt = Date.now(); persist(); toast(`Merged details from ${loaded.mixSources?.length || 0} sources.`);
+    } catch (error) { recordLog("warning", `Mix fetch could not merge details for ${saved.title}: ${error?.message || error}`); toast("Added. Details could not be merged yet."); }
+  }
+  // Looks up play time (HowLongToBeat in the Android app, then RAWG) for games whose saved source has no hours.
+  async function findMissingHours(button) {
+    if (factsRunning) return; factsRunning = true; button.disabled = true;
+    const hasHours = item => Number(item.facts?.mainHours) || Number(item.facts?.averageHours);
+    const pending = items.filter(item => !hasHours(item));
+    let found = 0;
+    for (const [index, item] of pending.entries()) {
+      button.textContent = `Looking up ${index + 1} of ${pending.length}…`;
+      try {
+        const hours = await window.SplitAppMix.hours(item.title, detailSettings());
+        if (hours) { item.facts = mergeFacts(item.facts, hours); item.updatedAt = Date.now(); found += 1; persist(); }
+      } catch (error) { recordLog("warning", `Play-time lookup failed for ${item.title}: ${error?.message || error}`); }
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    factsRunning = false; render(); toast(found ? `Found play times for ${found} of ${pending.length} games.` : "No play times found. Enable HowLongToBeat (Android) or add a RAWG key.");
   }
   // Saves provider details (play time, price, team, requirements, images) for games that never opened their details page.
   let factsRunning = false;
@@ -1057,6 +1118,7 @@
         detailData = loaded;
         if (!detailPreview) {
           item.cachedDetails = loaded;
+          if (item.metadataSource === "mix") item.mixSources = loaded.mixSources || item.mixSources;
           item.facts = mergeFacts(item.facts, loaded.facts);
           item.description = loaded.description || item.description;
           item.year = loaded.year || item.year;
@@ -1342,12 +1404,21 @@
     if (event.target.id === "detail-image-modal") { closePopup(event.target); return; }
     const statsFilter = event.target.closest("[data-stats-filter]");
     if (statsFilter) { setPreference("dashboardStatusFilter", statsFilter.dataset.statsFilter); goto("dashboard"); return; }
+    if (event.target.closest("[data-mix-search]")) { runMixSearch(); return; }
+    const mixAdd = event.target.closest("[data-mix-add]");
+    if (mixAdd) { event.stopPropagation(); const row = mixCache?.results?.[Number(mixAdd.dataset.mixAdd)]; if (row) addMixResult(row); return; }
+    const mixOpen = event.target.closest("[data-mix-open]");
+    if (mixOpen) { const row = mixCache?.results?.[Number(mixOpen.dataset.mixOpen)]; if (row) openMixDetails(row); return; }
     const backLink = event.target.closest("[data-back]");
     if (backLink && inAppNav) { event.preventDefault(); window.history.back(); return; }
     const csInsert = event.target.closest("[data-cs-insert]");
     if (csInsert) { const input = $("#custom-source-form")?.elements.searchUrl; if (input) { const at = input.selectionStart ?? input.value.length; input.setRangeText(csInsert.dataset.csInsert, at, input.selectionEnd ?? at, "end"); input.focus(); } return; }
     if (event.target.closest("[data-custom-source-test]")) { testCustomSourceForm(); return; }
     if (event.target.closest("[data-custom-source-delete]")) { deleteCustomSource(); return; }
+    const rangeButton = event.target.closest("[data-stats-range]");
+    if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; render(); return; }
+    const findHours = event.target.closest("[data-stats-find-hours]");
+    if (findHours) { findMissingHours(findHours); return; }
     const fetchFacts = event.target.closest("[data-stats-fetch-facts]");
     if (fetchFacts) { fetchMissingFacts(fetchFacts); return; }
     const adjust = event.target.closest("[data-adjust-progress]");
@@ -1629,6 +1700,7 @@
     if (next === "details") { const id = detailIdFromQuery(hashQuery); if (id && id !== detailItemId) { detailItemId = id; detailPreview = null; detailData = null; detailError = ""; render(); syncPageNavigation(); loadDetails(); return; } }
     render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
   }
+  document.addEventListener("keydown", event => { if (event.key === "Enter" && event.target?.id === "mix-query") { event.preventDefault(); runMixSearch(); } });
   window.addEventListener("popstate", event => {
     if (skipNextPop) { skipNextPop = false; event.stopImmediatePropagation(); return; }
     const open = document.querySelector("dialog[open]");

@@ -25,10 +25,17 @@ First tracked release of SavePoint: a local-first game library and playtime trac
 - Details: −1h/+1h/+5h playtime buttons, status pills, animated star rating, buy strip, tags, rating bar, where-to-buy, carousels, collapsible achievements and team.
 - Add page: auto-fill metadata search card, cover/title/description card, status pills, playtime and goal steppers, star picker.
 - Timeline entries show the game's cover with a status icon.
+- Statistics *Activity* chart has a **Week / Month** switch (7 or 30 days); every bar shows its update count above it, so counts are visible on touch screens without hovering. The month view scrolls sideways and opens at today.
 - Statistics *Time to beat* panel and **Fetch details for N games** for games never opened.
 - Discover suggestion rows with loading placeholders.
 - Bottom Menu Icons page with per-destination icon carousels (CueMark style).
 - Settings: Show scrollbars and Show sidebar toggles; Storage, App Info and Logcat reachable directly from the Settings index.
+
+- Details sections follow a fixed order: hero and your playtime/tracking cards, screenshots (and trailers), overview, where to buy, tags, player ratings, details, system requirements, achievements, languages, links, same series and editions, development team.
+- Details: **System requirements** table (Minimum / Recommended, one row per OS, processor, memory, graphics, DirectX, storage, notes) and a collapsible **Languages** table (interface and full-audio ticks), parsed from Steam, RAWG and FreeToGame; also included in merged Mix fetch details.
+
+#### Mix fetch (beta)
+- **Explore → Beta → Mix fetch** (`#mix`): experimental page that searches every enabled source and shows one plain list (the same game from several sources is one row with a chip per source). Opening or adding a game fetches details from all enabled sources and merges them: descriptions, facts, tags, links, stores, screenshots, related games, achievements and team, with a "Merged from" field. Kept separate from normal Discover while it is experimental. Games added through Mix are saved as Mix entries (with the list of merged sources); adding a game that is already in the library from a single source offers to convert it to a Mix entry.
 
 #### Custom sources
 - **Custom metadata sources:** add any JSON search API on a guided three-step page (Connect, Read the results, More details) with a Test button. Custom sources join search, Discover suggestions and details, can be reordered and switched off, and are stored with preferences.
@@ -60,6 +67,7 @@ First tracked release of SavePoint: a local-first game library and playtime trac
 - Version set to 0.1.0 (app config, npm package, Android `versionName`).
 
 ### Fixed
+- Statistics → Time to beat: "Left to play" now counts only unfinished games with data, the progress bar compares like with like, "1 weeks" is gone (days under two weeks, proper plurals, "Nothing left to play"), and games without play-time data are called out instead of silently counted as zero. Added **Find play times for N games** (HowLongToBeat in the Android app, then RAWG) for games saved from sources that have no hours, such as Steam.
 - Filter and status chips applying the wrong value after a re-render (form state restore overwrote radio values).
 - Taps on Discover cards reloading the page and wiping results; returning from Details keeps the last search.
 - Details page overflowing the screen width (grid items now shrink; galleries scroll inside their card).
