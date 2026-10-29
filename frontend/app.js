@@ -13,7 +13,7 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "light", textSize: "normal", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6366f1", categoryColors: {},
+    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "tiles", imageStorage: "all", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6366f1", categoryColors: {},
     showSidebar: true, showScrollbars: false, bottomBarStyle: "box", bottomBarCorners: "round", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: navKeys, visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
     metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg"], customSources: [],
@@ -124,6 +124,7 @@
   let activeCategory = prefs.dashboardDefaultCategory === "remember" ? "all" : prefs.dashboardDefaultCategory || "all";
   let toastTimer;
   const detailIdFromQuery = query => { const raw = String(query || ""); return raw.startsWith("=") ? decodeURIComponent(raw.slice(1)) : new URLSearchParams(raw).get("id") || ""; };
+  let detailTab = "";
   let detailItemId = initialRoute[0] === "details" ? detailIdFromQuery(initialHashQuery) || null : null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "dashboard", detailRequest = 0;
   let detailImagePosition = 0;
   const dashboardPageSize = 40;
@@ -144,6 +145,20 @@
   let dialogEntries = 0, skipNextPop = false, closingFromPop = false;
   function pushDialogEntry() { try { window.history.pushState({ dialog: true }, "", location.href); dialogEntries += 1; } catch (_) {} }
   function popDialogEntry() { if (dialogEntries > 0 && window.history.state?.dialog) { dialogEntries -= 1; skipNextPop = true; window.history.back(); } }
+  // In-app confirmation sheet (replaces the browser's window.confirm). Resolves true or false.
+  function appConfirm(message, { title = "Are you sure?", confirmLabel = "Confirm", danger = false } = {}) {
+    return new Promise(resolve => {
+      let dialog = document.getElementById("app-confirm");
+      if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "app-confirm"; dialog.className = "app-confirm"; dialog.setAttribute("aria-labelledby", "app-confirm-title"); document.body.appendChild(dialog); }
+      dialog.innerHTML = `<div class="app-confirm-card"><h2 id="app-confirm-title">${esc(title)}</h2><p>${esc(message)}</p><div class="app-confirm-actions"><button type="button" class="button secondary" data-confirm="no">Cancel</button><button type="button" class="button ${danger ? "danger" : "primary"}" data-confirm="yes">${esc(confirmLabel)}</button></div></div>`;
+      let settled = false;
+      const finish = value => { if (settled) return; settled = true; try { dialog.close(); } catch (_) {} dialog.removeAttribute("open"); resolve(value); };
+      dialog.onclose = () => finish(false); dialog.oncancel = () => finish(false);
+      dialog.onclick = event => { const choice = event.target.closest("[data-confirm]"); if (choice) finish(choice.dataset.confirm === "yes"); else if (event.target === dialog) finish(false); };
+      try { dialog.showModal(); } catch (_) { dialog.setAttribute("open", ""); }
+      dialog.querySelector('[data-confirm="yes"]')?.focus();
+    });
+  }
   function showPopup(dialog, { silent = false } = {}) {
     if (!dialog) return;
     if (typeof dialog.showModal === "function") {
@@ -191,6 +206,20 @@
     document.body.style.background = palette.background;
     document.body.style.color = palette.text;
     const root = document.documentElement;
+    // Text-safe versions of the accent and status colors for this theme's surfaces (nudged lighter on dark themes, darker on light ones until they read clearly).
+    const toRgb = hex => { const m = String(hex).replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i) || String(hex).replace("#", "").match(/^([0-9a-f])([0-9a-f])([0-9a-f])$/i)?.slice(1).map(x => x + x).reduce((acc, x, i) => (acc[i + 1] = x, acc), []); return m ? [1, 2, 3].map(i => parseInt(m[i], 16)) : [99, 102, 241]; };
+    const relLum = ([r, g, b]) => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
+    const contrast = (a, b) => { const [hi, lo] = [relLum(a), relLum(b)].sort((x, y) => y - x); return (hi + .05) / (lo + .05); };
+    const readable = hex => {
+      let color = toRgb(hex); const surfaces = [palette.surface, palette.surface2, palette.shell].map(toRgb), target = palette.mode === "dark" ? [255, 255, 255] : [0, 0, 0];
+      for (let step = 0; step <= 20 && Math.min(...surfaces.map(surface => contrast(color, surface))) < 4.5; step++) color = color.map((v, i) => Math.round(v + (target[i] - v) * .12));
+      return `rgb(${color.join(",")})`;
+    };
+    document.body.style.setProperty("--accent-text", readable(prefs.mainColor || "#6657d9"));
+    document.body.style.setProperty("--warn-text", readable("#d97706"));
+    document.body.style.setProperty("--danger-text", readable("#dc3545"));
+    document.body.style.setProperty("--ok-text", readable("#16a34a"));
+    document.body.style.setProperty("--info-text", readable("#0ea5e9"));
     document.body.style.setProperty("--legacy-bg", palette.shell);
     document.body.style.setProperty("--legacy-card", palette.surface);
     document.body.style.setProperty("--legacy-text", palette.text);
@@ -214,6 +243,8 @@
     document.body.dataset.sidebar = prefs.showSidebar ? "shown" : "hidden";
     document.documentElement.dataset.showScrollbars = prefs.showScrollbars === true ? "true" : "false";
     document.body.dataset.barLayout = prefs.bottomBarLayout;
+    document.body.dataset.iconStyle = prefs.iconStyle === "inline" ? "inline" : "tiles";
+    window.SplitAppDates?.setFormat(prefs.dateFormat); window.SplitAppBackend?.setImageStorage?.(prefs.imageStorage);
     $("#bottom-bar").dataset.bg = prefs.bottomBarBackground;
     document.body.dataset.barBackground = prefs.bottomBarBackground;
     document.documentElement.style.setProperty("--accent", prefs.mainColor || "#6657d9");
@@ -302,7 +333,7 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardGroupItems(groupKey) {
@@ -707,11 +738,11 @@
       await clearAppCaches(action); render(); toast("Temporary cache cleared."); return;
     }
     if (action === "clear-data") {
-      if (!confirm("Clear all tracked games and activity history from this device?")) return;
+      if (!(await appConfirm("Clear all tracked games and activity history from this device?", { title: "Clear tracked data", confirmLabel: "Clear", danger: true }))) return;
       items = []; history = []; persist(); render(); toast("Tracked data cleared."); return;
     }
     if (action === "factory-reset") {
-      if (!confirm("Factory reset SavePoint? This removes your library, settings, and app cache from this device.")) return;
+      if (!(await appConfirm("Factory reset SavePoint? This removes your library, settings, and app cache from this device.", { title: "Factory reset", confirmLabel: "Reset", danger: true }))) return;
       await clearAppCaches("temporary");
       localStorage.removeItem(`${storageKey}_log`);
       try { await window.Capacitor?.Plugins?.EncryptedStore?.clearState?.(); } catch (_) {}
@@ -842,18 +873,18 @@
     if (!form?.isConnected || !form.reportValidity()) return;
     saveItem({ currentTarget: form });
   }
-  function updateProgress(id) {
+  async function updateProgress(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
     const step = Math.max(1, Number(prefs.progressIncrement) || 1); item.progress = (Number(item.progress) || 0) + step; item.updatedAt = Date.now();
     const previousStatus = item.status;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
-    if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && window.confirm(`Mark “${item.title}” completed?`)) item.status = "Completed";
+    if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = "Completed";
     if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     persist(); render(); toast("Progress updated.");
   }
-  function deleteItem(id) {
+  async function deleteItem(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
-    if (!window.confirm(`Delete “${item.title}” from your library?`)) return;
+    if (!(await appConfirm(`Delete “${item.title}” from your library?`, { title: "Delete title", confirmLabel: "Delete", danger: true }))) return;
     if (prefs.backupBeforeDestructive) exportList();
     items = items.filter(entry => entry.id !== id);
     persist(); entryDraftId = null; goto(addReturnPage); toast("Entry deleted.");
@@ -981,9 +1012,10 @@
       // A Mix add of a game that was saved from a single source upgrades that entry to a Mix entry.
       if (result.source === "mix" && existing.metadataSource !== "mix") {
         const from = window.SplitAppSources.list().find(source => source.key === existing.metadataSource)?.name || existing.metadataSource || "a manual entry";
-        if (window.confirm(`“${existing.title}” is already in your library (${from}). Convert it to a Mix entry that merges every enabled source?`)) {
-          Object.assign(existing, { metadataSource: "mix", source: "mix", providerId: result.providerId, updatedAt: Date.now() }); persist(); toast("Converted to a Mix entry."); return existing;
-        }
+        appConfirm(`“${existing.title}” is already in your library (${from}). Convert it to a Mix entry that merges every enabled source?`, { title: "Convert to Mix entry", confirmLabel: "Convert" }).then(ok => {
+          if (ok) { Object.assign(existing, { metadataSource: "mix", source: "mix", providerId: result.providerId, updatedAt: Date.now() }); persist(); render(); toast("Converted to a Mix entry."); }
+        });
+        return existing;
       }
       toast("That entry is already in your library."); return existing;
     }
@@ -1019,6 +1051,7 @@
   }
   const mixItem = row => ({ title: row.title, category: config.categories[0].key, source: "mix", metadataSource: "mix", providerId: row.key, image: row.image || "", year: row.year || "", description: "", url: "" });
   function openMixDetails(row) {
+    detailTab = "";
     detailReturnPage = "mix"; detailPreview = mixItem(row); detailEditMode = false; detailItemId = null; detailData = null; detailError = "";
     goto("details"); loadDetails();
   }
@@ -1101,8 +1134,8 @@
     prefs.metadataSources[`custom:${config.id}`] = prefs.metadataSources[`custom:${config.id}`] !== false;
     persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast(index >= 0 ? "Custom source updated." : "Custom source added.");
   }
-  function deleteCustomSource() {
-    const id = $("#custom-source-form")?.elements.sourceId.value; if (!id || !window.confirm("Delete this custom source?")) return;
+  async function deleteCustomSource() {
+    const id = $("#custom-source-form")?.elements.sourceId.value; if (!id || !(await appConfirm("Delete this custom source?", { title: "Delete source", confirmLabel: "Delete", danger: true }))) return;
     prefs.customSources = (prefs.customSources || []).filter(row => row.id !== id);
     delete prefs.metadataSources[`custom:${id}`]; refreshSourceRegistry();
     persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
@@ -1179,7 +1212,7 @@
     if (!dialog) {
       dialog = document.createElement("dialog"); dialog.id = "item-action-dialog"; dialog.className = "ios-action-sheet";
       document.body.appendChild(dialog);
-      dialog.addEventListener("click", event => {
+      dialog.addEventListener("click", async event => {
         if (event.target === dialog) { closePopup(dialog); return; }
         const button = event.target.closest("[data-sheet-action]"); if (!button) return;
         const target = items.find(entry => entry.id === dialog.dataset.itemId);
@@ -1188,7 +1221,7 @@
         const action = button.dataset.sheetAction;
         if (action === "details") openDetails(target.id);
         else if (action === "remove") {
-          if (!window.confirm(`Remove “${target.title}” from your collection?`)) return;
+          if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
           if (prefs.backupBeforeDestructive) exportList();
           items = items.filter(entry => entry.id !== target.id); persist(); render(); toast("Entry removed.");
         } else if (action !== "cancel") { setItemStatus(target, action); render(); toast(`Marked as ${action}.`); }
@@ -1199,8 +1232,8 @@
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
   }
-  function openDetails(id) { detailReturnPage = page === "details" ? detailReturnPage : page; detailPreview = null; detailEditMode = false; detailItemId = id; detailData = null; detailError = ""; goto("details"); loadDetails(); }
-  function openDiscoverDetails(result) { if (!result) return; detailReturnPage = "discover"; detailPreview = { ...result, metadataSource: result.source }; detailEditMode = false; detailItemId = null; detailData = null; detailError = ""; goto("details"); loadDetails(); }
+  function openDetails(id) { detailTab = ""; detailReturnPage = page === "details" ? detailReturnPage : page; detailPreview = null; detailEditMode = false; detailItemId = id; detailData = null; detailError = ""; goto("details"); loadDetails(); }
+  function openDiscoverDetails(result) { if (!result) return; detailTab = ""; detailReturnPage = "discover"; detailPreview = { ...result, metadataSource: result.source }; detailEditMode = false; detailItemId = null; detailData = null; detailError = ""; goto("details"); loadDetails(); }
   function showDetailImage(position) {
     const dialog = $("#detail-image-modal");
     const triggers = $$("#page-content [data-detail-image-src]");
@@ -1254,11 +1287,16 @@
       bottomBarCorners: { round: "panels-top-left", sharp: "square" },
       bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid" },
       bottomBarLayout: { spread: "align-horizontal-space-between", center: "align-horizontal-justify-center", left: "align-horizontal-justify-start" },
-      dashboardView: { cards: "layout-grid", list: "list" },
+      dashboardView: { list: "list", "compact-list": "align-justify", grid: "layout-grid", "detailed-grid": "layout-dashboard", "compact-grid": "grid-3x3", "large-grid": "square", timeline: "calendar-days" },
+      dashboardDefaultCategory: { remember: "history", all: "layers", game: "gamepad-2" },
+      defaultStatus: { Backlog: "bookmark", Playing: "play", "On Hold": "pause", Dropped: "circle-x", Completed: "circle-check" },
+      dateFormat: { auto: "globe", dmy: "calendar", mdy: "calendar", iso: "calendar-days", long: "calendar-check" },
+      iconStyle: { tiles: "layout-grid", inline: "list" },
+      imageStorage: { all: "images", posters: "image", online: "cloud-off" },
       cardCorners: { rounded: "circle", soft: "squircle", square: "square" },
       dashboardDensity: { comfortable: "rows-3", compact: "rows-2" },
       dashboardGroupBy: { none: "list", status: "circle-check", category: "folders", release: "calendar-days" },
-      dashboardSort: { title: "arrow-down-a-z", recent: "clock-3", rating: "star" },
+      dashboardSort: { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "rating-desc": "star", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-a-z", "alphabetical-desc": "arrow-up-z-a" },
       ratingFormat: { "5-stars": "star", "10-point": "chart-no-axes-column-increasing" },
       automaticCompletion: { automatic: "refresh-cw", ask: "message-circle-question", manual: "hand" },
       defaultStatus: { Backlog: "archive", Playing: "gamepad-2", "On Hold": "circle-pause", Dropped: "circle-x", Completed: "circle-check" },
@@ -1379,7 +1417,7 @@
     toast("Replaying animations.");
   }
   function resetAppearance() {
-    ["theme", "textSize", "font", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
+    ["theme", "textSize", "font", "dateFormat", "iconStyle", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
     prefs.categoryColors = {};
     prefs.navIcons = { ...prefsDefaults.navIcons };
     prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
@@ -1538,6 +1576,13 @@
     }
     const episode = event.target.closest("[data-episode-toggle]");
     if (episode) { toggleEpisodeWatched(detailItemId, episode.dataset.episodeId, episode.dataset.episodeTitle || "Episode"); return; }
+    const tabButton = event.target.closest("[data-detail-tab]");
+    if (tabButton) {
+      detailTab = tabButton.dataset.detailTab; const root = tabButton.closest(".detail-page");
+      root.querySelectorAll("[data-detail-tab]").forEach(button => { const on = button === tabButton; button.classList.toggle("active", on); button.setAttribute("aria-selected", String(on)); });
+      root.querySelectorAll("[data-detail-panel]").forEach(panel => { panel.hidden = panel.dataset.detailPanel !== detailTab; });
+      return;
+    }
     const action = event.target.closest("[data-action]");
     if (action) { if (action.dataset.action === "add") openItem(); else if (action.dataset.action === "progress") updateProgress(action.dataset.id); else if (action.dataset.action === "edit") { if (page === "details") { detailEditMode = true; render(); } else openEdit(action.dataset.id); } else if (action.dataset.action === "cancel-detail-edit") { detailEditMode = false; render(); } else if (action.dataset.action === "details") openDetails(action.dataset.id); else if (action.dataset.action === "refresh-details") loadDetails(); else if (action.dataset.action === "delete-detail") requestDeleteDetails(action.dataset.id); else if (action.dataset.action === "save-detail-item") { const saved = addDiscoverResult(detailPreview); if (saved) { detailPreview = null; detailItemId = saved.id; detailData = null; loadDetails(); } } return; }
     const deleteButton = event.target.closest("#delete-item"); if (deleteButton) { deleteItem(deleteButton.dataset.id); return; }
@@ -1724,6 +1769,44 @@
     goto(button.dataset.sidebarPage);
   });
   $("#header-filter").addEventListener("click", () => showPopup($("#dashboard-filter-dialog")));
+  // ---- Pull to refresh on Details and drill-down pages (touch or mouse drag from the very top) ----
+  (() => {
+    const THRESHOLD = 72, MAX = 130; let ptr = null, startY = 0, candidate = false, pulling = false, distance = 0, busy = false;
+    const element = () => {
+      if (ptr) return ptr;
+      ptr = document.createElement("div"); ptr.className = "ptr"; ptr.setAttribute("role", "status"); ptr.setAttribute("aria-live", "polite");
+      ptr.innerHTML = '<span class="ptr-bubble"><svg class="ptr-arrow" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg><span class="ptr-spinner"></span><svg class="ptr-check" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span><span class="ptr-text"></span>';
+      document.body.appendChild(ptr); return ptr;
+    };
+    const show = (state, text, offset) => { const el = element(); el.dataset.state = state; el.querySelector(".ptr-text").textContent = text; el.style.setProperty("--pull", `${offset}px`); el.style.setProperty("--turn", `${Math.min(1, offset / THRESHOLD) * 180}deg`); el.classList.add("show"); };
+    const hide = () => { if (ptr) { ptr.classList.remove("show"); ptr.dataset.state = ""; ptr.style.setProperty("--pull", "0px"); } };
+    const allowed = target => page === "details" && !busy && window.scrollY <= 0 && !target.closest?.("input, textarea, select, dialog, [data-detail-image-src], .detail-carousel, .detail-gallery, .ep-ratings-scroll, .season-pills, .detail-tabs");
+    const begin = (y, target) => { candidate = allowed(target); startY = y; pulling = false; distance = 0; };
+    const move = (y, event) => {
+      if (!candidate) return;
+      const dy = y - startY;
+      if (dy <= 6 || window.scrollY > 0) { if (pulling) { pulling = false; hide(); } return; }
+      pulling = true; distance = Math.min(MAX, dy * .55);
+      if (event.cancelable) event.preventDefault();
+      show(distance >= THRESHOLD ? "ready" : "pull", distance >= THRESHOLD ? "Release to refresh" : "Pull to refresh", distance);
+    };
+    const finish = async () => {
+      const shouldRefresh = pulling && distance >= THRESHOLD; candidate = false; pulling = false;
+      if (!shouldRefresh) { hide(); return; }
+      busy = true; show("loading", "Refreshing…", 62);
+      try { await loadDetails(); show("done", "Updated", 62); }
+      catch (_) { show("done", "Could not refresh", 62); }
+      await new Promise(resolve => setTimeout(resolve, 650)); hide(); busy = false;
+    };
+    document.addEventListener("touchstart", event => begin(event.touches[0].clientY, event.target), { passive: true });
+    document.addEventListener("touchmove", event => move(event.touches[0].clientY, event), { passive: false });
+    document.addEventListener("touchend", finish); document.addEventListener("touchcancel", () => { candidate = false; pulling = false; hide(); });
+    let mouseDown = false;
+    document.addEventListener("mousedown", event => { if (event.button !== 0 || event.target.closest("button, a, label")) return; mouseDown = true; begin(event.clientY, event.target); });
+    document.addEventListener("mousemove", event => { if (mouseDown) move(event.clientY, event); });
+    document.addEventListener("mouseup", () => { if (mouseDown) { mouseDown = false; finish(); } });
+  })();
+
   $("[data-close-setting-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#setting-picker-dialog")); });
   $("#floating-add").addEventListener("click", () => openItem());
   function syncRouteFromHash() {

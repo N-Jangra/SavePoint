@@ -2,97 +2,39 @@
 
 All notable changes to SavePoint are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/) (`0.x` while the app is still taking shape).
 
-## [Unreleased]
-
-### Added
-
-- Settings → Animations: speed (off/fast/normal/slow/custom), easing, page transition, card entrance, stagger, sheet style, press effect, hover lift, nav icon bounce, progress and shimmer toggles, preview and reset. Reduce motion and Animation speed moved here from Appearance.
-- Per-source settings page (Settings → Metadata Sources → ⚙): enable, domain override, user agent, API key and cookies, with Clear cookies and Reset. The Android app sends the user agent and cookies; the local preview forwards them through its proxy; plain browsers cannot send them.
-
-### Changed
-
-- Removed the Wikidata metadata source (search, details, settings and proxy allow-list).
-
 ## [0.1.0] — 2026-10-29
 
 First tracked release of SavePoint: a local-first game library and playtime tracker that runs in a browser and as an Android app (Capacitor, app ID `com.cuemark.savepoint`).
 
 ### How the app works
 
-- **Library:** every game has a title, cover, description, status (Backlog, Playing, On Hold, Dropped, Completed), playtime in hours, playtime goal and rating (5 stars or 10 points). Games are added by hand or from a metadata source and edited from the Details page.
-- **Home:** games grouped by status (or category, release year, or ungrouped), with live search, status chips with counts, a filter sheet (sort, status, layout, group-by, theme, density, thumbnails/ratings/progress), a three-dot action sheet on each card, and a floating add button.
-- **Discover:** suggestion rows (Steam, FreeToGame, RAWG, custom sources) when empty; search across all enabled sources or one source; details preview and one-tap add.
-- **Details:** source-backed page with cover, backdrop, status/age badges, buy strip, playtime stepper, status and rating controls, tags, player ratings, store links, facts table, screenshots, related games, achievements and team.
-- **Statistics, Timeline, Explore:** completion rate and status cards, *Time to beat* (hours logged, library length, hours left, library price), activity chart and ratings; a status-change timeline with covers; a hub for both and for source search.
-- **Settings:** appearance, dashboard, tracking, backups & sync, metadata, metadata & storage, a standalone Storage page, App Info and Logcat, plus custom metadata sources.
-- **Data:** state is stored as JSON under `splitapp_savepoint_v1`. On Android items and metadata are also stored in an encrypted native store, mirrored to an optional shared folder with per-game JSON and image thumbnails, with daily TAR backups and JSON export/import.
+- **Library:** each game has a cover, description, status (Backlog, Playing, On Hold, Dropped, Completed), playtime and goal in hours, and a rating (5 stars or 10 points). Add games by hand or from a metadata source.
+- **Screens:** Home (grouped by status, category or year, with search and a filter sheet), Discover, Details, Statistics, Timeline, Explore and Settings, with custom metadata sources.
+- **Data:** JSON under `splitapp_savepoint_v1`; on Android games and metadata also live in an encrypted native store, mirrored to an optional shared folder with per-game JSON and image thumbnails, daily TAR backups and JSON export.
 
 ### Added
 
-#### Interface and layout
-- iOS-style visual design: grouped cards, frosted headers, pill filters, bottom sheets, violet accent, Light and Dark themes (other themes keep their own colours).
-- Multi-screen layout: phone bottom bar; tablet icon rail; desktop sidebar; wider grids; sheets become centred windows on wide screens; optional sidebar switch.
-- Redesigned Home, Details, Add/Edit, filter sheet, Timeline, Statistics, Logcat, App Info, Storage, Metadata Sources, Bottom Menu Icons and Settings index pages.
-- Details: −1h/+1h/+5h playtime buttons, status pills, animated star rating, buy strip, tags, rating bar, where-to-buy, carousels, collapsible achievements and team.
-- Add page: auto-fill metadata search card, cover/title/description card, status pills, playtime and goal steppers, star picker.
-- Timeline entries show the game's cover with a status icon.
-- Statistics *Activity* chart has a **Week / Month** switch (7 or 30 days); every bar shows its update count above it, so counts are visible on touch screens without hovering. The month view scrolls sideways and opens at today.
-- Statistics *Time to beat* panel and **Fetch details for N games** for games never opened.
-- Discover suggestion rows with loading placeholders.
-- Bottom Menu Icons page with per-destination icon carousels (CueMark style).
-- Settings: Show scrollbars and Show sidebar toggles; Storage, App Info and Logcat reachable directly from the Settings index.
-
-- Details sections follow a fixed order: hero and your playtime/tracking cards, screenshots (and trailers), overview, where to buy, tags, player ratings, details, system requirements, achievements, languages, links, same series and editions, development team.
-- Details: **System requirements** table (Minimum / Recommended, one row per OS, processor, memory, graphics, DirectX, storage, notes) and a collapsible **Languages** table (interface and full-audio ticks), parsed from Steam, RAWG and FreeToGame; also included in merged Mix fetch details.
-
-#### Mix fetch (beta)
-- **Explore → Beta → Mix fetch** (`#mix`): experimental page that searches every enabled source and shows one plain list (the same game from several sources is one row with a chip per source). Opening or adding a game fetches details from all enabled sources and merges them: descriptions, facts, tags, links, stores, screenshots, related games, achievements and team, with a "Merged from" field. Kept separate from normal Discover while it is experimental. Games added through Mix are saved as Mix entries (with the list of merged sources); adding a game that is already in the library from a single source offers to convert it to a Mix entry.
-
-#### Custom sources
-- **Custom metadata sources:** add any JSON search API on a guided three-step page (Connect, Read the results, More details) with a Test button. Custom sources join search, Discover suggestions and details, can be reordered and switched off, and are stored with preferences.
-
-#### Metadata and data
-- Providers: Wikidata, FreeToGame, Steam + SteamDB, HowLongToBeat (Android only), RAWG (API key).
-- Rich detail loaders for every provider with a common detail shape (`schemaVersion: 2`).
-- `facts` summary saved on each game (play time, price, developers, requirements, names, team) and merged across providers; all detail images saved as thumbnails.
-- HowLongToBeat in the Android app reuses the session from the in-app consent window; the browser shows a clear "Android app only" message.
-- Discover suggestions from Steam, FreeToGame, RAWG and custom sources.
-
-#### Navigation and motion
-- Launch screen modelled on CueMark's (icon, name, dots) honouring Animation speed and Reduce motion.
-- Direction-aware page transitions, sheet and dialog animations, press feedback, short staggered card entrance, animated progress bars.
-- Low-memory mode (≤2 GB, ≤2 cores or data saver): no blur or shadows, solid headers, shorter animations; off-screen groups skip layout.
-- Deep links for every screen, including `#details?id=<item id>` and `#settings/custom-source?id=<id>`.
-- Back button (browser and Android) closes an open sheet first, then goes back; tapping outside a sheet closes it; Android back leaves the app only from Home.
+- **Interface:** iOS-style cards, sheets and pills; Light, Dark and other themes with per-theme text contrast; phone bottom bar, tablet icon rail and desktop sidebar; direction-aware transitions and a low-memory mode; deep links for every screen; in-app confirmation sheets; pull to refresh on Details.
+- **Details:** tabs (Overview, Ratings, Achievements, Team & series) shown when a game has that data; playtime stepper, status pills and star rating; buy strip, tags, player ratings, facts, system requirements, languages, screenshots, related games; Edit and Delete in the header with Cancel / Save while editing.
+- **Metadata:** FreeToGame, Steam + SteamDB, HowLongToBeat (Android only) and RAWG (API key), each loading cast, requirements, tags and prices into one common shape; custom JSON sources added on a guided page with a Test button; Mix fetch (beta) merging every source.
+- **Source options:** per-source page for enable, domain, user agent, cookies and API key, with Clear cookies and Reset.
+- **Settings:** Animations (speed, easing, transitions, card entrance, sheets, press and hover effects); Date format; Icon style (inside boxes or inline); Image storage (save all, covers only, or online only); Backups & sync; Metadata & Storage; Bottom Menu Icons; Logcat.
+- **Discover / Statistics / Timeline:** suggestion rows from Steam, FreeToGame, RAWG and custom sources; *Time to beat*, Week / Month activity chart and ratings; a status timeline with covers.
 
 ### Changed
-- Fresh installs now start with the Light theme, scrollbars hidden, a Home / Discover / Explore / Settings bottom bar with home, bookmark, compass and gear icons, and FreeToGame, Steam + SteamDB and HowLongToBeat enabled (Wikidata and RAWG off until turned on).
-- Home cards show the rating and the status pill in one row.
-- Back on settings subpages (Storage, Metadata Sources, and the others) returns to the page you came from, including Explore.
-- Status, sort, layout, group-by, theme and density options now use button pills and segmented controls instead of dropdowns.
-- Three-dot menu is now a bottom action sheet instead of an inline dropdown.
-- App Info and Logcat moved out of their own group to "More" on the Settings index; the Storage page is a standalone link; its Back returns to wherever you came from.
-- "Background Encrypted Backups" removed from Metadata & Storage.
-- Page shells share one side gutter at every width; viewport scrollbar follows the Show scrollbars setting.
-- Page changes no longer use smooth scrolling.
-- Version set to 0.1.0 (app config, npm package, Android `versionName`).
+
+- Fresh installs start on the Light theme with FreeToGame, Steam + SteamDB and HowLongToBeat on (RAWG needs a key).
+- Wikidata is no longer a source.
+- Dashboard views reduced to List, Compact list, Poster grid, Detailed grid, Compact grid, Large poster grid and Timeline.
+- Status, sort, layout and density options use pills and segmented controls; the three-dot menu is a bottom sheet.
 
 ### Fixed
-- Statistics → Time to beat: "Left to play" now counts only unfinished games with data, the progress bar compares like with like, "1 weeks" is gone (days under two weeks, proper plurals, "Nothing left to play"), and games without play-time data are called out instead of silently counted as zero. Added **Find play times for N games** (HowLongToBeat in the Android app, then RAWG) for games saved from sources that have no hours, such as Steam.
-- Filter and status chips applying the wrong value after a re-render (form state restore overwrote radio values).
-- Taps on Discover cards reloading the page and wiping results; returning from Details keeps the last search.
-- Details page overflowing the screen width (grid items now shrink; galleries scroll inside their card).
-- Rating stars needing a page revisit to update.
-- Details URL lost on refresh ("That entry is no longer in your library").
-- Show sidebar setting hidden on screens narrower than 1080px.
-- Add page search button text unreadable on the purple button.
-- HowLongToBeat 403 after consent (session and User-Agent now shared with the app's requests), and 403 on opening its details.
-- Sheets and Settings page overlays: double scrollbars and clipped three-dot menus.
+
+- Filter chips applying the wrong value, Discover cards reloading the page, Details overflowing the screen width, a lost Details URL after refresh, HowLongToBeat 403 after consent, Statistics "Left to play" counting, Details header not spanning the page, and Metadata & Storage missing from the Settings index.
 
 ### Known limitations
-- HowLongToBeat works only in the Android app and can still refuse requests; sources that block apps cannot be added as custom sources.
-- Custom sources accept JSON only; in a PC browser the API must allow cross-origin requests.
-- JSON import restores items only, not history or preferences. Exports, folder databases and TAR backups are not encrypted.
-- Games previewed from Discover cannot be reopened after a page refresh.
-- Light and Dark themes use the new violet palette; the other themes keep their own colours.
 
+- HowLongToBeat works only in the Android app and can still refuse requests.
+- Custom sources accept JSON only; in a PC browser the API must allow cross-origin requests.
+- JSON import restores items only, not history or preferences. Exports and folder backups are not encrypted.
+- Games previewed from Discover cannot be reopened after a page refresh.

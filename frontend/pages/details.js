@@ -11,7 +11,7 @@
       ? value.map(detailValue).filter(Boolean).join(", ")
       : value && typeof value === "object"
         ? Object.values(value).map(detailValue).filter(Boolean).join(" · ")
-        : String(value ?? "");
+        : window.SplitAppDates.text(String(value ?? ""));
 
     const safeUrl = value => {
       try {
@@ -95,22 +95,52 @@
       const slots = { media: takeSlot(/^(screenshots|trailers)/i), achievements: takeSlot(/^achievements/i), series: takeSlot(/^(same series|editions)/i), team: takeSlot(/^development team/i) };
       slots.other = indexedSections.filter(({ index }) => !taken.has(index));
       const renderRows = rows => rows.map(({ section, index }) => renderSection(section, watchedSet, canProgress, item, index, popupImageButton)).join("");
+      const part = {
+        tracking: canProgress ? `<section class="detail-section detail-tracking-section"><h3>Tracking &amp; Rating</h3><span class="ios-sub">Status</span><div class="ios-pills detail-status-pills">${statuses.map(status => `<button type="button" class="ios-pill${status === item.status ? " active" : ""}" data-detail-status-btn="${esc(status)}">${esc(status)}</button>`).join("")}</div><div class="detail-tracking-row"><span>My Rating</span>${ratingControl}</div></section><dialog class="choice-dialog detail-delete-dialog" id="detail-delete-dialog"><form method="dialog"><div class="choice-dialog-grabber"></div><h2>Delete ${esc(item.title)}?</h2><p>This removes the game from your collection.</p><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-detail-delete-cancel>Cancel</button><button type="button" class="button primary" data-detail-delete-confirm>Delete</button></footer></form></dialog>` : "",
+        media: renderRows(slots.media),
+        stores: (loaded.stores || []).length ? `<section class="detail-section detail-stores"><h3>Where to buy</h3><div class="detail-store-list">${loaded.stores.map(row => safeUrl(row.url) ? `<a class="button secondary small" href="${esc(safeUrl(row.url))}" target="_blank" rel="noopener noreferrer">${esc(row.name)} ↗</a>` : "").join("")}</div></section>` : "",
+        tags: (loaded.tags || []).length ? `<section class="detail-section"><h3>Tags</h3><div class="detail-chips">${loaded.tags.map(tag => `<span>${esc(tag)}</span>`).join("")}</div></section>` : "",
+        ratings: (loaded.ratingBreakdown || []).length ? `<section class="detail-section detail-rating-breakdown"><h3>Player ratings${loaded.ratingCount ? ` · ${Number(loaded.ratingCount).toLocaleString()}` : ""}</h3><div class="rating-bar" role="img" aria-label="${esc(loaded.ratingBreakdown.map(row => `${row.label} ${row.percent}%`).join(", "))}">${loaded.ratingBreakdown.map((row, index) => `<span class="rating-seg rating-seg-${index % 4}" style="width:${Math.max(2, Number(row.percent) || 0)}%"></span>`).join("")}</div><div class="rating-legend">${loaded.ratingBreakdown.map((row, index) => `<span><i class="rating-seg-${index % 4}"></i>${esc(row.label)} <b>${esc(row.percent)}%</b></span>`).join("")}</div></section>` : "",
+        facts: facts.length || fields.length ? `<section class="detail-section"><h3>Details</h3><div class="detail-facts">${facts.map(([label, value]) => `<div><span>${esc(label)}</span><strong>${esc(detailValue(value))}</strong></div>`).join("")}${fields.map(row => `<div><span>${esc(row.label)}</span><strong>${esc(detailValue(row.value))}</strong></div>`).join("")}</div></section>` : "",
+        requirements: loaded.requirements ? (() => {
+          const { minimum = [], recommended = [] } = loaded.requirements;
+          const labels = [...new Set([...minimum, ...recommended].map(([label]) => label))];
+          const get = (rows, label) => rows.find(([key]) => key === label)?.[1] || "";
+          const both = minimum.length && recommended.length;
+          return `<section class="detail-section detail-requirements"><h3>System requirements</h3><div class="detail-table-wrap"><table class="detail-table req-table"><thead><tr><th scope="col"></th>${minimum.length ? "<th scope=\"col\">Minimum</th>" : ""}${recommended.length ? "<th scope=\"col\">Recommended</th>" : ""}</tr></thead><tbody>${labels.map(label => `<tr><th scope="row">${esc(label)}</th>${minimum.length ? `<td>${esc(get(minimum, label)) || "—"}</td>` : ""}${recommended.length ? `<td>${esc(get(recommended, label)) || "—"}</td>` : ""}</tr>`).join("")}</tbody></table></div>${both ? "" : ""}</section>`;
+        })() : "",
+        achievements: renderRows(slots.achievements),
+        languages: (loaded.languages || []).length ? `<details class="detail-section detail-collapsible detail-languages"><summary><h3>Languages (${loaded.languages.length})</h3><span aria-hidden="true">›</span></summary><div class="detail-table-wrap"><table class="detail-table lang-table"><thead><tr><th scope="col">Language</th><th scope="col">Interface</th><th scope="col">Full audio</th></tr></thead><tbody>${loaded.languages.map(row => `<tr><th scope="row">${esc(row.name)}</th><td class="lang-yes">✓</td><td class="${row.audio ? "lang-yes" : "lang-no"}">${row.audio ? "✓" : "—"}</td></tr>`).join("")}</tbody></table></div></details>` : "",
+        links: links.length ? `<section class="detail-section"><h3>Links</h3><div class="detail-link-list">${links.map(link => `<a href="${esc(link.href)}" target="_blank" rel="noopener noreferrer">${esc(link.label || link.title || link.site || link.href)} ↗</a>`).join("")}</div></section>` : "",
+        series: renderRows(slots.series),
+        team: renderRows(slots.team),
+        other: renderRows(slots.other),
+        overview: `<section class="detail-section"><h3>Overview</h3><p class="detail-description">${esc(summary)}</p></section>`
+      };
+      const hasRatings = (loaded.ratingBreakdown || []).length > 0, hasAchievements = slots.achievements.length > 0, hasTeam = slots.team.length + slots.series.length > 0;
+      let detailBody;
+      if (hasRatings || hasAchievements || hasTeam) {
+        const tabs = [["overview", "Overview"], hasRatings && ["ratings", "Ratings"], hasAchievements && ["achievements", "Achievements"], hasTeam && ["team", "Team & series"]].filter(Boolean);
+        const activeTab = tabs.some(([key]) => key === context.detailTab) ? context.detailTab : tabs[0][0];
+        const panel = (key, html) => `<div class="detail-tab-panel" data-detail-panel="${key}"${activeTab === key ? "" : " hidden"}>${html}</div>`;
+        detailBody = `<div class="detail-tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" class="${activeTab === key ? "active" : ""}" aria-selected="${activeTab === key}" data-detail-tab="${key}">${label}</button>`).join("")}</div>`
+          + panel("overview", [part.tracking, part.media, part.overview, part.stores, part.tags, part.facts, part.requirements, part.languages, part.other, part.links].join(""))
+          + (hasRatings ? panel("ratings", part.ratings) : "")
+          + (hasAchievements ? panel("achievements", part.achievements) : "")
+          + (hasTeam ? panel("team", part.team + part.series) : "");
+      } else {
+        detailBody = [part.tracking, part.media, part.overview, part.stores, part.tags, part.ratings, part.facts, part.requirements, part.achievements, part.languages, part.links, part.series, part.team, part.other].join("");
+      }
       return `<div class="detail-page">
-        <header class="detail-page-heading"><button type="button" class="button secondary small" data-go="${esc(detailReturnPage)}">‹ Back</button><span class="detail-heading-spacer" aria-hidden="true"></span>${detailPreview ? "<span></span>" : `<button type="button" class="detail-delete-button" data-action="delete-detail" data-id="${esc(item.id)}" aria-label="Delete from collection" title="Delete from collection"><i data-lucide="trash2"></i></button>`}</header>
-        <div class="toolbar detail-toolbar">
-          ${detailPreview
-            ? `<button type="button" class="button primary small" data-action="save-detail-item">＋ Add to library</button>`
-            : detailEditMode ? `<button type="button" class="button secondary small" data-action="cancel-detail-edit">Cancel</button><button type="button" class="button primary small" data-detail-save>Save changes</button>` : `<button type="button" class="button secondary small" data-action="edit" data-id="${esc(item.id)}">Edit entry</button>`}
-          ${canProgress ? `<button type="button" class="button primary small" data-action="progress" data-id="${esc(item.id)}">＋ ${item.category === "series" || item.category === "anime" ? "Next episode" : item.category === "manga" ? "Log chapter" : "Log progress"}</button>` : ""}
-          ${item.metadataSource && item.providerId ? `<button type="button" class="button secondary small" data-action="refresh-details" ${detailLoading ? "disabled" : ""}>${detailLoading ? "Refreshing…" : "Refresh source"}</button>` : ""}
-        </div>
+        <header class="detail-page-heading"><button type="button" class="detail-back" data-go="${esc(detailReturnPage)}"><span aria-hidden="true">‹</span> Back</button><span class="detail-heading-spacer" aria-hidden="true"></span>${detailPreview ? "<span></span>" : detailEditMode ? `<span class="detail-heading-actions detail-edit-actions"><button type="button" class="button secondary small" data-action="cancel-detail-edit">Cancel</button><button type="button" class="button primary small" data-detail-save>Save</button></span>` : `<span class="detail-heading-actions"><button type="button" class="detail-icon-button" data-action="edit" data-id="${esc(item.id)}" aria-label="Edit entry" title="Edit entry"><i data-lucide="pencil"></i></button><button type="button" class="detail-delete-button" data-action="delete-detail" data-id="${esc(item.id)}" aria-label="Delete from collection" title="Delete from collection"><i data-lucide="trash2"></i></button></span>`}</header>
+        ${detailPreview ? `<div class="toolbar detail-toolbar"><button type="button" class="button primary small" data-action="save-detail-item">＋ Add to library</button></div>` : ""}
         <article class="detail-hero ios-hero">
           <div class="ios-hero-bg"${(landscape || image) ? ` style="background-image:url('${esc(landscape || image)}')"` : ""}></div>
           <div class="ios-hero-body">
             ${image ? detailImage : `<div class="detail-image-placeholder">${esc(category(item.category)?.icon || "✦")}</div>`}
             <div class="detail-hero-copy">
               <p class="eyebrow">${esc(item.metadataSource === "mix" ? `Mix · ${(loaded.mixSources || []).join(" + ") || "all sources"}` : source?.name || item.metadataSource || "SAVEPOINT")}${source ? ` • ${esc(source.categories.map(labelCategory).join(" / "))}` : ""}</p>
-              <h2>${esc(loaded.title || item.title)}</h2>
+              <h2>${esc(canProgress ? item.title : (loaded.title || item.title))}</h2>
               <div class="detail-badges">${canProgress ? `<span class="ios-status-badge">${esc(item.status)}</span>` : ""}${facts.slice(0, 3).map(([label, value]) => `<span>${esc(label === "Rating" ? value : detailValue(value))}</span>`).join("")}${loaded.badge ? `<span class="detail-age-badge">${esc(loaded.badge)}</span>` : ""}${sourceUrl ? `<a class="detail-source-link" href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer">Open source page ↗</a>` : ""}</div>
             </div>
           </div>
@@ -120,26 +150,7 @@
         ${detailError ? `<div class="detail-error"><p>${esc(detailError)}</p><button class="button secondary small" data-action="refresh-details">Try again</button></div>` : ""}
         ${canProgress && detailEditMode ? `<form id="detail-edit-form" class="detail-edit-form"><label>Title<input name="title" required maxlength="180" value="${esc(item.title)}"></label><label>Status<span class="detail-select-wrap"><select name="status">${statuses.map(status => `<option value="${esc(status)}" ${status === item.status ? "selected" : ""}>${esc(status)}</option>`).join("")}</select><i data-lucide="chevron-down" aria-hidden="true"></i></span></label><div class="detail-edit-numbers"><label>Progress<input name="progress" type="number" min="0" step="${esc(prefs.progressIncrement || 1)}" value="${progress}"></label><label>Goal<input name="goal" type="number" min="0" step="1" value="${goal}"></label></div></form>` : ""}
         ${canProgress ? `<section class="detail-progress-card"><div class="ios-progress-head"><div><span>Playtime &amp; Goal</span><strong>${progress}${goal ? `<small> / ${goal} ${esc(unit || "hrs")} goal</small>` : ""}</strong></div><div class="ios-stepper"><button type="button" data-adjust-progress="-1">-1h</button><button type="button" class="accent" data-adjust-progress="1">+1h</button><button type="button" data-adjust-progress="5">+5h</button></div></div><div class="progress-line"><span style="width:${percent}%"></span></div><small>${goal ? `${percent}% of completion goal • Tap +1h to log a quick session` : "Edit entry to set a goal and track completion."}</small></section>` : ""}
-        ${canProgress ? `<section class="detail-section detail-tracking-section"><h3>Tracking &amp; Rating</h3><span class="ios-sub">Status</span><div class="ios-pills detail-status-pills">${statuses.map(status => `<button type="button" class="ios-pill${status === item.status ? " active" : ""}" data-detail-status-btn="${esc(status)}">${esc(status)}</button>`).join("")}</div><div class="detail-tracking-row"><span>My Rating</span>${ratingControl}</div></section><dialog class="choice-dialog detail-delete-dialog" id="detail-delete-dialog"><form method="dialog"><div class="choice-dialog-grabber"></div><h2>Delete ${esc(item.title)}?</h2><p>This removes the game from your collection.</p><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-detail-delete-cancel>Cancel</button><button type="button" class="button primary" data-detail-delete-confirm>Delete</button></footer></form></dialog>` : ""}
-        ${renderRows(slots.media)}
-        <section class="detail-section"><h3>Overview</h3><p class="detail-description">${esc(summary)}</p></section>
-        ${(loaded.stores || []).length ? `<section class="detail-section detail-stores"><h3>Where to buy</h3><div class="detail-store-list">${loaded.stores.map(row => safeUrl(row.url) ? `<a class="button secondary small" href="${esc(safeUrl(row.url))}" target="_blank" rel="noopener noreferrer">${esc(row.name)} ↗</a>` : "").join("")}</div></section>` : ""}
-        ${(loaded.tags || []).length ? `<section class="detail-section"><h3>Tags</h3><div class="detail-chips">${loaded.tags.map(tag => `<span>${esc(tag)}</span>`).join("")}</div></section>` : ""}
-        ${(loaded.ratingBreakdown || []).length ? `<section class="detail-section detail-rating-breakdown"><h3>Player ratings${loaded.ratingCount ? ` · ${Number(loaded.ratingCount).toLocaleString()}` : ""}</h3><div class="rating-bar" role="img" aria-label="${esc(loaded.ratingBreakdown.map(row => `${row.label} ${row.percent}%`).join(", "))}">${loaded.ratingBreakdown.map((row, index) => `<span class="rating-seg rating-seg-${index % 4}" style="width:${Math.max(2, Number(row.percent) || 0)}%"></span>`).join("")}</div><div class="rating-legend">${loaded.ratingBreakdown.map((row, index) => `<span><i class="rating-seg-${index % 4}"></i>${esc(row.label)} <b>${esc(row.percent)}%</b></span>`).join("")}</div></section>` : ""}
-        ${facts.length || fields.length ? `<section class="detail-section"><h3>Details</h3><div class="detail-facts">${facts.map(([label, value]) => `<div><span>${esc(label)}</span><strong>${esc(detailValue(value))}</strong></div>`).join("")}${fields.map(row => `<div><span>${esc(row.label)}</span><strong>${esc(detailValue(row.value))}</strong></div>`).join("")}</div></section>` : ""}
-        ${loaded.requirements ? (() => {
-          const { minimum = [], recommended = [] } = loaded.requirements;
-          const labels = [...new Set([...minimum, ...recommended].map(([label]) => label))];
-          const get = (rows, label) => rows.find(([key]) => key === label)?.[1] || "";
-          const both = minimum.length && recommended.length;
-          return `<section class="detail-section detail-requirements"><h3>System requirements</h3><div class="detail-table-wrap"><table class="detail-table req-table"><thead><tr><th scope="col"></th>${minimum.length ? "<th scope=\"col\">Minimum</th>" : ""}${recommended.length ? "<th scope=\"col\">Recommended</th>" : ""}</tr></thead><tbody>${labels.map(label => `<tr><th scope="row">${esc(label)}</th>${minimum.length ? `<td>${esc(get(minimum, label)) || "—"}</td>` : ""}${recommended.length ? `<td>${esc(get(recommended, label)) || "—"}</td>` : ""}</tr>`).join("")}</tbody></table></div>${both ? "" : ""}</section>`;
-        })() : ""}
-        ${renderRows(slots.achievements)}
-        ${(loaded.languages || []).length ? `<details class="detail-section detail-collapsible detail-languages"><summary><h3>Languages (${loaded.languages.length})</h3><span aria-hidden="true">›</span></summary><div class="detail-table-wrap"><table class="detail-table lang-table"><thead><tr><th scope="col">Language</th><th scope="col">Interface</th><th scope="col">Full audio</th></tr></thead><tbody>${loaded.languages.map(row => `<tr><th scope="row">${esc(row.name)}</th><td class="lang-yes">✓</td><td class="${row.audio ? "lang-yes" : "lang-no"}">${row.audio ? "✓" : "—"}</td></tr>`).join("")}</tbody></table></div></details>` : ""}
-        ${links.length ? `<section class="detail-section"><h3>Links</h3><div class="detail-link-list">${links.map(link => `<a href="${esc(link.href)}" target="_blank" rel="noopener noreferrer">${esc(link.label || link.title || link.site || link.href)} ↗</a>`).join("")}</div></section>` : ""}
-        ${renderRows(slots.series)}
-        ${renderRows(slots.team)}
-        ${renderRows(slots.other)}
+        ${detailBody}
         <dialog class="detail-image-modal" id="detail-image-modal" aria-label="Image viewer"><button type="button" class="detail-image-modal-close" data-detail-image-close aria-label="Close image">×</button><button type="button" class="detail-image-modal-nav detail-image-modal-prev" data-detail-image-prev aria-label="Previous image">‹</button><figure><img data-detail-modal-img alt=""><figcaption data-detail-modal-caption></figcaption></figure><button type="button" class="detail-image-modal-nav detail-image-modal-next" data-detail-image-next aria-label="Next image">›</button></dialog>
       </div>`;
     }

@@ -44,7 +44,7 @@
   max-height: 190px;
   border-radius: 15px;
   background: var(--surface-2);
-  color: var(--accent);
+  color: var(--accent-text,var(--accent));
   font-size: 2rem;
   object-fit: cover;
   box-shadow: 0 9px 22px rgba(0, 0, 0, .2);
@@ -91,7 +91,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
   border-radius: 12px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text,var(--accent));
   font-size: .8rem;
   font-weight: 650;
   text-decoration: none;
@@ -115,7 +115,7 @@
 .detail-source-link-card { color: inherit; text-decoration: none; }
 .detail-source-link-card .detail-source-item { transition: border-color var(--speed), transform var(--speed); }
 .detail-source-link-card:hover .detail-source-item { border-color: var(--accent); transform: translateY(-1px); }
-.episode-toggle { margin-top: 8px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--accent); font-size: .72rem; font-weight: 650; cursor: pointer; }
+.episode-toggle { margin-top: 8px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--accent-text,var(--accent)); font-size: .72rem; font-weight: 650; cursor: pointer; }
 .episode-toggle.is-watched { border-color: color-mix(in srgb, #22c55e 45%, var(--line)); background: color-mix(in srgb, #22c55e 14%, var(--surface)); color: #4ade80; }
 .detail-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .detail-gallery-image { width:100%; border:1px solid var(--line); border-radius:13px; background:var(--surface-2); color:var(--legacy-secondary); font-size:.72rem; text-align:left; }
@@ -123,7 +123,7 @@
 .detail-gallery span { display: block; padding: 7px 9px; }
 .detail-source-image { width:58px; height:70px; border-radius:9px; }
 .detail-source-image img { display:block; width:100%; height:100%; object-fit:cover; }
-.detail-entry-link { display:inline-block; margin-top:7px; color:var(--accent); font-size:.72rem; text-decoration:none; }
+.detail-entry-link { display:inline-block; margin-top:7px; color:var(--accent-text,var(--accent)); font-size:.72rem; text-decoration:none; }
 .detail-tracking-section { display:grid; gap:12px; }
 .detail-tracking-section h3 { margin-bottom:0; }
 .detail-tracking-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:42px; color:var(--legacy-text); font-size:.86rem; }
@@ -184,3 +184,37 @@ body[data-theme="light"] .episode-toggle.is-watched { color: #15803d; }
 .source-option small, .source-note { color: var(--muted); font-size: .78rem; line-height: 1.45; }
 .source-option input, .source-option textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: inherit; font: inherit; font-size: .84rem; }
 .source-note { margin: 4px 4px 0; }
+
+/* Details back button: same look as the Settings sub-pages */
+.detail-back { display: inline-flex; align-items: center; gap: 4px; padding: 7px 0; border: 0; background: transparent; color: var(--accent-text, var(--accent)); font: 600 .88rem var(--font-family); cursor: pointer; }
+.detail-back span { font-size: 1.15rem; line-height: 1; }
+
+/* Pull to refresh */
+.ptr { position: fixed; left: 50%; top: calc(10px + env(safe-area-inset-top)); z-index: 60; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--legacy-text, inherit); box-shadow: 0 10px 28px -10px #0006; font-size: .78rem; font-weight: 700; opacity: 0; pointer-events: none; transform: translate(-50%, calc(var(--pull, 0px) - 70px)); transition: opacity .18s ease, transform .22s var(--ease-out, ease); }
+.ptr.show { opacity: 1; }
+.ptr[data-state=pull], .ptr[data-state=ready] { transition: opacity .12s ease; }
+.ptr-bubble { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent-text, var(--accent)); }
+.ptr-arrow { transform: rotate(var(--turn, 0deg)); transition: transform .12s linear; }
+.ptr[data-state=ready] .ptr-bubble { background: var(--accent); color: #fff; }
+.ptr-spinner, .ptr-check { position: absolute; display: none; }
+.ptr-spinner { width: 18px; height: 18px; border: 2.5px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: ptr-spin .7s linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+.ptr[data-state=loading] .ptr-arrow, .ptr[data-state=done] .ptr-arrow { display: none; }
+.ptr[data-state=loading] .ptr-spinner { display: block; }
+.ptr[data-state=done] .ptr-check { display: block; color: #16a34a; animation: sp-pop .25s var(--ease-out, ease) both; }
+.ptr[data-state=done] .ptr-bubble { background: color-mix(in srgb, #16a34a 14%, var(--surface)); }
+.detail-edit-actions .button { min-height: 36px; padding: 0 16px; border-radius: 99px; font-weight: 700; }
+.detail-heading-actions { display:flex; align-items:center; gap:8px; }
+.detail-icon-button { display:grid; place-items:center; width:36px; height:36px; border:1px solid var(--ios-card-border, var(--line)); border-radius:50%; background:var(--surface); color:var(--muted); cursor:pointer; padding:0; }
+.detail-heading-actions .detail-delete-button { width:36px; height:36px; border:1px solid #ef444455; background:#ef44440f; }
+
+/* Tabs (shared with ScreenMark) */
+.detail-tabs { position: sticky; top: 56px; z-index: 9; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 4px; border-radius: 16px; background: var(--surface-2); }
+.detail-tabs button { padding: 8px 4px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-size: .76rem; font-weight: 750; cursor: pointer; white-space: nowrap; }
+.detail-tabs button.active { background: var(--surface); color: var(--accent-text,var(--accent)); box-shadow: 0 1px 3px #0003; }
+.detail-tab-panel { display: grid; gap: 14px; }
+.detail-tab-panel[hidden] { display: none; }
+
+/* Heading bar: always as wide as the page below it */
+.detail-page > .detail-page-heading { width: calc(100% + var(--gutter) * 2); max-width: none; }
+@media (min-width: 768px) { .detail-page > .detail-page-heading { width: 100%; max-width: 100%; margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; } }
