@@ -30,6 +30,7 @@ First tracked release of SavePoint: a local-first game library and playtime trac
 
 ### Fixed
 
+- Covers saved in the chosen storage folder now load on start, so they still show offline after the app cache is cleared (previously they only came from the cache or the internet).
 - Filter chips applying the wrong value, Discover cards reloading the page, Details overflowing the screen width, a lost Details URL after refresh, HowLongToBeat 403 after consent, Statistics "Left to play" counting, Details header not spanning the page, and Metadata & Storage missing from the Settings index.
 
 ### Known limitations
