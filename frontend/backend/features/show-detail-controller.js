@@ -72,35 +72,11 @@
     if (Array.isArray(input)) return input.map(value).filter(Boolean).join(", ");
     return "";
   };
-  const wikidataClaim = (entity, property) => {
-    const raw = entity?.claims?.[property]?.[0]?.mainsnak?.datavalue?.value;
-    if (typeof raw === "string") return raw;
-    if (raw?.time) return raw.time.replace(/^\+/, "").slice(0, 10);
-    if (raw?.amount) return raw.amount;
-    if (raw?.text) return raw.text;
-    if (raw?.id) return raw.id;
-    return "";
-  };
   const controller = window.SplitAppDiscovery;
   const encode = controller.encode || (value => encodeURIComponent(String(value ?? "")));
   const get = (url, settings = {}) => controller.requestJson(url, settings);
   const getText = (url, settings = {}) => controller.requestText(url, settings);
   const loaders = {
-        wikidata: async (item,s) => {
-      const data=await get(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encode(item.providerId)}&format=json&props=labels|descriptions|aliases|claims|sitelinks&languages=en&sitefilter=enwiki`,s);
-      const entity=data.entities?.[item.providerId]||{}, label=entity.labels?.en?.value||item.title, desc=entity.descriptions?.en?.value||"";
-      const raws=prop=>(entity.claims?.[prop]||[]).map(c=>c?.mainsnak?.datavalue?.value).filter(v=>v!=null);
-      const text=v=>typeof v==="string"?v:v?.time?v.time.replace(/^\+/,"").slice(0,10):v?.amount?v.amount:v?.text||"";
-      const qids=prop=>raws(prop).map(v=>v?.id).filter(Boolean);
-      const wanted=[...new Set(["P136","P400","P178","P123","P179","P404","P495","P84","P750","P1552"].flatMap(qids))].slice(0,45);
-      let names={}; // resolve linked entities to readable English labels in one request
-      if(wanted.length) { try { const r=await get(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wanted.join("|")}&format=json&props=labels&languages=en`,s); for(const [qid,e] of Object.entries(r.entities||{})) names[qid]=e.labels?.en?.value||qid; } catch {} }
-      const labels=prop=>qids(prop).map(id=>names[id]||id).filter(id=>!/^Q\d+$/.test(id));
-      const image=text(raws("P18")[0]); const site=entity.sitelinks?.enwiki?.title;
-      const links=[{label:"Wikidata",url:`https://www.wikidata.org/wiki/${encode(item.providerId)}`}]; if(site) links.push({label:"Wikipedia",url:`https://en.wikipedia.org/wiki/${encode(site.replace(/ /g,"_"))}`});
-      const imageUrl=image?`https://commons.wikimedia.org/wiki/Special:FilePath/${encode(image)}?width=600`:"";
-      return details("wikidata",item,{title:label,description:desc,image:imageUrl,portraitImage:imageUrl,year:text(raws("P577")[0]).slice(0,4),url:`https://www.wikidata.org/wiki/${encode(item.providerId)}`,links,tags:labels("P404"),fields:[["Published",text(raws("P577")[0])],["Genre",labels("P136")],["Platforms",labels("P400")],["Developers",labels("P178")],["Publishers",labels("P123")],["Series",labels("P179")],["Game modes",labels("P404")],["Country of origin",labels("P495")],["Designed by",labels("P287").length?labels("P287"):labels("P84")],["Also known as",(entity.aliases?.en||[]).map(a=>a.value).slice(0,6)],["Official website",text(raws("P856")[0])]].map(([label,value])=>({label,value}))});
-    },
     freetogame: async (item,s) => {
       const d=await get(`https://www.freetogame.com/api/game?id=${encode(item.providerId)}`,s);
       if(!d||d.status===0) throw new Error("FreeToGame could not load this game's details.");

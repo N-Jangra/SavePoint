@@ -7,7 +7,7 @@
     const orderedSources = prefs.metadataSourceOrder
       .map(key => window.SplitAppSources.list(category.key).find(source => source.key === key))
       .filter(source => source && window.SplitAppSources.isEnabled(source.key, prefs));
-    const sourceIcons = { wikidata: "globe-2", freetogame: "swords", steamdb: "database", howlongtobeat: "clock-3", rawg: "gamepad-2" };
+    const sourceIcons = { freetogame: "swords", steamdb: "database", howlongtobeat: "clock-3", rawg: "gamepad-2" };
     const sourceRows = orderedSources.map(source => {
       const missingKey = source.keyRequired && !prefs.apiKeys[source.key];
       const note = missingKey ? "API key needed · configure in Metadata Sources"

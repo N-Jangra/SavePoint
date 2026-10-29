@@ -176,3 +176,11 @@ body[data-theme="light"] .episode-toggle.is-watched { color: #15803d; }
 .detail-delete-dialog form { display:grid; gap:12px; padding:20px; }
 .detail-delete-dialog h2 { margin:0; font-size:1.1rem; }
 .detail-delete-dialog p { margin:0; color:var(--muted); font-size:.86rem; }
+
+/* Settings → Metadata Sources → one source */
+.source-options-link { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: var(--muted); }
+.source-enable-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px; border-radius: 22px; background: var(--accent); color: #fff; font-size: 1.05rem; font-weight: 650; }
+.source-option { display: grid; gap: 6px; padding: 12px 4px; }
+.source-option small, .source-note { color: var(--muted); font-size: .78rem; line-height: 1.45; }
+.source-option input, .source-option textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: inherit; font: inherit; font-size: .84rem; }
+.source-note { margin: 4px 4px 0; }

@@ -4,7 +4,6 @@ The metadata registry in `frontend/backend/features/metadata.js` is the source o
 
 | Registry key | Provider | API key |
 |---|---|---|
-| `wikidata` | Wikidata | Not required |
 | `freetogame` | FreeToGame | Not required |
 | `steamdb` | Steam Store search/details, with SteamDB links | Not required |
 | `howlongtobeat` | HowLongToBeat (Android app only) | Not required |
@@ -31,3 +30,7 @@ Paths use dots and `[index]`. Only `http(s)` URLs are used; nothing from a custo
 
 Sources are enabled by default unless the user turns them off. Settings can also set source order. Discovery and source-backed Details use the same enabled-source preferences. See [Metadata analysis](metadata-analysis.md) for request methods, returned fields, caching, and errors.
 
+
+## Per-source options
+
+Settings → Metadata Sources → a source's ⚙ page stores `preferences.sourceOptions[key] = { domain, userAgent, cookies }`. `SplitAppMetadata.resolve` swaps the host when `domain` is set and the request layer adds `User-Agent` / `Cookie` headers for every request to that source's default host; these override built-in headers (including HowLongToBeat's session cookie). The Android app sends them natively; `dev-server.js` forwards `x-source-user-agent` / `x-source-cookie`; a plain browser drops them.

@@ -89,7 +89,7 @@
     return merge(entries, title);
   }
 
-  // Play-time only lookup for games whose saved provider (e.g. Steam, Wikidata) has no hours: HowLongToBeat first, then RAWG.
+  // Play-time only lookup for games whose saved provider (e.g. Steam) has no hours: HowLongToBeat first, then RAWG.
   async function hours(title, settings = {}) {
     const enabled = new Set(metadata.available(category, settings).map(source => source.key));
     for (const key of ["howlongtobeat", "rawg"]) {

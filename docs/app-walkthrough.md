@@ -55,7 +55,7 @@ The Settings index lists **Personalize** (Appearance, Dashboard, Tracking), **Yo
 
 ## Providers in the app
 
-Wikidata, FreeToGame, Steam + SteamDB, HowLongToBeat, RAWG and custom sources. HowLongToBeat only works in the Android app: it blocks browsers, and the app reuses the session created when you review its consent screen in an in-app window (see [metadata analysis](metadata-analysis.md)).
+FreeToGame, Steam + SteamDB, HowLongToBeat, RAWG and custom sources. HowLongToBeat only works in the Android app: it blocks browsers, and the app reuses the session created when you review its consent screen in an in-app window (see [metadata analysis](metadata-analysis.md)).
 
 ## Backups
 

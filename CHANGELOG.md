@@ -2,6 +2,17 @@
 
 All notable changes to SavePoint are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/) (`0.x` while the app is still taking shape).
 
+## [Unreleased]
+
+### Added
+
+- Settings → Animations: speed (off/fast/normal/slow/custom), easing, page transition, card entrance, stagger, sheet style, press effect, hover lift, nav icon bounce, progress and shimmer toggles, preview and reset. Reduce motion and Animation speed moved here from Appearance.
+- Per-source settings page (Settings → Metadata Sources → ⚙): enable, domain override, user agent, API key and cookies, with Clear cookies and Reset. The Android app sends the user agent and cookies; the local preview forwards them through its proxy; plain browsers cannot send them.
+
+### Changed
+
+- Removed the Wikidata metadata source (search, details, settings and proxy allow-list).
+
 ## [0.1.0] — 2026-10-29
 
 First tracked release of SavePoint: a local-first game library and playtime tracker that runs in a browser and as an Android app (Capacitor, app ID `com.cuemark.savepoint`).

@@ -13,16 +13,16 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "light", textSize: "normal", reduceMotion: false, animationSpeed: "normal", font: "system", mainColor: "#6366f1", categoryColors: {},
+    theme: "light", textSize: "normal", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6366f1", categoryColors: {},
     showSidebar: true, showScrollbars: false, bottomBarStyle: "box", bottomBarCorners: "round", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: navKeys, visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
-    metadataSourceOrder: ["wikidata", "freetogame", "steamdb", "howlongtobeat", "rawg"], customSources: [],
+    metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30, backupPasswordReminder: true, maximumBackupSize: 1000, validateBackupLocation: true, restorePreview: true,
-    metadataMode: "online", metadataSources: { wikidata: false, freetogame: true, steamdb: true, howlongtobeat: true, rawg: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
+    metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
     imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
-    apiKeys: {}
+    apiKeys: {}, sourceOptions: {}
   };
   const themePalettes = {
     light: { mode:"light", background:"#f8fafc", shell:"#f8fafc", surface:"#ffffff", surface2:"#f1f5f9", line:"rgba(15,23,42,.10)", text:"#0f172a", muted:"#64748b" },
@@ -63,6 +63,7 @@
   delete prefs.appDisplayName;
   prefs.categoryColors = { ...prefsDefaults.categoryColors, ...(stored.preferences?.categoryColors || {}) };
   prefs.apiKeys = { ...prefsDefaults.apiKeys, ...(stored.preferences?.apiKeys || {}) };
+  prefs.sourceOptions = { ...(stored.preferences?.sourceOptions || {}) };
   prefs.metadataSources = { ...prefsDefaults.metadataSources, ...(stored.preferences?.metadataSources || {}) };
   function refreshSourceRegistry() {
     prefs.customSources = Array.isArray(prefs.customSources) ? prefs.customSources.filter(config => config && config.id && /^https?:\/\//i.test(config.searchUrl || "")) : [];
@@ -114,7 +115,7 @@
   let timelineFilter = "all", timelineSearch = "", timelineMonth = "", timelineYear = "";
   let dashboardStatusFilter = prefs.dashboardStatusFilter || "all";
   if (prefs.dashboardView === "cards") prefs.dashboardView = "grid";
-  if (!["list", "compact-list", "grid", "detailed-grid", "compact-grid", "table", "minimal-list", "large-grid", "kanban", "timeline"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
+  if (!["list", "compact-list", "grid", "detailed-grid", "compact-grid", "large-grid", "timeline"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
   if (prefs.dashboardSort === "title") prefs.dashboardSort = "alphabetical-asc";
   else if (prefs.dashboardSort === "recent") prefs.dashboardSort = "created-desc";
   else if (prefs.dashboardSort === "rating") prefs.dashboardSort = "rating-desc";
@@ -221,7 +222,11 @@
     document.documentElement.style.setProperty("--item-art-width", prefs.thumbnailSize === "small" ? "48px" : prefs.thumbnailSize === "large" ? "72px" : "58px");
     document.documentElement.style.setProperty("--item-art-height", prefs.thumbnailSize === "small" ? "58px" : prefs.thumbnailSize === "large" ? "88px" : "72px");
     document.documentElement.style.setProperty("--discover-art-height", prefs.thumbnailSize === "small" ? "110px" : prefs.thumbnailSize === "large" ? "190px" : "150px");
-    document.documentElement.style.setProperty("--speed", prefs.reduceMotion || prefs.animationSpeed === "off" ? "0ms" : prefs.animationSpeed === "fast" ? "100ms" : prefs.animationSpeed === "slow" ? "320ms" : "180ms");
+    const speedMs = prefs.reduceMotion || prefs.animationSpeed === "off" ? 0 : prefs.animationSpeed === "fast" ? 100 : prefs.animationSpeed === "slow" ? 320 : prefs.animationSpeed === "custom" ? Math.round(180 * Math.max(25, Math.min(300, Number(prefs.animationCustom) || 100)) / 100) : 180;
+    document.documentElement.style.setProperty("--speed", `${speedMs}ms`);
+    const easing = { smooth: ["cubic-bezier(.2,.7,.2,1)", "cubic-bezier(.32,.72,0,1)"], spring: ["cubic-bezier(.32,.72,0,1)", "cubic-bezier(.32,.72,0,1)"], bouncy: ["cubic-bezier(.34,1.56,.64,1)", "cubic-bezier(.34,1.56,.64,1)"], linear: ["linear", "linear"] }[prefs.animationEasing] || ["cubic-bezier(.2,.7,.2,1)", "cubic-bezier(.32,.72,0,1)"];
+    document.documentElement.style.setProperty("--ease-out", easing[0]); document.documentElement.style.setProperty("--ease-spring", easing[1]);
+    Object.entries({ pageAnim: prefs.pageTransition || "slide", cardAnim: prefs.cardEntrance || "rise", stagger: prefs.animationStagger !== false, sheetAnim: prefs.sheetAnimation || "slide", press: prefs.pressEffect || "shrink", hoverLift: prefs.hoverLift === true, navBounce: prefs.navBounce !== false, progressAnim: prefs.progressAnimation !== false, shimmer: prefs.skeletonShimmer !== false }).forEach(([key, value]) => { document.body.dataset[key] = String(value); });
     const fontFamily = fontFamilies[prefs.font] || fontFamilies.inter;
     root.style.setProperty("--font-family", fontFamily);
     root.style.setProperty("--font-heading", fontFamily);
@@ -591,9 +596,12 @@
       if (button.dataset.logAction === "clear") { localStorage.removeItem(`${storageKey}_log`); render(); toast("Logs cleared."); }
     }));
     content.querySelectorAll("[data-setting-action]").forEach(button => button.addEventListener("click", event => {
+      if (button.type === "file") return; // let the file picker open
       event.preventDefault(); event.stopPropagation();
       const key = button.dataset.settingAction;
       if (key === "resetDashboard") resetDashboard();
+      else if (key === "resetAnimations") resetAnimations();
+      else if (key === "previewAnimations") previewAnimations();
       else if (key === "resetAppearance") resetAppearance();
       else if (key === "export") exportList();
       else if (key.startsWith("clear-")) {
@@ -712,7 +720,7 @@
       Object.assign(prefs, JSON.parse(JSON.stringify(prefsDefaults)));
       prefs.navIcons = { ...prefsDefaults.navIcons };
       prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
-      prefs.categoryColors = {}; prefs.apiKeys = {};
+      prefs.categoryColors = {}; prefs.apiKeys = {}; prefs.sourceOptions = {};
       refreshSourceRegistry();
       persist(); applyPreferences(); render(); toast("SavePoint has been reset.");
     }
@@ -949,14 +957,14 @@
   async function discoverSearch(query, key) {
     if (!window.SplitAppDiscovery) throw new Error("This app's discovery backend did not load.");
     return window.SplitAppDiscovery.search(query, key, {
-      metadataSources: prefs.metadataSources, metadataSourceOrder: prefs.metadataSourceOrder, apiKeys: prefs.apiKeys,
+      metadataSources: prefs.metadataSources, metadataSourceOrder: prefs.metadataSourceOrder, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions,
       offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval
     });
   }
   async function exploreSourceSearch(query, sourceKey) {
     if (!window.SplitAppDiscovery?.searchSource) throw new Error("The metadata search service did not load.");
     return window.SplitAppDiscovery.searchSource(query, config.categories[0].key, {
-      metadataSources: prefs.metadataSources, metadataSourceOrder: prefs.metadataSourceOrder, apiKeys: prefs.apiKeys,
+      metadataSources: prefs.metadataSources, metadataSourceOrder: prefs.metadataSourceOrder, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions,
       offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval
     }, sourceKey);
   }
@@ -1099,7 +1107,7 @@
     delete prefs.metadataSources[`custom:${id}`]; refreshSourceRegistry();
     persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
   }
-  function detailSettings() { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, offlineFallback: prefs.offlineFallback }; }
+  function detailSettings() { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback }; }
   async function loadDetails() {
     const item = detailPreview || items.find(row => row.id === detailItemId);
     const requestId = ++detailRequest; detailData = item?.cachedDetails || null; detailError = "";
@@ -1235,7 +1243,12 @@
     const fontInfo = { system:"Uses the font built into your device.", inter:"Clean, neutral, and easy to scan.", outfit:"Rounded geometric lettering with a friendly feel.", serif:"Traditional letterforms with a bookish feel.", monospace:"Even-width characters with a technical feel.", rounded:"Soft, friendly rounded letterforms.", poppins:"Geometric sans serif with a warm feel.", roboto:"Compact, familiar Android-style lettering.", nunito:"Soft shapes with highly readable text.", lato:"Open, balanced letterforms for longer reading.", merriweather:"Serif lettering tuned for comfortable reading.", "jetbrains-mono":"Clear monospaced lettering for detail.", "open-sans":"Open, friendly lettering for everyday reading.", montserrat:"Bold geometric lettering with a modern feel.", oswald:"Tall, condensed lettering for strong headings.", raleway:"Elegant, light geometric lettering.", ubuntu:"Warm, humanist lettering with a distinct character.", "playfair-display":"High-contrast serif lettering for a refined feel.", "fira-sans":"Readable humanist lettering designed for screens.", rubik:"Rounded, clean lettering with a modern shape.", quicksand:"Rounded, light lettering with a relaxed feel.", caveat:"Casual handwritten lettering with a personal feel." };
     const settingPreviewIcons = {
       textSize: { small: "type", normal: "text", large: "text-cursor-input" },
-      animationSpeed: { off: "pause", fast: "zap", normal: "gauge", slow: "turtle" },
+      animationSpeed: { off: "pause", fast: "zap", normal: "gauge", slow: "turtle", custom: "sliders-horizontal" },
+      animationEasing: { smooth: "spline", spring: "activity", bouncy: "repeat", linear: "move-right" },
+      pageTransition: { slide: "move-right", fade: "cloud", zoom: "maximize-2", rise: "move-up", flip: "flip-horizontal", none: "ban" },
+      cardEntrance: { rise: "arrow-up-from-line", fade: "cloud", pop: "sparkles", slide: "move-right", none: "ban" },
+      sheetAnimation: { slide: "panel-bottom", pop: "maximize-2", fade: "cloud" },
+      pressEffect: { shrink: "pointer", soft: "hand", none: "pointer-off" },
       bottomBarBackground: { solid: "square", glass: "panels-top-left", transparent: "panels-top-bottom" },
       bottomBarStyle: { box: "square", "icon-color": "palette", underline: "underline" },
       bottomBarCorners: { round: "panels-top-left", sharp: "square" },
@@ -1356,8 +1369,17 @@
     Object.assign(prefs, { dashboardView: "list", dashboardDefaultCategory: "remember", dashboardStatusFilter: "all", dashboardSort: "alphabetical-asc", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardRowActions: "menu", showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars", oneHandedMode: "off", tabletTwoColumn: true });
     dashboardStatusFilter = "all"; activeCategory = "all"; persist(); applyPreferences(); render(); toast("Dashboard preferences restored.");
   }
+  function resetAnimations() {
+    ["reduceMotion", "animationSpeed", "animationCustom", "animationEasing", "pageTransition", "cardEntrance", "animationStagger", "sheetAnimation", "pressEffect", "hoverLift", "navBounce", "progressAnimation", "skeletonShimmer"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
+    persist(); applyPreferences(); render(); toast("Animation settings restored.");
+  }
+  function previewAnimations() {
+    const content = $("#page-content"); if (!content) return;
+    document.body.dataset.navDir = "forward"; content.classList.remove("page-route-enter"); void content.offsetWidth; content.classList.add("page-route-enter");
+    toast("Replaying animations.");
+  }
   function resetAppearance() {
-    ["theme", "textSize", "reduceMotion", "animationSpeed", "font", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
+    ["theme", "textSize", "font", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
     prefs.categoryColors = {};
     prefs.navIcons = { ...prefsDefaults.navIcons };
     prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
@@ -1470,6 +1492,16 @@
       });
       return;
     }
+    const clearCookies = event.target.closest("[data-source-clear-cookies]");
+    if (clearCookies) {
+      const key = clearCookies.dataset.sourceClearCookies, provider = window.SplitAppSources.list().find(row => row.key === key);
+      if (prefs.sourceOptions[key]) { delete prefs.sourceOptions[key].cookies; if (!Object.keys(prefs.sourceOptions[key]).length) delete prefs.sourceOptions[key]; }
+      const host = window.SplitAppMetadata.cleanDomain(prefs.sourceOptions[key]?.domain) || provider?.domain;
+      try { window.Capacitor?.Plugins?.CapacitorCookies?.clearCookies?.({ url: `https://${host}` }); } catch (_) {}
+      persist(); render(); toast("Cookies cleared."); return;
+    }
+    const resetOptions = event.target.closest("[data-source-reset-options]");
+    if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist(); render(); toast("Source options reset."); return; }
     const go = event.target.closest("[data-go]"); if (go) { goto(go.dataset.go); return; }
     if (event.target.closest("[data-category-colors-picker]")) { openCategoryColorsPicker(); return; }
     const navMove = event.target.closest("[data-nav-move]");
@@ -1510,9 +1542,9 @@
     if (action) { if (action.dataset.action === "add") openItem(); else if (action.dataset.action === "progress") updateProgress(action.dataset.id); else if (action.dataset.action === "edit") { if (page === "details") { detailEditMode = true; render(); } else openEdit(action.dataset.id); } else if (action.dataset.action === "cancel-detail-edit") { detailEditMode = false; render(); } else if (action.dataset.action === "details") openDetails(action.dataset.id); else if (action.dataset.action === "refresh-details") loadDetails(); else if (action.dataset.action === "delete-detail") requestDeleteDetails(action.dataset.id); else if (action.dataset.action === "save-detail-item") { const saved = addDiscoverResult(detailPreview); if (saved) { detailPreview = null; detailItemId = saved.id; detailData = null; loadDetails(); } } return; }
     const deleteButton = event.target.closest("#delete-item"); if (deleteButton) { deleteItem(deleteButton.dataset.id); return; }
     const settingAction = event.target.closest("[data-setting-action]");
-    if (settingAction) {
+    if (settingAction && settingAction.type !== "file") {
       const key = settingAction.dataset.settingAction;
-      if (key === "export") exportList(); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAppearance") resetAppearance();
+      if (key === "export") exportList(); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary");
         toast("Temporary cache cleared.");
@@ -1561,8 +1593,16 @@
       window.SplitAppSources.setEnabled(prefs, input.dataset.sourceEnabled, input.checked);
       persist(); render();
     }
+    if (input.matches("[data-source-option]")) {
+      const [key, field] = input.dataset.sourceOption.split("|");
+      const next = { ...(prefs.sourceOptions[key] || {}) }, value = field === "domain" ? window.SplitAppMetadata.cleanDomain(input.value) : input.value.trim();
+      if (value) next[field] = value; else delete next[field];
+      if (Object.keys(next).length) prefs.sourceOptions[key] = next; else delete prefs.sourceOptions[key];
+      if (field === "domain") input.value = value;
+      persist(); return;
+    }
     if (input.matches("[data-source-api-key]")) { prefs.apiKeys[input.dataset.sourceApiKey] = input.value.trim(); persist(); }
-    if (input.matches("[data-setting-action=import]")) importList(input.files?.[0]);
+    if (input.matches("[data-setting-action=import]")) { const file = input.files?.[0]; input.value = ""; importList(file); }
   });
   document.addEventListener("dragstart", event => {
     const row = event.target.closest("[data-nav-row], [data-source-row]");

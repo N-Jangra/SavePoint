@@ -56,7 +56,7 @@ function safeJoin(base, target) {
   return resolved.startsWith(base) ? resolved : null;
 }
 
-const ALLOWED_SOURCE_HOSTS = new Set(['www.wikidata.org', 'store.steampowered.com', 'howlongtobeat.com', 'www.freetogame.com', 'api.rawg.io']);
+const ALLOWED_SOURCE_HOSTS = new Set(['store.steampowered.com', 'howlongtobeat.com', 'www.freetogame.com', 'api.rawg.io']);
 
 async function proxyRequest(targetUrl, req, res) {
   let target;
@@ -78,6 +78,9 @@ async function proxyRequest(targetUrl, req, res) {
   const userAgent = isHowLongToBeat || target.hostname === "www.freetogame.com" ? (req.headers["user-agent"] || "Mozilla/5.0") : "SavePoint/1.0 metadata client";
   const headers = { Accept: req.headers.accept || "application/json,text/plain,*/*", "User-Agent": userAgent };
   for (const name of ["content-type", "origin", "referer", "x-auth-token", "x-hp-key", "x-hp-val"]) if (req.headers[name]) headers[name] = req.headers[name];
+  // Per-source user agent and cookies chosen in Settings → Metadata Sources (browsers cannot set these themselves).
+  if (req.headers["x-source-user-agent"]) headers["User-Agent"] = String(req.headers["x-source-user-agent"]).slice(0, 400);
+  if (req.headers["x-source-cookie"]) headers.Cookie = String(req.headers["x-source-cookie"]).slice(0, 4000);
   if (isHowLongToBeat) { headers.origin = "https://howlongtobeat.com"; headers.referer = "https://howlongtobeat.com/"; }
   const upstream = await fetch(target, { method: req.method, headers, body, redirect: "error" });
   const contentType = upstream.headers.get("content-type") || "application/octet-stream";

@@ -11,6 +11,13 @@
   async function wireRequest(url, options = {}, responseType = "json") {
     const method = String(options.method || "GET").toUpperCase();
     const headers = { Accept: responseType === "text" ? "text/html,application/xhtml+xml,*/*" : "application/json", ...(options.headers || {}) };
+    // Browsers refuse to set Cookie / User-Agent. The Android app sends them as-is; the local preview passes them to its proxy; a plain website drops them.
+    if (!nativeApp) {
+      for (const [name, key] of [["Cookie", "x-source-cookie"], ["User-Agent", "x-source-user-agent"]]) {
+        if (headers[name] && localPreview) headers[key] = headers[name];
+        delete headers[name];
+      }
+    }
     if (nativeApp && nativeHttp?.request) {
       const response = await nativeHttp.request({
         url, method, headers, data: options.body || null,
@@ -31,7 +38,15 @@
     if (!response.ok) throw Object.assign(new Error(`${response.status} ${response.statusText}`), { status: response.status });
     return responseType === "text" ? await response.text() : await response.json();
   }
+  // Every request to a known source picks up that source's domain / user agent / cookies from Settings (the user's values win over built-in headers).
+  function applySource(url, options = {}) {
+    let host = ""; try { host = new URL(url).hostname; } catch (_) { return { url, options }; }
+    const provider = metadata.providers.find(source => source.domain === host); if (!provider) return { url, options };
+    const resolved = metadata.resolve(provider.key, url, options);
+    return { url: resolved.url, options: { ...options, headers: { ...(options.headers || {}), ...resolved.headers } } };
+  }
   async function requestJson(url, options = {}) {
+    ({ url, options } = applySource(url, options));
     const method = String(options.method || "GET").toUpperCase();
     const canCache = method === "GET" && !options.noCache && window.caches && !/[?&](?:key|apikey)=/i.test(url);
     let cache = null, stale = null;
@@ -54,7 +69,7 @@
       throw error;
     }
   }
-  const requestText = (url, options = {}) => wireRequest(url, options, "text");
+  const requestText = (url, options = {}) => { ({ url, options } = applySource(url, options)); return wireRequest(url, options, "text"); };
   const result = (source, category, providerId, title, fields = {}) => ({
     source, category, providerId: String(providerId || ""), title: String(title || "").trim(),
     year: fields.year || "", image: fields.image || "", description: fields.description || "",
@@ -63,11 +78,6 @@
   const textFromHtml = html => String(html || "").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 
   const searchers = {
-        wikidata: async (query, category, settings) => {
-      const url = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encode(query)}&language=en&type=item&limit=15&format=json&origin=*`;
-      const data = await requestJson(url, settings);
-      return (data.search || []).map(row => result("wikidata", category, row.id, row.label || query, { description: row.description, subtitle: row.description || (category === "movie" ? "Movie" : "Game"), url: `https://www.wikidata.org/wiki/${row.id}` }));
-    },
     freetogame: async (query, category, settings) => {
       const data = await requestJson("https://www.freetogame.com/api/games", settings), q = query.toLowerCase();
       return (Array.isArray(data) ? data : []).filter(row => [row.title,row.genre,row.developer].some(value => String(value || "").toLowerCase().includes(q))).slice(0,15).map(row => result("freetogame", category, row.id, row.title, { year: row.release_date?.slice(0,4), image: row.thumbnail, description: row.short_description, url: row.game_url, subtitle: [row.genre,row.release_date,row.developer].filter(Boolean).join(" · ") }));

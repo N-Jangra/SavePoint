@@ -458,7 +458,7 @@ body[data-theme=dark] .detail-age-badge{background:#422006;color:#fcd34d}
 .stats-time-panel .button{margin-top:12px}
 
 /* Discover suggestions */
-.discover-suggest{margin-top:18px}
+.discover-suggest,.discover-suggest-loading{grid-column:1/-1;min-width:0}.discover-suggest{margin-top:18px}
 .discover-suggest h2{margin:0 0 10px 2px;font:700 .72rem var(--font-family);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .discover-rail{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:2px 2px 8px;margin-inline:-2px}
 .discover-rail::-webkit-scrollbar{display:none}

@@ -38,7 +38,7 @@ Each activity record has `{ "itemId", "title", "action", "status", "at" }`. The 
 
 ## Preferences
 
-Preferences are a flat object for settings, with nested objects where needed. Important groups include appearance/navigation (`theme`, `font`, `categoryColors`, `navBar`), library display and tracking, backup/storage limits, and metadata (`metadataSources`, `metadataSourceOrder`, `apiKeys`, `customSources`) and display (`showSidebar`, `showScrollbars`, `animationSpeed`, `reduceMotion`). The metadata registry removes source toggles for unknown providers and API keys for providers that do not require a key. Current registered keys are `wikidata`, `freetogame`, `steamdb`, `howlongtobeat`, and `rawg`.
+Preferences are a flat object for settings, with nested objects where needed. Important groups include appearance/navigation (`theme`, `font`, `categoryColors`, `navBar`), library display and tracking, backup/storage limits, and metadata (`metadataSources`, `metadataSourceOrder`, `apiKeys`, `customSources`) and display (`showSidebar`, `showScrollbars`, `animationSpeed`, `reduceMotion`). The metadata registry removes source toggles for unknown providers and API keys for providers that do not require a key. Current registered keys are `freetogame`, `steamdb`, `howlongtobeat`, and `rawg`.
 
 ## Export and import
 

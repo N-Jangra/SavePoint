@@ -10,7 +10,6 @@ Results carry a `source` and `providerId`; when added to the library they are sa
 
 | Source | Discovery request and mapped fields | Detail behavior |
 |---|---|---|
-| Wikidata | Entity search (`wbsearchentities`, up to 15). Maps ID, label, description, and entity URL; search results do not include artwork. | Loads entity labels, description, claims, and sitelinks. Reads image (P18), publication date (P577), genre (P136), platform (P400), and official website (P856) where present. Images are linked through Wikimedia Commons. |
 | FreeToGame | Fetches the game catalog and filters title, genre, and developer locally; returns up to 15. Maps thumbnail, short description, release date, genre/developer, and game URL. | Loads game detail including publisher/developer, platform, genre, release date, system requirements, thumbnail, and screenshot gallery. |
 | Steam + SteamDB (`steamdb`) | Searches Steam Store (`storesearch`), up to 20. Stores the app ID as `app:<id>`, and maps name, small image, type/price, and SteamDB URL. | Requests Steam app details. Maps description, capsule/header art, screenshots, developer/publisher, genres, release date, platform availability, price, Steam Store link, and SteamDB link. |
 | HowLongToBeat | Requests an init token, then posts a game search; maps game ID, title, release year, cover, summary, completion times, and score. | Attempts to read the game page's embedded data first, then falls back to token-based search. Displays main story, main plus extras, completionist time, platforms, game type, and community score. |
@@ -28,14 +27,13 @@ When several providers describe the same game, facts merge: a later provider nev
 
 Details also carry two structured tables: `requirements` (`minimum` / `recommended`, each a list of `[label, value]` rows parsed from Steam HTML lists, RAWG text lines or FreeToGame fields) and `languages` (`{ name, audio }` from Steam). The details page shows them as tables; `facts` keeps flattened text and language names.
 
-Play time comes from HowLongToBeat (`mainHours`, `extrasHours`, `completionistHours`) or RAWG (`averageHours`); Steam, FreeToGame and Wikidata do not provide hours. `SplitAppMix.hours(title)` looks up only the hours (HowLongToBeat in the Android app, then RAWG) and Statistics uses it for games that lack them. Statistics treats a game's length as `mainHours`, else `averageHours`.
+Play time comes from HowLongToBeat (`mainHours`, `extrasHours`, `completionistHours`) or RAWG (`averageHours`); Steam and FreeToGame do not provide hours. `SplitAppMix.hours(title)` looks up only the hours (HowLongToBeat in the Android app, then RAWG) and Statistics uses it for games that lack them. Statistics treats a game's length as `mainHours`, else `averageHours`.
 
 ### Extras by provider
 
 - **RAWG:** age rating, tags, player-rating breakdown, Metacritic overall and per platform, store links, same-series and editions/DLC carousels, achievements (collapsible), development team (collapsible), alternative names, PC requirements when substantive. Extra lists are fetched in parallel; a failed extra never blocks the page.
 - **Steam:** age requirement, Metacritic, recommendation count, achievements, controller support, languages, DLC count, system requirements, categories as tags, trailers.
 - **FreeToGame:** status, profile and play links, minimum requirements, tags.
-- **Wikidata:** developer, publisher, series, game modes, country and aliases with linked items resolved to English labels in one extra request; Wikipedia link.
 - **HowLongToBeat:** completion times plus completion, playing, backlog and retired counts when present.
 
 ## Discover suggestions
@@ -54,7 +52,7 @@ The metadata settings include refresh interval, retry limit, sync frequency, and
 
 ## Local preview proxy
 
-When served from `localhost` or `127.0.0.1`, browser requests go through `/proxy`. `dev-server.js` accepts HTTPS URLs for a fixed host allowlist: Wikidata, Steam Store, HowLongToBeat, FreeToGame, and RAWG. POST is accepted only for HowLongToBeat's `/api/search/site` endpoint. In the Android app and other non-local origins, the frontend requests providers directly through `fetch` (Capacitor HTTP is enabled in app configuration).
+When served from `localhost` or `127.0.0.1`, browser requests go through `/proxy`. `dev-server.js` accepts HTTPS URLs for a fixed host allowlist: Steam Store, HowLongToBeat, FreeToGame, and RAWG. POST is accepted only for HowLongToBeat's `/api/search/site` endpoint. In the Android app and other non-local origins, the frontend requests providers directly through `fetch` (Capacitor HTTP is enabled in app configuration).
 
 The development proxy is only part of the local preview server; it is not a production metadata backend. For storage of provider settings and cached responses, see [Storage](storage.md).
 
