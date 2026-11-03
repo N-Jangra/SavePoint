@@ -4,7 +4,8 @@
     {"key":"freetogame","name":"FreeToGame","categories":["game"],"keyRequired":false,"domain":"www.freetogame.com"},
     {"key":"steamdb","name":"Steam + SteamDB","categories":["game"],"keyRequired":false,"domain":"store.steampowered.com"},
     {"key":"howlongtobeat","name":"HowLongToBeat","categories":["game"],"keyRequired":false,"domain":"howlongtobeat.com"},
-    {"key":"rawg","name":"RAWG","categories":["game"],"keyRequired":true,"keyUrl":"https://rawg.io/apidocs","domain":"api.rawg.io"}
+    {"key":"rawg","name":"RAWG","categories":["game"],"keyRequired":true,"keyUrl":"https://rawg.io/apidocs","domain":"api.rawg.io"},
+    {"key":"igdb","name":"IGDB","categories":["game"],"keyRequired":true,"keyUrl":"https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/","domain":"api.igdb.com","note":"IGDB requires a Twitch Client ID and access token. Add both in this source’s options; access tokens may need replacing when they expire."}
   ].map(source => Object.freeze({ ...source, categories: Object.freeze([...source.categories]) }));
   // User-defined JSON API sources (Settings → Metadata Sources → Custom sources) are registered at runtime.
   let custom = [];

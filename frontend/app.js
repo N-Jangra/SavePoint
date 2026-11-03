@@ -16,11 +16,11 @@
     theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarCorners: "sharp", bottomBarLabels: "icons-only", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: ["dashboard", "discover", "explore", "settings", "timeline", "statistics"], visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
-    metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg"], customSources: [],
+    metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg", "igdb"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30, backupPasswordReminder: true, maximumBackupSize: 1000, validateBackupLocation: true, restorePreview: true,
-    metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
+    metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false, igdb: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
     imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
   };
@@ -117,8 +117,12 @@
   let addMetadataQuery = "";
   let timelineFilter = "all", timelineSearch = "", timelineMonth = "", timelineYear = "";
   let dashboardStatusFilter = prefs.dashboardStatusFilter || "all";
-  if (prefs.dashboardView === "cards") prefs.dashboardView = "grid";
-  if (!["list", "compact-list", "grid", "detailed-grid", "compact-grid", "large-grid", "timeline"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
+  function normalizeDashboardView() {
+    const legacyDashboardViews = { cards: "detailed-grid", grid: "detailed-grid", "compact-list": "list", timeline: "list" };
+    if (legacyDashboardViews[prefs.dashboardView]) prefs.dashboardView = legacyDashboardViews[prefs.dashboardView];
+    if (!["list", "detailed-grid", "compact-grid", "large-grid"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
+  }
+  normalizeDashboardView();
   if (prefs.dashboardSort === "title") prefs.dashboardSort = "alphabetical-asc";
   else if (prefs.dashboardSort === "recent") prefs.dashboardSort = "created-desc";
   else if (prefs.dashboardSort === "rating") prefs.dashboardSort = "rating-desc";
@@ -984,6 +988,7 @@
       Object.assign(prefs, JSON.parse(JSON.stringify(prefsDefaults)));
     }
     if (selected.preferences && typeof selected.preferences === "object") Object.assign(prefs, selected.preferences);
+    normalizeDashboardView();
     refreshSourceRegistry();
     normalizeNavigationPrefs();
   }
@@ -1366,6 +1371,10 @@
       const status = Number(error?.status) || Number(/\b(\d{3})\b/.exec(error?.message || "")?.[1]);
       const providerMessage = sourceKey === "rawg" && status === 401
         ? "RAWG rejected the API key (HTTP 401). Check or replace it in Settings → Metadata Sources."
+        : sourceKey === "igdb" && status === 401
+          ? "IGDB rejected the access token (HTTP 401). Replace the Twitch token in Settings → Metadata Sources → IGDB options."
+          : sourceKey === "igdb" && status === 403
+            ? "IGDB denied the request (HTTP 403). Check that the Twitch Client ID and token belong to the same app."
         : sourceKey === "rawg" && status === 403
           ? "RAWG denied the request (HTTP 403). Check that the key is active, then try again."
           : sourceKey === "rawg" && status === 429
@@ -1908,7 +1917,7 @@
       bottomBarCorners: { round: "panels-top-left", sharp: "square" },
       bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid" },
       bottomBarLayout: { spread: "align-horizontal-space-between", center: "align-horizontal-justify-center", left: "align-horizontal-justify-start" },
-      dashboardView: { list: "list", "compact-list": "align-justify", grid: "layout-grid", "detailed-grid": "layout-dashboard", "compact-grid": "grid-3x3", "large-grid": "square", timeline: "calendar-days" },
+      dashboardView: { list: "list", "detailed-grid": "layout-dashboard", "compact-grid": "grid-3x3", "large-grid": "square" },
       dashboardDefaultCategory: { remember: "history", all: "layers", game: "gamepad-2" },
       defaultStatus: { Backlog: "bookmark", Playing: "play", "On Hold": "pause", Dropped: "circle-x", Completed: "circle-check" },
       dateFormat: { auto: "globe", dmy: "calendar", mdy: "calendar", iso: "calendar-days", long: "calendar-check" },
@@ -2584,6 +2593,7 @@
         }
         Object.assign(prefs, nativePreferences);
       }
+      normalizeDashboardView();
       delete prefs.defaultCategory;
       delete prefs.appLook;
       delete prefs.appDisplayName;

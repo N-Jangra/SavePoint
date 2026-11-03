@@ -25,7 +25,7 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Accept, Content-Type, X-Auth-Token, X-HP-Key, X-HP-Val",
+    "Access-Control-Allow-Headers": "Accept, Authorization, Client-ID, Content-Type, X-Auth-Token, X-HP-Key, X-HP-Val, X-Source-Cookie, X-Source-User-Agent",
     "Cache-Control": "no-store"
   };
 }
@@ -34,7 +34,7 @@ function staticHeaders(contentType) {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Accept, Content-Type, X-Auth-Token, X-HP-Key, X-HP-Val",
+    "Access-Control-Allow-Headers": "Accept, Authorization, Client-ID, Content-Type, X-Auth-Token, X-HP-Key, X-HP-Val, X-Source-Cookie, X-Source-User-Agent",
     "Cache-Control": process.env.NODE_ENV === "production"
       ? "public, max-age=31536000, immutable"
       : "no-cache",
@@ -56,7 +56,7 @@ function safeJoin(base, target) {
   return resolved.startsWith(base) ? resolved : null;
 }
 
-const ALLOWED_SOURCE_HOSTS = new Set(['store.steampowered.com', 'howlongtobeat.com', 'www.freetogame.com', 'api.rawg.io']);
+const ALLOWED_SOURCE_HOSTS = new Set(['store.steampowered.com', 'howlongtobeat.com', 'www.freetogame.com', 'api.rawg.io', 'api.igdb.com']);
 
 async function proxyRequest(targetUrl, req, res) {
   let target;
@@ -66,7 +66,8 @@ async function proxyRequest(targetUrl, req, res) {
   }
   const isHowLongToBeat = target.hostname === "howlongtobeat.com";
   const isHowLongToBeatSearch = isHowLongToBeat && target.pathname === "/api/search/site";
-  if (req.method !== "GET" && !(req.method === "POST" && isHowLongToBeatSearch)) {
+  const isIgdbQuery = target.hostname === "api.igdb.com" && target.pathname === "/v4/games";
+  if (req.method !== "GET" && !(req.method === "POST" && (isHowLongToBeatSearch || isIgdbQuery))) {
     sendJson(res, 405, { error: "Unsupported metadata proxy method" }); return;
   }
   let body;
@@ -77,7 +78,7 @@ async function proxyRequest(targetUrl, req, res) {
   }
   const userAgent = isHowLongToBeat || target.hostname === "www.freetogame.com" ? (req.headers["user-agent"] || "Mozilla/5.0") : "SavePoint/1.0 metadata client";
   const headers = { Accept: req.headers.accept || "application/json,text/plain,*/*", "User-Agent": userAgent };
-  for (const name of ["content-type", "origin", "referer", "x-auth-token", "x-hp-key", "x-hp-val"]) if (req.headers[name]) headers[name] = req.headers[name];
+  for (const name of ["content-type", "origin", "referer", "authorization", "client-id", "x-auth-token", "x-hp-key", "x-hp-val"]) if (req.headers[name]) headers[name] = req.headers[name];
   // Per-source user agent and cookies chosen in Settings → Metadata Sources (browsers cannot set these themselves).
   if (req.headers["x-source-user-agent"]) headers["User-Agent"] = String(req.headers["x-source-user-agent"]).slice(0, 400);
   if (req.headers["x-source-cookie"]) headers.Cookie = String(req.headers["x-source-cookie"]).slice(0, 4000);

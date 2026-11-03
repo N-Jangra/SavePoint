@@ -8,6 +8,16 @@
   const nativeHttp = window.CapacitorHttp || capacitor?.Plugins?.CapacitorHttp || capacitor?.Plugins?.Http || null;
   const localPreview = !nativeApp && location.protocol.startsWith("http") && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
   const encode = value => encodeURIComponent(String(value || "").trim());
+  const igdbCredentials = settings => {
+    const clientId = String(settings.sourceOptions?.igdb?.clientId || "").trim();
+    const token = String(settings.apiKeys?.igdb || "").trim();
+    if (!clientId || !token) throw new Error("Add the Twitch Client ID and access token in Settings → Metadata Sources → IGDB options.");
+    return { "Client-ID": clientId, Authorization: `Bearer ${token}`, "Content-Type": "text/plain" };
+  };
+  const igdbRequest = (query, settings = {}) => requestJson("https://api.igdb.com/v4/games", { ...settings, method: "POST", noCache: true, headers: igdbCredentials(settings), body: query });
+  const igdbImage = (url, size = "t_cover_big") => url ? `https:${String(url).startsWith("//") ? url : `//${String(url).replace(/^https?:\/\//, "")}`}`.replace(/\/t_[^/]+\//, `/${size}/`) : "";
+  const igdbYear = stamp => Number(stamp) > 0 ? String(new Date(Number(stamp) * 1000).getUTCFullYear()) : "";
+  const igdbSearchText = value => String(value || "").replace(/[\\"]/g, char => `\\${char}`).replace(/[\r\n]/g, " ").trim();
   function responseError(status, statusText, data) {
     let payload = data;
     if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch (_) {} }
@@ -78,6 +88,42 @@
       throw error;
     }
   }
+  // CueMark's HowLongToBeat flow tries the native/direct request first and
+  // then uses the local metadata proxy when a file:// browser blocks CORS.
+  // Keep SavePoint's normal source-aware request path first; only use this
+  // portable fallback for HLTB when that transport fails.
+  async function requestHowLongToBeat(url, options = {}, responseType = "json") {
+    try {
+      const requestOptions = { ...options, noCache: true };
+      return responseType === "text" ? await requestText(url, requestOptions) : await requestJson(url, requestOptions);
+    } catch (directError) {
+      if (localPreview) throw directError; // requestJson already used the preview proxy.
+      const origin = location?.origin;
+      const proxyBase = location?.protocol === "file:"
+        ? "http://127.0.0.1:3000/proxy"
+        : origin && origin !== "null" ? new URL("/proxy", origin).toString() : "";
+      if (!proxyBase) throw directError;
+
+      const resolved = applySource(url, options);
+      const target = resolved.url;
+      const proxyUrl = new URL(proxyBase);
+      proxyUrl.searchParams.set("url", target);
+      const headers = { ...(resolved.options.headers || {}) };
+      if (headers.Cookie) { headers["x-source-cookie"] = headers.Cookie; delete headers.Cookie; }
+      if (headers["User-Agent"]) { headers["x-source-user-agent"] = headers["User-Agent"]; delete headers["User-Agent"]; }
+      // The local proxy sets HLTB's Origin and Referer upstream; don't ask a
+      // browser to send these restricted headers to the cross-origin proxy.
+      delete headers.Origin;
+      delete headers.Referer;
+      try {
+        return await wireRequest(proxyUrl.toString(), { ...resolved.options, noCache: true, headers }, responseType);
+      } catch {
+        throw directError;
+      }
+    }
+  }
+  const requestHowLongToBeatJson = (url, options = {}) => requestHowLongToBeat(url, options, "json");
+  const requestHowLongToBeatText = (url, options = {}) => requestHowLongToBeat(url, options, "text");
   const requestText = (url, options = {}) => { ({ url, options } = applySource(url, options)); return wireRequest(url, options, "text"); };
   const result = (source, category, providerId, title, fields = {}) => ({
     source, category, providerId: String(providerId || ""), title: String(title || "").trim(),
@@ -96,7 +142,6 @@
       return (data.items || []).slice(0,20).map(row => result("steamdb", category, `app:${row.id}`, row.name, { image: row.tiny_image, url: `https://steamdb.info/app/${row.id}/`, subtitle: [row.type,row.price?.final_formatted].filter(Boolean).join(" · ") }));
     },
     howlongtobeat: async (query, category, settings) => {
-      if (!nativeApp) throw new Error("HowLongToBeat search only works in the Android app. Browsers block it, so use another source here.");
       const base = "https://howlongtobeat.com";
       const token = await fetchHowLongToBeatToken(base);
       const payload = howLongToBeatPayload(query, token);
@@ -104,11 +149,11 @@
       const headers = { ...howLongToBeatHeaders(base, token), ...sessionHeaders };
       let data;
       try {
-        data = await requestJson(`${base}/api/search/site`, { ...settings, method:"POST", noCache:true, headers, body:JSON.stringify(payload) });
+        data = await requestHowLongToBeatJson(`${base}/api/search/site`, { ...settings, method:"POST", noCache:true, headers, body:JSON.stringify(payload) });
       } catch (error) {
         if (![401, 403, 404].includes(Number(error?.status)) && !/\b(401|403|404)\b/.test(error?.message || "")) throw error;
         const freshToken = await fetchHowLongToBeatToken(base, true);
-        data = await requestJson(`${base}/api/search/site`, { ...settings, method:"POST", noCache:true, headers:{ ...howLongToBeatHeaders(base, freshToken), ...sessionHeaders }, body:JSON.stringify(howLongToBeatPayload(query, freshToken)) });
+        data = await requestHowLongToBeatJson(`${base}/api/search/site`, { ...settings, method:"POST", noCache:true, headers:{ ...howLongToBeatHeaders(base, freshToken), ...sessionHeaders }, body:JSON.stringify(howLongToBeatPayload(query, freshToken)) });
       }
       return (data.data || []).filter(row => row.game_type === "game").map(row => result("howlongtobeat",category,row.game_id,row.game_name,{year:row.release_world,image:row.game_image ? `${base}/games/${row.game_image}` : "",description:row.profile_summary,url:`${base}/game/${row.game_id}`,rating:Number(row.review_score)/10,subtitle:[row.release_world,row.comp_main ? `${Math.round(row.comp_main/360)/10}h main` : "",row.comp_plus ? `${Math.round(row.comp_plus/360)/10}h +extras` : ""].filter(Boolean).join(" · ")}));
     },
@@ -116,6 +161,16 @@
       const key = settings.apiKeys?.rawg?.trim(); if (!key) throw new Error("Add a RAWG API key in Settings → Metadata Sources.");
       const data = await requestJson(`https://api.rawg.io/api/games?key=${encode(key)}&search=${encode(query)}&page_size=15`, settings);
       return (data.results || []).map(row => result("rawg",category,row.id,row.name,{year:row.released?.slice(0,4),image:row.background_image,description:row.rating ? `RAWG rating ${row.rating}/5` : "",rating:row.rating,url:`https://rawg.io/games/${row.slug}`,subtitle:[row.released?.slice(0,4),row.rating ? `★ ${row.rating}` : ""].filter(Boolean).join(" · ")}));
+    },
+    igdb: async (query, category, settings) => {
+      const text = igdbSearchText(query);
+      if (!text) return [];
+      const data = await igdbRequest(`fields id,name,slug,summary,first_release_date,cover.url,rating,rating_count,genres.name,platforms.name,url; search "${text}"; where category = 0; limit 15;`, settings);
+      return (Array.isArray(data) ? data : []).map(row => result("igdb", category, row.id, row.name, {
+        year: igdbYear(row.first_release_date), image: igdbImage(row.cover?.url, "t_cover_big"), description: row.summary || "",
+        rating: Number(row.rating) ? Number((row.rating / 20).toFixed(1)) : 0, url: row.url || (row.slug ? `https://www.igdb.com/games/${row.slug}` : ""),
+        subtitle: [igdbYear(row.first_release_date), (row.genres || []).slice(0, 2).map(entry => entry.name).filter(Boolean).join(", "), (row.platforms || []).slice(0, 2).map(entry => entry.name).filter(Boolean).join(", ")].filter(Boolean).join(" · ")
+      }));
     },
   };
   // ---- Custom JSON API sources ----
@@ -233,7 +288,7 @@
   }
   async function fetchHowLongToBeatToken(base, refresh = false) {
     if (!refresh && howLongToBeatToken && Date.now() - howLongToBeatToken.fetchedAt < 10 * 60 * 1000) return howLongToBeatToken;
-    const token = await requestJson(`${base}/api/search/site/init?t=${Date.now()}`, { noCache:true, headers:{ Accept:"application/json", Referer:`${base}/`, ...(await howLongToBeatSessionHeaders()) } });
+    const token = await requestHowLongToBeatJson(`${base}/api/search/site/init?t=${Date.now()}`, { noCache:true, headers:{ Accept:"application/json", Referer:`${base}/`, ...(await howLongToBeatSessionHeaders()) } });
     if (!token?.token) throw new Error("HowLongToBeat session unavailable.");
     howLongToBeatToken = { ...token, fetchedAt:Date.now() };
     return howLongToBeatToken;
@@ -263,7 +318,7 @@
     // RAWG can take longer on mobile networks than the other providers. Its
     // Android HTTP bridge allows a 15s connect + 20s read window, so don't
     // mark a healthy request as failed after only the old 10s UI deadline.
-    const sourceTimeout = source.key === "rawg" && nativeApp ? 35000 : source.key === "rawg" ? 25000 : 10000;
+    const sourceTimeout = source.key === "rawg" && nativeApp ? 35000 : source.key === "rawg" ? 25000 : source.key === "howlongtobeat" ? 30000 : 10000;
     const { results, errors, pending } = await collectProviderJobs([{ name: source.name || source.key, run: () => runSourceSearch(source, query.trim(), category, settings) }], { timeoutMs: sourceTimeout, graceMs: 0 });
     if (pending) throw new Error(errors[0] || `${source.name || source.key} did not respond in time.`);
     if (!results.length && errors.length) throw new Error(errors.join("; "));
@@ -300,6 +355,14 @@
       const [hot, best, upcoming] = await Promise.all([list(`ordering=-added&dates=${year - 1}-01-01,${year}-12-31`), list(`ordering=-metacritic&metacritic=80,100&dates=${year - 2}-01-01,${year}-12-31`), list(`ordering=-added&dates=${today},${year + 1}-12-31`)]);
       return [{ source: "rawg", title: "Trending on RAWG", items: map(hot) }, { source: "rawg", title: "Critically acclaimed", items: map(best) }, { source: "rawg", title: "Upcoming", items: map(upcoming) }];
     });
+    if (want("igdb") && settings.apiKeys?.igdb?.trim() && settings.sourceOptions?.igdb?.clientId?.trim()) jobs.push(async () => {
+      const rows = await igdbRequest("fields id,name,slug,first_release_date,cover.url,rating,rating_count,genres.name,url; where category = 0 & rating > 75 & rating_count > 100; sort follows desc; limit 12;", settings);
+      const items = (Array.isArray(rows) ? rows : []).map(row => result("igdb", category, row.id, row.name, {
+        year: igdbYear(row.first_release_date), image: igdbImage(row.cover?.url, "t_cover_big"), rating: Number(row.rating) ? Number((row.rating / 20).toFixed(1)) : 0,
+        url: row.url || (row.slug ? `https://www.igdb.com/games/${row.slug}` : ""), subtitle: [igdbYear(row.first_release_date), (row.genres || []).slice(0, 2).map(entry => entry.name).filter(Boolean).join(", ")].filter(Boolean).join(" · ")
+      }));
+      return [{ source: "igdb", title: "Popular on IGDB", items }];
+    });
     const { results: collected, errors, pending } = await collectProviderJobs(jobs.map((run, index) => ({ name: `Suggestion source ${index + 1}`, run })), { timeoutMs: 10000, graceMs: 1200 });
     const sections = collected.filter(section => section.items.length);
     if (!sections.length && (errors.length || pending)) throw new Error(errors[0] || "Suggestion sources are taking too long. Try a search above.");
@@ -311,5 +374,5 @@
     howLongToBeatBlockedUntil = 0;
     howLongToBeatBlockedError = null;
   }
-  window.SplitAppDiscovery = Object.freeze({ appKey, search, searchSource, trending, testCustomSource, loadCustomDetails, requestJson, requestText, encode, result, textFromHtml, clearSourceCooldown });
+  window.SplitAppDiscovery = Object.freeze({ appKey, search, searchSource, trending, testCustomSource, loadCustomDetails, requestJson, requestText, requestHowLongToBeatJson, requestHowLongToBeatText, igdbRequest, igdbImage, igdbYear, encode, result, textFromHtml, clearSourceCooldown });
 })();
