@@ -57,12 +57,13 @@
       const art = localArt || onlineArt;
       const remoteArt = /^https?:\/\//i.test(onlineArt) ? onlineArt : "";
       const initialArt = localArt || (remoteArt ? "" : onlineArt);
+      const localPending = Boolean(game && !localArt && (game.thumbnailPath || game.localImageFiles?.length));
       const itemId = game?.id || entry.itemId || "";
       const thumbItemId = itemId ? `data-timeline-item-id="${esc(itemId)}"` : "";
       const historyIndex = historyEntryIndex.get(entry) ?? -1;
       const thumbHistoryIndex = historyIndex >= 0 ? `data-timeline-history-index="${historyIndex}"` : "";
       const thumb = art
-        ? `<span class="timeline-item-thumb has-art" ${thumbItemId} ${thumbHistoryIndex}><img data-timeline-art data-timeline-item-id="${esc(itemId)}" ${thumbHistoryIndex}${initialArt ? ` src="${esc(initialArt)}"` : ""}${remoteArt && remoteArt !== localArt ? ` data-online-fallback="${esc(remoteArt)}"` : ""} alt="" loading="lazy" decoding="async"><b class="timeline-status-dot" aria-label="${esc(status)}">${statusIcons[status] || "•"}</b></span>`
+        ? `<span class="timeline-item-thumb has-art" ${thumbItemId} ${thumbHistoryIndex}><img data-deferred-image data-timeline-art data-timeline-item-id="${esc(itemId)}" ${thumbHistoryIndex}${initialArt ? ` data-lazy-src="${esc(initialArt)}"` : ""}${localPending ? ` data-local-item-id="${esc(itemId)}"` : ""}${remoteArt && remoteArt !== localArt ? ` data-online-fallback="${esc(remoteArt)}"` : ""} alt="" loading="lazy" decoding="async" fetchpriority="low"><b class="timeline-status-dot" aria-label="${esc(status)}">${statusIcons[status] || "•"}</b></span>`
         : `<span class="timeline-item-thumb" ${thumbItemId} ${thumbHistoryIndex} aria-hidden="true">${statusIcons[status] || "•"}</span>`;
           const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
           const action = entry.action || "Status updated";

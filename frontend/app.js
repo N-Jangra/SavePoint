@@ -135,10 +135,10 @@
   let detailItemId = initialRoute[0] === "details" ? detailIdFromQuery(initialHashQuery) || null : null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "dashboard", detailRequest = 0;
   let detailRestorePending = Boolean(detailItemId);
   let detailImagePosition = 0, detailImageOpener = null;
-  const dashboardPageSize = 40;
+  const dashboardPageSize = 24;
   let dashboardLazyObserver = null;
-  let timelineArtworkObserver = null;
-  let bottomBarFlowObserver = null, bottomBarFlowFrame = 0;
+  let deferredImageObserver = null, deferredImageFlushTimer = 0, deferredImageDrain = null;
+  const deferredLocalImageQueue = [], deferredLocalImageRequests = new Map();
   let searchRenderTimer = null;
   let discoverRequestId = 0;
   let addMetadataRequestId = 0;
@@ -146,7 +146,6 @@
   const mixEnrichmentByItem = new Map();
   const detailRefreshByItem = new Map();
   let discoverCache = null;
-  let timelineThumbnailHydration = null;
   let timelineThumbnailLookup = null;
   const timelineLocalThumbnailChecked = new Set();
   const timelineOnlineThumbnailRequested = new Set();
@@ -348,7 +347,7 @@
     if (page !== "settings") settingsGroup = null;
     if (updateHistory) historyPush();
     document.body.dataset.navDir = "forward";
-    render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" }); syncBottomBarFlow();
+    render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
   }
   function historyPush() {
     const route = currentHistoryRoute();
@@ -416,6 +415,7 @@
     if (!target || !batch.length) { button.remove(); return; }
     const library = window.SplitAppLibrary.create(pageContext());
     target.insertAdjacentHTML("beforeend", batch.map(library.card).join(""));
+    observeDeferredImages(target);
     const nextOffset = offset + batch.length;
     target.dataset.renderedCount = String(nextOffset);
     button.dataset.offset = String(nextOffset);
@@ -445,30 +445,70 @@
     }), { rootMargin: "640px 0px" });
     loaders.forEach(button => dashboardLazyObserver.observe(button));
   }
-  function syncBottomBarFlow() {
-    const bar = $("#bottom-bar"), content = $("#page-content");
-    if (!bar || !content) return;
-    if (!bottomBarFlowObserver && window.ResizeObserver) {
-      bottomBarFlowObserver = new ResizeObserver(() => {
-        if (bottomBarFlowFrame) return;
-        bottomBarFlowFrame = requestAnimationFrame(() => { bottomBarFlowFrame = 0; syncBottomBarFlow(); });
-      });
-      bottomBarFlowObserver.observe(content);
-    }
-    const keepBarPinned = ["explore", "discover", "mix", "statistics"].includes(page)
-      || (page === "settings" && ["metadata-sources", "source-options", "app-info", "logcat", "nav-layout", "tracking"].includes(settingsGroup));
-    if (page === "add" || keepBarPinned || getComputedStyle(bar).display === "none") {
-      delete document.body.dataset.bottomBarFlow;
+  function deferredImageSource(image) {
+    return image?.dataset.lazySrc || image?.dataset.onlineFallback || "";
+  }
+  function setDeferredImageSource(image, source) {
+    if (!image?.isConnected) return;
+    delete image.dataset.localItemId;
+    delete image.dataset.lazySrc;
+    if (source) image.src = source;
+    else if (image.matches("[data-timeline-art]")) showTimelineArtworkPlaceholder(image);
+    else { image.hidden = true; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
+  }
+  async function drainDeferredLocalImages() {
+    if (deferredImageDrain) return deferredImageDrain;
+    deferredImageDrain = (async () => {
+      const hydrate = window.SplitAppBackend?.hydrateThumbnails;
+      while (deferredLocalImageQueue.length) {
+        const batch = deferredLocalImageQueue.splice(0, 8);
+        try { if (typeof hydrate === "function") await hydrate(batch.map(record => record.item)); }
+        catch (error) { recordLog("warning", `Could not load saved artwork: ${error?.message || error}`); }
+        for (const record of batch) {
+          timelineLocalThumbnailChecked.add(record.id);
+          const source = record.item.localThumbnailData || record.fallback;
+          record.images.forEach(image => setDeferredImageSource(image, source));
+          deferredLocalImageRequests.delete(record.id);
+        }
+      }
+    })().finally(() => { deferredImageDrain = null; });
+    return deferredImageDrain;
+  }
+  function activateDeferredImage(image) {
+    if (!image?.isConnected || image.hasAttribute("src")) return;
+    const id = String(image.dataset.localItemId || "");
+    const item = id && items.find(row => String(row.id) === id);
+    if (!item) { setDeferredImageSource(image, deferredImageSource(image)); return; }
+    const existing = deferredLocalImageRequests.get(id);
+    if (existing) { existing.images.add(image); return; }
+    const hasLocalFile = Boolean(item.thumbnailPath || item.localImageFiles?.length);
+    if (!hasLocalFile || item.localThumbnailData || timelineLocalThumbnailChecked.has(id)) {
+      timelineLocalThumbnailChecked.add(id);
+      setDeferredImageSource(image, item.localThumbnailData || deferredImageSource(image));
       return;
     }
-    const contentBottom = window.scrollY + content.getBoundingClientRect().bottom;
-    const fitsWithoutGap = contentBottom + bar.offsetHeight <= document.documentElement.clientHeight;
-    document.body.dataset.bottomBarFlow = String(fitsWithoutGap);
+    const record = { id, item, fallback: deferredImageSource(image), images: new Set([image]) };
+    deferredLocalImageRequests.set(id, record);
+    deferredLocalImageQueue.push(record);
+    if (!deferredImageFlushTimer) deferredImageFlushTimer = setTimeout(() => {
+      deferredImageFlushTimer = 0;
+      drainDeferredLocalImages();
+    }, 0);
   }
-  window.addEventListener("resize", () => {
-    if (bottomBarFlowFrame) return;
-    bottomBarFlowFrame = requestAnimationFrame(() => { bottomBarFlowFrame = 0; syncBottomBarFlow(); });
-  }, { passive: true });
+  function observeDeferredImages(root = document) {
+    if (!root?.querySelectorAll) return;
+    const images = [...root.querySelectorAll("img[data-deferred-image]")].filter(image => !image.hasAttribute("src"));
+    if (!images.length) return;
+    if (!window.IntersectionObserver) { images.forEach(activateDeferredImage); return; }
+    if (!deferredImageObserver) {
+      deferredImageObserver = new IntersectionObserver(entries => entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        deferredImageObserver.unobserve(entry.target);
+        activateDeferredImage(entry.target);
+      }), { rootMargin: "700px 0px" });
+    }
+    images.forEach(image => deferredImageObserver.observe(image));
+  }
   async function showCachedTimelineImage(image, sourceUrl) {
     if (!image?.isConnected || !sourceUrl || !window.caches || !/^https?:\/\//i.test(sourceUrl)) return false;
     try {
@@ -491,19 +531,6 @@
     thumb?.classList.remove("has-art");
     thumb?.querySelector(".timeline-status-dot")?.remove();
     if (thumb) thumb.textContent = statusMark;
-  }
-  function activateTimelineArtwork(image) {
-    if (!image?.isConnected || image.hasAttribute("src")) return;
-    const sourceUrl = image.dataset.onlineFallback;
-    if (!sourceUrl) return;
-    showCachedTimelineImage(image, sourceUrl).then(cached => {
-      if (cached || !image.isConnected || image.hasAttribute("src")) return;
-      if (prefs.metadataMode !== "offline" && prefs.metadataThumbnails && navigator.onLine) {
-        image.src = sourceUrl;
-        return;
-      }
-      showTimelineArtworkPlaceholder(image);
-    });
   }
   async function requestTimelineImage(sourceUrl) {
     try {
@@ -550,21 +577,6 @@
     })().finally(() => timelineImageCacheRequests.delete(sourceUrl));
     timelineImageCacheRequests.set(sourceUrl, task);
     return task;
-  }
-  function hydrateTimelineThumbnails() {
-    const hydrate = window.SplitAppBackend?.hydrateThumbnails;
-    if (timelineThumbnailHydration || typeof hydrate !== "function") return;
-    const visibleIds = new Set($$(".timeline-item-thumb[data-timeline-item-id]", $("#page-content")).map(node => String(node.dataset.timelineItemId)));
-    const localCandidates = items.filter(item => visibleIds.has(String(item.id)) && !item.localThumbnailData && (item.thumbnailPath || item.localImageFiles?.length) && !timelineLocalThumbnailChecked.has(String(item.id)));
-    if (!localCandidates.length) { fetchTimelineOnlineThumbnails(); return; }
-    localCandidates.forEach(item => timelineLocalThumbnailChecked.add(String(item.id)));
-    timelineThumbnailHydration = hydrate(localCandidates, () => { if (page === "timeline") render(); })
-      .catch(error => recordLog("warning", `Could not load local timeline thumbnails: ${error?.message || error}`))
-      .finally(() => {
-        timelineThumbnailHydration = null;
-        if (page === "timeline") render();
-        else fetchTimelineOnlineThumbnails();
-      });
   }
   function fetchTimelineOnlineThumbnails(itemIds = [], historyIndexes = []) {
     if (page !== "timeline" || prefs.metadataMode === "offline" || !prefs.metadataThumbnails || !navigator.onLine || !window.SplitAppDiscovery?.search || timelineThumbnailLookup) return;
@@ -646,8 +658,7 @@
       if (filterBadge) filterBadge.hidden = !hasActiveFilter;
     }
     const content = $("#page-content");
-    timelineArtworkObserver?.disconnect();
-    timelineArtworkObserver = null;
+    deferredImageObserver?.disconnect();
     if (page === "settings") { if (settingsGroup !== renderedSettingsGroup) { settingsFrom = renderedSettingsGroup || ""; renderedSettingsGroup = settingsGroup; } } else renderedSettingsGroup = undefined;
     const route = page === "settings" ? `settings/${settingsGroup || "index"}` : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page;
     const preservePageState = route === renderedRoute;
@@ -701,13 +712,7 @@
       }
     }
     window.lucide?.createIcons({ root: content, attrs: { "aria-hidden": "true" } });
-    if (page === "timeline" && window.IntersectionObserver) {
-      timelineArtworkObserver = new IntersectionObserver(entries => entries.forEach(entry => {
-        if (!entry.isIntersecting) return;
-        timelineArtworkObserver?.unobserve(entry.target);
-        activateTimelineArtwork(entry.target);
-      }), { rootMargin: "180px 0px" });
-    }
+    observeDeferredImages(content);
     content.querySelectorAll("[data-timeline-art]").forEach(image => {
       image.addEventListener("load", () => {
         const candidate = image.dataset.onlineFallback || image.currentSrc || image.src;
@@ -728,19 +733,8 @@
         if (timelineItemId && items.some(item => String(item.id) === timelineItemId)) fetchTimelineOnlineThumbnails([timelineItemId]);
         else if (Number.isInteger(timelineHistoryIndex) && timelineHistoryIndex >= 0) fetchTimelineOnlineThumbnails([], [timelineHistoryIndex]);
       });
-      if (!image.hasAttribute("src") && image.dataset.onlineFallback) {
-        const itemId = String(image.dataset.timelineItemId || "");
-        const imageItem = items.find(item => String(item.id) === itemId);
-        const localArtworkPending = Boolean(imageItem && (imageItem.thumbnailPath || imageItem.localImageFiles?.length) && (timelineThumbnailHydration || !timelineLocalThumbnailChecked.has(itemId)));
-        if (!localArtworkPending) {
-          if (timelineArtworkObserver) timelineArtworkObserver.observe(image);
-          else activateTimelineArtwork(image);
-        }
-      }
     });
-    if (page === "timeline") hydrateTimelineThumbnails();
     observeDashboardLoaders();
-    syncBottomBarFlow();
     content.querySelector("[data-clear-collection-search]")?.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
@@ -804,7 +798,7 @@
       } catch (error) { toast(error?.message || "Could not open HowLongToBeat."); }
     });
     content.querySelector("#detail-edit-form")?.addEventListener("submit", saveDetailEdit);
-    content.querySelectorAll(".detail-page [data-action]").forEach(button => button.addEventListener("click", event => {
+    content.querySelectorAll(".detail-page [data-action]").forEach(button => button.addEventListener("click", async event => {
       const action = button.dataset.action;
       if (!["edit", "progress", "refresh-details", "delete-detail", "cancel-detail-edit", "save-detail-item", "open-saved-entry"].includes(action)) return;
       event.preventDefault(); event.stopPropagation();
@@ -817,7 +811,7 @@
       else if (action === "save-detail-item") {
         const preview = detailPreview;
         detailRequest++; // Discard any in-flight provider preview load before switching to the saved entry.
-        const saved = addDiscoverResult(preview, "Details");
+        const saved = await addDiscoverResult(preview, "Details");
         if (saved) {
           detailPreview = null; detailItemId = saved.id; detailData = saved.cachedDetails || null; detailError = ""; detailLoading = true;
           goto("details");
@@ -1159,8 +1153,9 @@
       const currentBox = $("#add-metadata-results"), currentMessage = $("#add-metadata-message");
       if (!currentBox || !currentMessage) return;
       currentBox._results = results;
-      currentBox.innerHTML = results.slice(0, 16).map((result, index) => `<article class="add-metadata-result"><span class="add-metadata-art">${result.image ? `<img src="${esc(result.image)}" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="gamepad-2" aria-hidden="true"${result.image ? " hidden" : ""}></i></span><div><strong>${esc(result.title)}</strong><small>${esc(result.source)}${result.year ? ` · ${esc(result.year)}` : ""}${result.subtitle ? ` · ${esc(result.subtitle)}` : ""}</small><p>${esc(result.description || "")}</p></div><button class="button secondary small" type="button" data-add-metadata-index="${index}">Use</button></article>`).join("");
+      currentBox.innerHTML = results.slice(0, 16).map((result, index) => `<article class="add-metadata-result"><span class="add-metadata-art">${result.image ? `<img data-deferred-image data-lazy-src="${esc(result.image)}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="gamepad-2" aria-hidden="true"${result.image ? " hidden" : ""}></i></span><div><strong>${esc(result.title)}</strong><small>${esc(result.source)}${result.year ? ` · ${esc(result.year)}` : ""}${result.subtitle ? ` · ${esc(result.subtitle)}` : ""}</small><p>${esc(result.description || "")}</p></div><button class="button secondary small" type="button" data-add-metadata-index="${index}">Use</button></article>`).join("");
       window.lucide?.createIcons({ root: currentBox, attrs: { "aria-hidden": "true" } });
+      observeDeferredImages(currentBox);
       currentMessage.textContent = results.length
         ? results.length + " results found." + (results.warnings?.length ? " " + results.warnings.length + " source(s) did not respond: " + results.warnings.join("; ") : "")
         : "No results found.";
@@ -1239,7 +1234,7 @@
     syncEditedCompletionTarget(entry, old);
     if (old) items[items.indexOf(old)] = entry; else items.unshift(entry);
     if (entry.status !== "Backlog" && entry.status !== old?.status) history.unshift({ itemId: entry.id, title: entry.title, action: entry.status, status: entry.status, at: Date.now() });
-    persist(); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
+    await persist(); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
     if (!old && key === "game") enrichLibraryEntryWithMix(entry, { ...entry, source: entry.metadataSource }, "Add Game");
   }
   async function saveAddForm(form) {
@@ -1253,7 +1248,7 @@
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = "Completed";
     if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
-    persist(); render(); toast("Progress updated.");
+    await persist(); render(); toast("Progress updated.");
   }
   function finishDeletingItem(id, returnPage) {
     const exists = id != null && items.some(entry => String(entry.id) === String(id));
@@ -1296,7 +1291,7 @@
     Object.assign(item, draft, { updatedAt: Date.now() });
     if (oldStatus !== item.status && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     detailEditMode = false;
-    persist(); render(); toast("Entry updated.");
+    await persist(); render(); toast("Entry updated.");
   }
 
   function submitDiscover() {
@@ -1312,7 +1307,7 @@
   }
   function discoverCardArtwork(image) {
     const hasImage = Boolean(image);
-    return `<div class="discover-card-art">${hasImage ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="discover-art-fallback" aria-hidden="true"${hasImage ? " hidden" : ""}><i data-lucide="gamepad-2"></i></span></div>`;
+    return `<div class="discover-card-art">${hasImage ? `<img data-deferred-image data-lazy-src="${esc(image)}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="discover-art-fallback" aria-hidden="true"${hasImage ? " hidden" : ""}><i data-lucide="gamepad-2"></i></span></div>`;
   }
   function findLibraryMatch(result) {
     if (!result?.title) return null;
@@ -1368,6 +1363,7 @@
     );
     box._results = results;
     updateDiscoverLibraryActions();
+    observeDeferredImages(box);
     return true;
   }
   let suggestionsCache = null, suggestionsRequest = 0;
@@ -1535,7 +1531,7 @@
     if (result.cachedDetails) item.cachedDetails = result.cachedDetails;
     return item;
   }
-  function addDiscoverResult(result, origin = "Discover") {
+  async function addDiscoverResult(result, origin = "Discover") {
     if (!result) return null;
     let item = findLibraryMatch(result);
     const wasSaved = Boolean(item);
@@ -1546,7 +1542,7 @@
       if (["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     }
     item.updatedAt = Date.now();
-    persist();
+    await persist();
     updateDiscoverLibraryActions();
     if (page === "mix") paintMixResults();
     toast(wasSaved ? "Refreshing this library entry from enabled sources…" : `Added to your library. Fetching details from enabled sources…`);
@@ -1585,6 +1581,13 @@
       }
       const current = items.find(row => String(row.id) === itemId);
       if (!current || !loaded) return null;
+      const tracking = {
+        status: current.status,
+        goal: current.goal,
+        progress: current.progress,
+        completionTarget: current.completionTarget,
+        completionTargetHours: current.completionTargetHours
+      };
       if (mixed) {
         applyMixIdentity(current, loaded);
         current.mixSourceKeys = [...new Set(loaded.facts?.sources || [])];
@@ -1597,8 +1600,10 @@
       current.url = loaded.url || current.url;
       current.image = current.localThumbnailData || loaded.portraitImage || loaded.image || current.image;
       current.backdrop = loaded.landscapeImage || loaded.backgroundImage || current.backdrop;
+      Object.assign(current, tracking);
       current.updatedAt = Date.now();
       await persist();
+      await window.SplitAppBackend?.flushFolderWrites?.();
       try {
         const localImages = await window.SplitAppBackend?.loadItemImages?.(current);
         if (localImages && Object.keys(localImages).length) current.localImageData = localImages;
@@ -1620,8 +1625,9 @@
   function paintMixResults() {
     const box = $("#mix-results"), message = $("#mix-message"); if (!box) return;
     const rows = mixCache?.results || [];
-    box.innerHTML = rows.map((row, index) => { const saved = findLibraryMatch({ ...row, category: config.categories[0].key }); return `<li class="mix-row"><button type="button" class="mix-result-main" data-mix-open="${index}" aria-label="View details for ${esc(row.title)}"><span class="mix-row-art">${row.image ? `<img src="${esc(row.image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="gamepad-2" aria-hidden="true"${row.image ? " hidden" : ""}></i></span><span class="mix-row-copy"><strong>${esc(row.title)}</strong><small>${row.year ? esc(row.year) : "Game"}</small><span class="mix-row-sources">${mixChips(row.sources)}</span></span></button><button type="button" class="button ${saved ? "secondary" : "primary"} small" data-mix-add="${index}" aria-label="${saved ? "Already in your library" : `Add ${esc(row.title)} to library`}"${saved ? " disabled" : ""}><i data-lucide="${saved ? "check" : "plus"}" aria-hidden="true"></i><span>${saved ? "In library" : "Add"}</span></button></li>`; }).join("");
+    box.innerHTML = rows.map((row, index) => { const saved = findLibraryMatch({ ...row, category: config.categories[0].key }); return `<li class="mix-row"><button type="button" class="mix-result-main" data-mix-open="${index}" aria-label="View details for ${esc(row.title)}"><span class="mix-row-art">${row.image ? `<img data-deferred-image data-lazy-src="${esc(row.image)}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="gamepad-2" aria-hidden="true"${row.image ? " hidden" : ""}></i></span><span class="mix-row-copy"><strong>${esc(row.title)}</strong><small>${row.year ? esc(row.year) : "Game"}</small><span class="mix-row-sources">${mixChips(row.sources)}</span></span></button><button type="button" class="button ${saved ? "secondary" : "primary"} small" data-mix-add="${index}" aria-label="${saved ? "Already in your library" : `Add ${esc(row.title)} to library`}"${saved ? " disabled" : ""}><i data-lucide="${saved ? "check" : "plus"}" aria-hidden="true"></i><span>${saved ? "In library" : "Add"}</span></button></li>`; }).join("");
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
+    observeDeferredImages(box);
     if (message && mixCache && !message.textContent) message.textContent = rows.length ? `${rows.length} games · open one to merge details from all sources.` : "No games found.";
   }
   async function runMixSearch() {
@@ -1774,6 +1780,13 @@
       if (requestId === detailRequest) {
         detailData = loaded;
         if (!isPreview) {
+          const tracking = {
+            status: item.status,
+            goal: item.goal,
+            progress: item.progress,
+            completionTarget: item.completionTarget,
+            completionTargetHours: item.completionTargetHours
+          };
           if (upgradedToMix) applyMixIdentity(item, loaded);
           item.cachedDetails = loaded;
           if (item.metadataSource === "mix") {
@@ -1785,6 +1798,7 @@
           item.year = loaded.year || item.year;
           item.image = loaded.portraitImage || loaded.image || item.image;
           item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
+          Object.assign(item, tracking);
           item.updatedAt = Date.now();
           persist();
           window.SplitAppBackend?.loadItemImages?.(item).then(localImageData => {
@@ -1862,7 +1876,7 @@
     const changed = item.status !== status;
     item.status = status; item.updatedAt = Date.now();
     if (changed && ["Dropped", "Completed", "On Hold", "Playing"].includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
-    persist();
+    await persist();
     return true;
   }
   function openItemActions(id) {
@@ -2253,7 +2267,7 @@
     tabs[next]?.focus();
     tabs[next]?.click();
   });
-  $("#page-content").addEventListener("click", event => {
+  $("#page-content").addEventListener("click", async event => {
     const sourceKeyToggle = event.target.closest("[data-toggle-source-key]");
     if (sourceKeyToggle) {
       const sourceKey = sourceKeyToggle.dataset.toggleSourceKey;
@@ -2461,7 +2475,7 @@
       return;
     }
     const action = event.target.closest("[data-action]");
-    if (action) { if (action.dataset.action === "add") openItem(); else if (action.dataset.action === "progress") updateProgress(action.dataset.id); else if (action.dataset.action === "edit") { if (page === "details") { detailEditMode = true; render(); } else openEdit(action.dataset.id); } else if (action.dataset.action === "cancel-detail-edit") { detailEditMode = false; render(); } else if (action.dataset.action === "details") openDetails(action.dataset.id); else if (action.dataset.action === "refresh-details") loadDetails({ force: true }); else if (action.dataset.action === "delete-detail") requestDeleteDetails(action.dataset.id); else if (action.dataset.action === "save-detail-item") { const saved = addDiscoverResult(detailPreview); if (saved) { detailPreview = null; detailItemId = saved.id; detailData = null; loadDetails(); } } return; }
+    if (action) { if (action.dataset.action === "add") openItem(); else if (action.dataset.action === "progress") updateProgress(action.dataset.id); else if (action.dataset.action === "edit") { if (page === "details") { detailEditMode = true; render(); } else openEdit(action.dataset.id); } else if (action.dataset.action === "cancel-detail-edit") { detailEditMode = false; render(); } else if (action.dataset.action === "details") openDetails(action.dataset.id); else if (action.dataset.action === "refresh-details") loadDetails({ force: true }); else if (action.dataset.action === "delete-detail") requestDeleteDetails(action.dataset.id); else if (action.dataset.action === "save-detail-item") { const saved = await addDiscoverResult(detailPreview); if (saved) { detailPreview = null; detailItemId = saved.id; detailData = null; loadDetails(); } } return; }
     const deleteButton = event.target.closest("#delete-item"); if (deleteButton) { deleteItem(deleteButton.dataset.id); return; }
     const settingAction = event.target.closest("[data-setting-action]");
     if (settingAction && settingAction.type !== "file") {
@@ -2474,7 +2488,7 @@
       return;
     }
     const sourceDetails = event.target.closest("[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
-    const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); return; }
+    const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { await addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); return; }
   });
   document.addEventListener("change", event => {
     const input = event.target;
@@ -2524,16 +2538,7 @@
     if (input.matches("[data-setting-action=import]")) { const file = input.files?.[0]; input.value = ""; importList(file); }
   });
   let navTouchDrag = null;
-  document.addEventListener("touchstart", event => {
-    if (navTouchDrag || event.touches.length !== 1) return;
-    const handle = event.target.closest?.(".nav-layout-row .drag-handle");
-    const row = handle?.closest("[data-nav-row]");
-    if (!handle || !row) return;
-    const touch = event.touches[0];
-    navTouchDrag = { identifier: touch.identifier, row, startY: touch.clientY, moved: false, wasDraggable: row.draggable };
-    row.draggable = false;
-  }, { passive: true });
-  document.addEventListener("touchmove", event => {
+  const handleNavTouchMove = event => {
     const drag = navTouchDrag;
     const touch = drag && [...event.changedTouches].find(point => point.identifier === drag.identifier);
     if (!drag || !touch) return;
@@ -2545,11 +2550,22 @@
     if (!target || target === drag.row || target.parentElement !== drag.row.parentElement) return;
     const rect = target.getBoundingClientRect();
     target.parentElement.insertBefore(drag.row, touch.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
-  }, { passive: false });
+  };
+  document.addEventListener("touchstart", event => {
+    if (navTouchDrag || event.touches.length !== 1) return;
+    const handle = event.target.closest?.(".nav-layout-row .drag-handle");
+    const row = handle?.closest("[data-nav-row]");
+    if (!handle || !row) return;
+    const touch = event.touches[0];
+    navTouchDrag = { identifier: touch.identifier, row, startY: touch.clientY, moved: false, wasDraggable: row.draggable };
+    row.draggable = false;
+    document.addEventListener("touchmove", handleNavTouchMove, { passive: false });
+  }, { passive: true });
   const finishNavTouchDrag = event => {
     const drag = navTouchDrag;
     if (!drag || (event && ![...event.changedTouches].some(touch => touch.identifier === drag.identifier))) return;
     navTouchDrag = null;
+    document.removeEventListener("touchmove", handleNavTouchMove);
     drag.row.classList.remove("dragging");
     drag.row.draggable = drag.wasDraggable;
     if (!drag.moved) return;
@@ -2716,7 +2732,11 @@
       const refreshable = ["dashboard", "timeline", "statistics", "discover", "details"].includes(page) || settingsSourcePage;
       return refreshable && !busy && window.scrollY <= 0 && !target.closest?.("input, textarea, select, button, a, label, dialog, [draggable=true], [role=button], [data-detail-image-src], .detail-carousel, .detail-gallery, .discover-rail, .ep-ratings-scroll, .season-pills, .detail-tabs");
     };
-    const begin = (y, target) => { candidate = allowed(target); startY = y; pulling = false; distance = 0; };
+    const handleTouchMove = event => move(event.touches[0].clientY, event);
+    const begin = (y, target) => {
+      candidate = allowed(target); startY = y; pulling = false; distance = 0;
+      if (candidate) document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    };
     const move = (y, event) => {
       if (!candidate) return;
       const dy = y - startY;
@@ -2733,9 +2753,13 @@
       catch (_) { show("done", "Could not refresh", 62); }
       await new Promise(resolve => setTimeout(resolve, 650)); hide(); busy = false;
     };
+    const finishTouch = async () => {
+      document.removeEventListener("touchmove", handleTouchMove);
+      await finish();
+    };
+    const cancelTouch = () => { document.removeEventListener("touchmove", handleTouchMove); candidate = false; pulling = false; hide(); };
     document.addEventListener("touchstart", event => begin(event.touches[0].clientY, event.target), { passive: true });
-    document.addEventListener("touchmove", event => move(event.touches[0].clientY, event), { passive: false });
-    document.addEventListener("touchend", finish); document.addEventListener("touchcancel", () => { candidate = false; pulling = false; hide(); });
+    document.addEventListener("touchend", finishTouch); document.addEventListener("touchcancel", cancelTouch);
     let mouseDown = false;
     document.addEventListener("mousedown", event => { if (event.button !== 0 || event.target.closest("button, a, label")) return; mouseDown = true; begin(event.clientY, event.target); });
     document.addEventListener("mousemove", event => { if (mouseDown) move(event.clientY, event); });
@@ -2807,15 +2831,13 @@
       const nativeItems = Array.isArray(restored.items) ? restored.items.filter(item => config.categories.some(category => category.key === item.category)) : items;
       const nativeHistory = Array.isArray(restored.history) ? restored.history : history;
       const nativePreferences = restored.preferences && typeof restored.preferences === "object" ? restored.preferences : {};
-      if (restored.loadedFromFolder) {
+      if (localMutationRevision === initialRevision) {
         items = nativeItems;
         history = nativeHistory;
-        Object.keys(prefs).forEach(key => delete prefs[key]);
-        Object.assign(prefs, JSON.parse(JSON.stringify(prefsDefaults)), nativePreferences);
-      } else if (localMutationRevision === initialRevision) {
-        items = nativeItems;
-        history = nativeHistory;
-        Object.assign(prefs, nativePreferences);
+        if (restored.loadedFromFolder) {
+          Object.keys(prefs).forEach(key => delete prefs[key]);
+          Object.assign(prefs, JSON.parse(JSON.stringify(prefsDefaults)), nativePreferences);
+        } else Object.assign(prefs, nativePreferences);
       } else {
         const currentItems = new Map(items.map(item => [String(item.id), item]));
         const mergedItems = new Map(nativeItems.map(item => [String(item.id), item]));
@@ -2881,8 +2903,5 @@
     const redirectedFromMissingDetail = redirectHomeIfDetailMissing();
     applyPreferences(); render(); syncBackupSchedule();
     if (!redirectedFromMissingDetail && page === "details" && detailItemId && !detailPreview) loadDetails();
-    // Covers saved in the chosen folder: load them so they show without the cache or a connection.
-    let repaint = 0; const repaintSoon = () => { clearTimeout(repaint); repaint = setTimeout(() => { if (["dashboard", "details", "timeline"].includes(page)) render(); }, 400); };
-    window.SplitAppBackend?.hydrateThumbnails?.(items, repaintSoon).then(count => { if (count) repaintSoon(); }).catch(() => {});
   });
 })();

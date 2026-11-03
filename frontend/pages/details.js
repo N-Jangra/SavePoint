@@ -23,17 +23,24 @@
 
     const renderSection = (section, watchedIds = new Set(), canToggleEpisodes = false, item = null, sectionIndex = 0, imageButton = () => "") => {
       const items = section.items || [];
-      const body = section.kind === "carousel"
+      const body = section.kind === "videos"
+        ? `<div class="detail-video-list">${items.map((entry, entryIndex) => {
+            const videoUrl = safeUrl(entry.videoUrl || entry.url);
+            const poster = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image);
+            if (!videoUrl) return "";
+            return `<article class="detail-video-card"><video controls playsinline preload="none"${poster ? ` poster="${esc(poster)}"` : ""} aria-label="Play ${esc(entry.title || "game trailer")}"><source src="${esc(videoUrl)}"${entry.videoType === "video/webm" ? " type=\"video/webm\"" : " type=\"video/mp4\""}></video><strong>${esc(entry.title || "Trailer")}</strong></article>`;
+          }).join("")}</div>`
+        : section.kind === "carousel"
         ? `<div class="detail-carousel">${items.map((entry, entryIndex) => {
             const href = safeUrl(entry.url);
             const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image);
-            const inner = `<span class="detail-carousel-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="image" aria-hidden="true"${image ? " hidden" : ""}></i></span><strong>${esc(entry.title || "Untitled")}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}`;
+            const inner = `<span class="detail-carousel-art">${image ? `<img data-deferred-image data-lazy-src="${esc(image)}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="image" aria-hidden="true"${image ? " hidden" : ""}></i></span><strong>${esc(entry.title || "Untitled")}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}`;
             return href ? `<a class="detail-carousel-card" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="detail-carousel-card">${inner}</div>`;
           }).join("")}</div>`
         : section.kind === "gallery"
         ? `<div class="detail-gallery">${items.map((entry, entryIndex) => {
             const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image || entry.url);
-            return image ? imageButton(image, entry.title || "Screenshot", `<span class="detail-gallery-art"><img src="${esc(image)}" alt="${esc(entry.title || "Source image")}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false;this.closest('.detail-gallery-image')?.removeAttribute('data-detail-image-src');this.closest('.detail-gallery-image')?.setAttribute('aria-disabled','true')"><i data-lucide="image" aria-hidden="true" hidden></i></span><span>${esc(entry.title || "")}</span>`, "detail-gallery-image") : "";
+            return image ? imageButton(image, entry.title || "Screenshot", `<span class="detail-gallery-art"><img data-deferred-image data-lazy-src="${esc(image)}" alt="${esc(entry.title || "Source image")}" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false;this.closest('.detail-gallery-image')?.removeAttribute('data-detail-image-src');this.closest('.detail-gallery-image')?.setAttribute('aria-disabled','true')"><i data-lucide="image" aria-hidden="true" hidden></i></span><span>${esc(entry.title || "")}</span>`, "detail-gallery-image") : "";
           }).join("")}</div>`
         : `<div class="detail-source-list">${items.map((entry, entryIndex) => {
             const href = safeUrl(entry.url);
@@ -44,7 +51,7 @@
             const toggle = section.kind === "episodes" && canToggleEpisodes
               ? `<button class="episode-toggle ${watched ? "is-watched" : ""}" type="button" data-episode-toggle data-episode-id="${esc(episodeId)}" data-episode-title="${title}" aria-pressed="${watched}">${watched ? "Watched ✓" : "Mark watched"}</button>`
               : "";
-            const thumbnail = image ? imageButton(image, entry.title || "Source image", `<span class="detail-source-art"><img src="${esc(image)}" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false;this.closest('.detail-source-image')?.removeAttribute('data-detail-image-src');this.closest('.detail-source-image')?.setAttribute('aria-disabled','true')"><i data-lucide="image" aria-hidden="true" hidden></i></span>`, "detail-source-image") : "";
+            const thumbnail = image ? imageButton(image, entry.title || "Source image", `<span class="detail-source-art"><img data-deferred-image data-lazy-src="${esc(image)}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false;this.closest('.detail-source-image')?.removeAttribute('data-detail-image-src');this.closest('.detail-source-image')?.setAttribute('aria-disabled','true')"><i data-lucide="image" aria-hidden="true" hidden></i></span>`, "detail-source-image") : "";
             const content = `<div class="detail-source-item">${thumbnail}<div><strong>${title}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}${entry.description ? `<p>${esc(entry.description)}</p>` : ""}${href && section.kind !== "episodes" ? `<a class="detail-entry-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>` : ""}${toggle}</div></div>`;
             return content;
           }).join("")}</div>`;
@@ -62,11 +69,11 @@
       const alreadySaved = detailPreview && items.find(row => row.category === item.category && String(row.title || "").trim().toLocaleLowerCase() === String(item.title || "").trim().toLocaleLowerCase());
       const source = window.SplitAppMetadata.providers.find(row => row.key === (item.metadataSource || item.source));
       const loaded = detailData || {};
-      const image = safeImage(item.localThumbnailData || item.localImageData?.["image"] || item.localImageData?.["cachedDetails.portraitImage"] || item.localImageData?.["cachedDetails.image"] || loaded.portraitImage || loaded.image || item.image);
+      const image = safeImage(item.localImageData?.["cachedDetails.portraitImage"] || loaded.portraitImage || item.cachedDetails?.portraitImage || item.localThumbnailData || item.localImageData?.["image"] || item.localImageData?.["cachedDetails.image"] || loaded.image || item.image);
       const landscape = safeImage(item.localImageData?.["cachedDetails.landscapeImage"] || item.localImageData?.["cachedDetails.backgroundImage"] || loaded.landscapeImage || loaded.backgroundImage);
       const summary = loaded.description || item.description || item.summary || "No description is available for this entry yet.";
       const sourceUrl = safeUrl(loaded.url || item.url || item.providerUrl);
-      const goal = Math.max(0, Number(loaded.goal || item.goal) || 0);
+      const goal = Math.max(0, Number(loaded.goal) || 0, Number(item.goal) || 0, Number(item.completionTargetHours) || 0);
       const progress = Math.max(0, Number(item.progress) || 0);
       const percent = goal ? Math.max(0, Math.min(100, Math.round(progress / goal * 100))) : 0;
       const unit = category(item.category)?.unit || "";

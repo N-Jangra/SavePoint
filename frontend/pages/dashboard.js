@@ -4,7 +4,7 @@
   window.SplitAppPages.dashboard = context => {
     const { config, esc, items, libraryQuery, dashboardStatusFilter = "all", prefs, labelCategory } = context;
     const { dashboardItems, card, listOrEmpty } = window.SplitAppLibrary.create(context);
-    const pageSize = 40;
+    const pageSize = 24;
     const view = prefs.dashboardView || "list";
     const gridViews = new Set(["grid", "detailed-grid", "compact-grid", "large-grid"]);
     const listClass = gridViews.has(view) ? "item-grid" : "item-list";

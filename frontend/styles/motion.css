@@ -40,11 +40,16 @@ dialog::backdrop{animation:sp-fade calc(var(--speed,180ms) * 1.4) ease both}
 .progress-line span,.bar-track span{transition:width calc(var(--speed,180ms) * 2.4) var(--ease-out)}
 .toast{transition:transform calc(var(--speed,180ms) * 1.4) var(--ease-spring),opacity var(--speed,180ms) ease}
 
-/* ---- Performance: skip layout/paint of off-screen groups & cards ---- */
-.dashboard-status-group{content-visibility:auto;contain-intrinsic-size:auto 220px}
+/* Keep long-page scroll geometry stable while artwork and groups enter view. */
 .item-card,.discover-card{contain:layout style}
-img{content-visibility:auto}
-#page-content{contain:layout style}
+
+/* On touch devices, keep sticky surfaces cheap to composite during a fling. */
+@media (pointer:coarse) {
+  .topbar,.bottom-bar,.detail-page-heading,.settings-subpage-heading,.timeline-filters {
+    -webkit-backdrop-filter:none!important;
+    backdrop-filter:none!important;
+  }
+}
 
 /* ---- Low-memory devices: drop blur/shadows, shorten everything ---- */
 html[data-lowend=true]{--speed:min(var(--speed,180ms),120ms)}

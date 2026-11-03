@@ -7,9 +7,11 @@
   const databaseFileName = `${app.key}_database.json`;
   const folderTreeName = `${app.key}-db`;
   const folderItemHashKey = `${storageKey}_folder_item_hashes`;
+  const folderImageHashKey = `${storageKey}_folder_image_hashes`;
   const folderArchiveHashKey = `${storageKey}_folder_archive_hashes_v2`;
   const itemIds = new Set();
   let activeFolderUri = "";
+  let folderSnapshotQueue = Promise.resolve();
   let folderWriteQueue = Promise.resolve();
 
   function discardRemovedFields(data) {
@@ -116,6 +118,20 @@
       second = Math.imul(second ^ (code + index), 0x85ebca6b);
     }
     return `${value.length}:${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`;
+  }
+
+  function imageFingerprint(candidates) {
+    const value = JSON.stringify(candidates.map(candidate => ({ paths: candidate.paths, source: candidate.source })));
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < value.length; index++) hash = Math.imul(hash ^ value.charCodeAt(index), 0x01000193);
+    return `${value.length}:${(hash >>> 0).toString(16)}`;
+  }
+
+  function readFolderImageHashes(uri) {
+    try {
+      const value = JSON.parse(localStorage.getItem(folderImageHashKey) || "{}");
+      return value && typeof value === "object" && value[uri] && typeof value[uri] === "object" ? value[uri] : {};
+    } catch (_) { return {}; }
   }
 
   function folderArchiveFingerprint(data) {
@@ -270,8 +286,11 @@
 
   async function makeThumbnail(source) {
     if (typeof source !== "string" || !source) return null;
+    let requestTimer;
     try {
-      const response = await fetch(source);
+      const controller = typeof AbortController === "function" ? new AbortController() : null;
+      if (controller) requestTimer = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch(source, controller ? { signal: controller.signal } : undefined);
       if (!response.ok) throw new Error(`Image request failed (${response.status})`);
       const original = await response.blob();
       let output = original;
@@ -299,7 +318,7 @@
         if (image?.base64Content) return image;
       }
       throw error;
-    }
+    } finally { if (requestTimer) clearTimeout(requestTimer); }
   }
 
   async function syncFolderTree(payload, uri) {
@@ -307,6 +326,7 @@
     if (!uri || !plugin?.writeNestedFile || !plugin?.writeNestedBinaryFile) return;
     const treePath = [folderTreeName];
     const hashes = readFolderHashes(uri);
+    const imageHashes = readFolderImageHashes(uri);
     const markerKey = `${folderItemHashKey}_nomedia_v2`;
     if (localStorage.getItem(markerKey) !== uri) {
       try {
@@ -328,24 +348,35 @@
       let imageWritten = true;
       try {
         const itemHash = itemFingerprint(item);
-        if (hashes[String(item.id)] === itemHash) continue;
+        const id = String(item.id), candidates = collectImageCandidates(item), imageHash = imageFingerprint(candidates);
+        const cachedImages = imageHashes[id];
+        if (hashes[id] === itemHash && cachedImages?.fingerprint === imageHash) continue;
         const localImageFiles = [];
-        const candidates = collectImageCandidates(item);
         const usedFileNames = new Set();
-        for (const [candidateIndex, candidate] of candidates.entries()) {
-          const fileName = candidate.paths.some(path => path.length === 1 && path[0] === "image")
-            ? ".thumbnail"
-            : `.image-${candidateIndex}`;
-          usedFileNames.add(fileName);
-          const image = await makeThumbnail(candidate.source);
-          if (image?.base64Content) {
-            await plugin.writeNestedBinaryFile({ uri, dirPath, fileName, base64Content: image.base64Content });
-            localImageFiles.push({ paths: candidate.paths, fileName, mimeType: image.mimeType });
-          } else {
-            imageWritten = false;
+        if (cachedImages?.fingerprint === imageHash && Array.isArray(cachedImages.files)) {
+          localImageFiles.push(...cachedImages.files);
+          cachedImages.files.forEach(file => usedFileNames.add(file.fileName));
+        } else if (item.localImageFingerprint === imageHash && Array.isArray(item.localImageFiles)) {
+          localImageFiles.push(...item.localImageFiles);
+          item.localImageFiles.forEach(file => usedFileNames.add(file.fileName));
+        } else {
+          for (const [candidateIndex, candidate] of candidates.entries()) {
+            const fileName = candidate.paths.some(path => path.length === 1 && path[0] === "image")
+              ? ".thumbnail"
+              : `.image-${candidateIndex}`;
+            usedFileNames.add(fileName);
+            const image = await makeThumbnail(candidate.source);
+            if (image?.base64Content) {
+              await plugin.writeNestedBinaryFile({ uri, dirPath, fileName, base64Content: image.base64Content });
+              localImageFiles.push({ paths: candidate.paths, fileName, mimeType: image.mimeType });
+            } else {
+              imageWritten = false;
+            }
           }
         }
         const thumbnail = localImageFiles.find(file => file.fileName === ".thumbnail");
+        if (imageWritten) item.localImageFingerprint = imageHash;
+        else delete item.localImageFingerprint;
         item.thumbnailPath = thumbnail ? thumbnailPath : "";
         item.thumbnailMime = thumbnail?.mimeType || "";
         item.localImageFiles = localImageFiles;
@@ -361,8 +392,9 @@
           }
         }
         await plugin.writeNestedFile({ uri, dirPath, fileName: "index.json", content: JSON.stringify(portableItem(item), null, 2) });
-        if (imageWritten) hashes[String(item.id)] = itemFingerprint(item);
-        else delete hashes[String(item.id)];
+        hashes[id] = itemFingerprint(item);
+        if (imageWritten) imageHashes[id] = { fingerprint: imageHash, files: localImageFiles };
+        else delete imageHashes[id];
       } catch (error) {
         delete hashes[String(item.id)];
         console.warn(`Could not sync SavePoint item ${item.title || item.id} to the selected folder`, error);
@@ -383,17 +415,24 @@
               const files = (await plugin.listFiles({ uri: folder.uri }))?.files || [];
               for (const file of files) if (file.uri) await plugin.deleteFile({ uri: file.uri });
               await plugin.deleteFile({ uri: folder.uri });
-              delete hashes[folder.name];
             } catch (error) { console.warn(`Could not remove old SavePoint item folder ${folder.name}`, error); }
           }
         }
       } catch (error) { console.warn("Could not check for removed SavePoint item folders", error); }
     }
+    const liveIds = new Set(payload.items.filter(item => item?.id != null).map(item => String(item.id)));
+    for (const id of Object.keys(hashes)) if (!liveIds.has(id)) delete hashes[id];
+    for (const id of Object.keys(imageHashes)) if (!liveIds.has(id)) delete imageHashes[id];
     let allHashes = {};
     try { allHashes = JSON.parse(localStorage.getItem(folderItemHashKey) || "{}"); } catch (_) {}
     if (!allHashes || typeof allHashes !== "object") allHashes = {};
     allHashes[uri] = hashes;
     localStorage.setItem(folderItemHashKey, JSON.stringify(allHashes));
+    let allImageHashes = {};
+    try { allImageHashes = JSON.parse(localStorage.getItem(folderImageHashKey) || "{}"); } catch (_) {}
+    if (!allImageHashes || typeof allImageHashes !== "object") allImageHashes = {};
+    allImageHashes[uri] = imageHashes;
+    localStorage.setItem(folderImageHashKey, JSON.stringify(allImageHashes));
   }
 
   function hasFolderPlugin() {
@@ -437,23 +476,48 @@
     const files = listing?.files || [];
     const tree = files.find(entry => entry.name === folderTreeName && entry.uri);
     const treeFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
-    const file = treeFiles.find(entry => entry.name === "database.json" && entry.uri)
-      || files.find(entry => entry.name === databaseFileName && entry.uri)
-      || files.filter(entry => entry.uri && new RegExp(`^${app.key}-backup-\\d{4}-\\d{2}-\\d{2}\\.json$`, "i").test(entry.name))
-        .sort((a, b) => b.name.localeCompare(a.name))[0];
-    if (!file) {
-      const mirroredItems = await listFolderTreeItems(uri);
-      return mirroredItems.length ? { items: mirroredItems, history: [], preferences: {}, fromItemTree: true } : null;
+    const backups = files.filter(entry => entry.uri && new RegExp(`^${app.key}(?:-backup-|_backup_)\\d{4}-\\d{2}-\\d{2}\\.json$`, "i").test(entry.name))
+      .sort((a, b) => (Number(b.lastModified) || 0) - (Number(a.lastModified) || 0) || b.name.localeCompare(a.name));
+    const candidates = [
+      treeFiles.find(entry => entry.name === "database.json" && entry.uri),
+      files.find(entry => entry.name === databaseFileName && entry.uri),
+      ...backups
+    ].filter((entry, index, all) => entry && all.findIndex(other => other?.uri === entry.uri) === index);
+    for (const file of candidates) {
+      try {
+        const result = await plugin.readFile({ uri: file.uri });
+        const parsed = JSON.parse(result.content);
+        const items = Array.isArray(parsed) ? parsed : parsed?.items;
+        if (!Array.isArray(items)) throw new Error("Database has no game list");
+        return {
+          items,
+          history: Array.isArray(parsed.history) ? parsed.history : [],
+          preferences: parsed.preferences && typeof parsed.preferences === "object" ? parsed.preferences : {}
+        };
+      } catch (error) {
+        console.warn(`Could not read SavePoint database file ${file.name}; trying the next recovery copy`, error);
+      }
     }
-    const result = await plugin.readFile({ uri: file.uri });
-    const parsed = JSON.parse(result.content);
-    const items = Array.isArray(parsed) ? parsed : parsed?.items;
-    if (!Array.isArray(items)) throw new Error("The SavePoint database file is invalid.");
-    return {
-      items,
-      history: Array.isArray(parsed.history) ? parsed.history : [],
-      preferences: parsed.preferences && typeof parsed.preferences === "object" ? parsed.preferences : {}
-    };
+    const tarBackups = files.filter(entry => entry.uri && new RegExp(`^${app.key}_backup_\\d{4}-\\d{2}-\\d{2}\\.tar$`, "i").test(entry.name))
+      .sort((a, b) => (Number(b.lastModified) || 0) - (Number(a.lastModified) || 0) || b.name.localeCompare(a.name));
+    for (const file of tarBackups) {
+      try {
+        if (!plugin.readTarEntry) break;
+        const result = await plugin.readTarEntry({ uri: file.uri, entryName: databaseFileName });
+        const parsed = JSON.parse(result.content);
+        const items = Array.isArray(parsed) ? parsed : parsed?.items;
+        if (!Array.isArray(items)) throw new Error("Archive database has no game list");
+        return {
+          items,
+          history: Array.isArray(parsed.history) ? parsed.history : [],
+          preferences: parsed.preferences && typeof parsed.preferences === "object" ? parsed.preferences : {}
+        };
+      } catch (error) {
+        console.warn(`Could not restore SavePoint database from ${file.name}; trying the next recovery copy`, error);
+      }
+    }
+    const mirroredItems = await listFolderTreeItems(uri);
+    return mirroredItems.length ? { items: mirroredItems, history: [], preferences: {}, fromItemTree: true } : null;
   }
 
   async function hydrateFolderData(data, uri) {
@@ -466,13 +530,13 @@
       items: data.items.map(item => {
         const mirrored = mirroredById.get(String(item.id));
         if (!mirrored) return item;
+        const databaseIsNewer = (Number(item.updatedAt) || 0) >= (Number(mirrored.updatedAt) || 0);
+        const freshest = databaseIsNewer ? item : mirrored;
         return {
-          // The per-game JSON is the complete local record and also carries
-          // image-file references. It is written before the central index, so
-          // prefer it if an interrupted save left the index one step behind.
-          ...item,
-          ...mirrored,
-          cachedDetails: mirrored.cachedDetails || item.cachedDetails,
+          // Use the newest tracked record while taking portable artwork refs
+          // and cached provider details from whichever copy has them.
+          ...freshest,
+          cachedDetails: freshest.cachedDetails || (databaseIsNewer ? mirrored.cachedDetails : item.cachedDetails),
           localImageFiles: mirrored.localImageFiles || item.localImageFiles,
           thumbnailPath: mirrored.thumbnailPath || item.thumbnailPath,
           thumbnailMime: mirrored.thumbnailMime || item.thumbnailMime,
@@ -485,16 +549,25 @@
   function queueFolderDatabaseWrite(payload, uri = activeFolderUri) {
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
     if (!uri || !plugin?.writeFile) return Promise.resolve();
-    folderWriteQueue = folderWriteQueue.catch(() => {}).then(async () => {
-      await syncFolderTree(payload, uri);
-      const content = JSON.stringify(portableData(payload));
-      if (plugin.writeNestedFile) {
-        await plugin.writeNestedFile({ uri, dirPath: [folderTreeName], fileName: "database.json", content });
-      }
+    // Commit the portable database snapshot immediately. Artwork downloads and
+    // per-game mirrors can be slow; the library's status/details must survive
+    // an app being closed while those files are syncing.
+    const content = JSON.stringify(portableData(payload));
+    const snapshotWrite = folderSnapshotQueue.catch(() => {}).then(async () => {
+      if (plugin.writeNestedFile) await plugin.writeNestedFile({ uri, dirPath: [folderTreeName], fileName: "database.json", content });
       await plugin.writeFile({ uri, fileName: databaseFileName, content });
-      await writeFolderBackup(payload, uri, plugin);
     });
-    return folderWriteQueue;
+    // Keep portable snapshots ordered by save revision. Concurrent SAF writes
+    // to the same document can otherwise finish out of order and restore stale data.
+    folderSnapshotQueue = snapshotWrite.catch(() => {});
+    const syncWrite = folderWriteQueue.catch(() => {}).then(async () => {
+      await snapshotWrite;
+      await syncFolderTree(payload, uri);
+      await writeFolderBackup(payload, uri, plugin);
+      if (activeFolderUri === uri) localStorage.setItem(storageKey, JSON.stringify(portableData(payload)));
+    });
+    folderWriteQueue = syncWrite.catch(error => { console.warn("Could not finish syncing SavePoint data to the selected folder", error); });
+    return snapshotWrite;
   }
 
   async function writeFolderBackup(payload, uri, plugin) {
@@ -537,6 +610,7 @@
     };
     let folderData = null;
     const encryptedItemIds = new Set();
+    let encryptedItems = [];
     // Require a reachable shared database folder at every native app launch.
     // If the folder has not been chosen yet, or its persisted access was lost,
     // open Android's picker before loading the library.
@@ -550,6 +624,7 @@
         if (itemsResult?.exists && itemsResult.data) {
           const items = JSON.parse(itemsResult.data);
           if (Array.isArray(items)) {
+            encryptedItems = items;
             data.items = items;
             items.forEach(item => { if (item?.id != null) encryptedItemIds.add(String(item.id)); });
           }
@@ -564,9 +639,37 @@
     // The selected folder is the portable source of truth when it already has
     // a SavePoint database. Otherwise migrate this device's existing data into it.
     if (folderData) {
-      data = folderData.fromItemTree
-        ? { ...data, ...folderData, history: folderData.history.length ? folderData.history : data.history, preferences: { ...data.preferences, ...folderData.preferences } }
-        : folderData;
+      const byId = new Map();
+      for (const candidate of [...(data.items || []), ...(folderData.items || []), ...encryptedItems]) {
+        if (!candidate || candidate.id == null) continue;
+        const id = String(candidate.id), previous = byId.get(id);
+        if (!previous) byId.set(id, candidate);
+        else if ((Number(candidate.updatedAt) || 0) >= (Number(previous.updatedAt) || 0)) {
+          byId.set(id, {
+            ...previous,
+            ...candidate,
+            cachedDetails: candidate.cachedDetails || previous.cachedDetails,
+            facts: candidate.facts || previous.facts,
+            image: candidate.image || previous.image,
+            backdrop: candidate.backdrop || previous.backdrop,
+            description: candidate.description || previous.description,
+            localImageFiles: candidate.localImageFiles || previous.localImageFiles,
+            thumbnailPath: candidate.thumbnailPath || previous.thumbnailPath,
+            thumbnailMime: candidate.thumbnailMime || previous.thumbnailMime
+          });
+        } else {
+          if (!previous.cachedDetails && candidate.cachedDetails) previous.cachedDetails = candidate.cachedDetails;
+          if (!previous.facts && candidate.facts) previous.facts = candidate.facts;
+          if (!previous.localImageFiles && candidate.localImageFiles) previous.localImageFiles = candidate.localImageFiles;
+          if (!previous.thumbnailPath && candidate.thumbnailPath) previous.thumbnailPath = candidate.thumbnailPath;
+        }
+      }
+      const history = [...new Map([...(data.history || []), ...(folderData.history || [])].map(entry => [JSON.stringify(entry), entry])).values()];
+      data = {
+        items: [...byId.values()],
+        history,
+        preferences: folderData.fromItemTree ? { ...data.preferences, ...folderData.preferences } : folderData.preferences
+      };
     }
     if (folderUri) data = await hydrateFolderData(data, folderUri);
     discardRemovedFields(data);
@@ -661,6 +764,7 @@
     getFolderUri: () => getFolderUri({ prompt: false }),
     loadItemImages,
     hydrateThumbnails,
+    flushFolderWrites: () => Promise.all([folderSnapshotQueue, folderWriteQueue]),
     setImageStorage,
     inspectFolder,
     isNativeFolderStorageAvailable: hasFolderPlugin

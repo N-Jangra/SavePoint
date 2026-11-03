@@ -91,11 +91,15 @@
       const entry=data?.[id]; const d=entry?.success===false?null:entry?.data;
       if(!d) throw new Error("Steam could not load this game's details.");
       const shots=(d.screenshots||[]).slice(0,20).map((shot,index)=>({title:`Screenshot ${index+1}`,image:shot.path_full||shot.path_thumbnail,url:shot.path_full||shot.path_thumbnail}));
-      const trailers=(d.movies||[]).slice(0,4).map(m=>({title:m.name||"Trailer",image:m.thumbnail,url:m.mp4?.max||m.mp4?.["480"]||m.webm?.max||"",meta:"Trailer"})).filter(m=>m.url);
+      const trailers=(d.movies||[]).slice(0,4).map(m=>{
+        const videoUrl=m.mp4?.max||m.mp4?.["480"]||m.webm?.max||"";
+        const videoType=m.mp4?.max||m.mp4?.["480"]?"video/mp4":m.webm?.max?"video/webm":"";
+        return {title:m.name||"Trailer",image:m.thumbnail,videoUrl,videoType,meta:"Trailer"};
+      }).filter(m=>m.videoUrl);
       const dlc=(d.dlc||[]).length;
       const req=html=>String(html||"").replace(/<br\s*\/?>/gi," · ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").replace(/^(Minimum|Recommended):\s*/i,"").trim();
       const pcReq=Array.isArray(d.pc_requirements)?{}:(d.pc_requirements||{});
-      const sections=[]; if(shots.length) sections.push({title:"Screenshots",kind:"gallery",items:shots}); if(trailers.length) sections.push({title:"Trailers",kind:"list",items:trailers});
+      const sections=[]; if(shots.length) sections.push({title:"Screenshots",kind:"gallery",items:shots}); if(trailers.length) sections.push({title:"Trailers",kind:"videos",items:trailers});
       return details("steamdb",item,{title:d.name,description:d.short_description||d.about_the_game,image:d.capsule_image||d.header_image,portraitImage:d.capsule_image||d.capsule_imagev5||d.header_image,landscapeImage:d.header_image||d.background,year:d.release_date?.date?.match(/\d{4}/)?.[0],rating:d.metacritic?.score?d.metacritic.score/20:0,url:steamDbUrl,purchase:{url:steamUrl,price:d.price_overview?.final_formatted||(d.is_free?"Free":"Price unavailable"),isFree:Boolean(d.is_free)},links:[{label:"View in SteamDB",url:steamDbUrl},...(d.website?[{label:"Website",url:d.website}]:[]),...(d.metacritic?.url?[{label:"Metacritic",url:d.metacritic.url}]:[])],sections,requirements:{minimum:requirementRows(pcReq.minimum,"Minimum"),recommended:requirementRows(pcReq.recommended,"Recommended")},languages:steamLanguages(d.supported_languages),tags:(d.categories||[]).map(x=>x.description).slice(0,14),badge:Number(d.required_age)>0?`Age ${d.required_age}+`:"",fields:[["Developer",d.developers],["Publisher",d.publishers],["Genres",d.genres?.map(x=>x.description)],["Release date",d.release_date?.date],["Platforms",Object.entries(d.platforms||{}).filter(([,v])=>v).map(([k])=>k)],["Price",d.price_overview?.final_formatted||(d.is_free?"Free":"")],["Discount",d.price_overview?.discount_percent?`${d.price_overview.discount_percent}% off`:""],["Metacritic",d.metacritic?.score],["Steam recommendations",d.recommendations?.total?d.recommendations.total.toLocaleString():""],["Achievements",d.achievements?.total],["Controller support",d.controller_support],["DLC",dlc?`${dlc} available`:""]].map(([label,value])=>({label,value}))});
     },    howlongtobeat: async (item,s) => {
       const id=String(item.providerId).replace(/^howlongtobeat:/, "");

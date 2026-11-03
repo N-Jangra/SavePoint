@@ -12,12 +12,16 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - More detailed playtime, activity, ratings, and library statistics pages.
 - Touch drag-and-drop ordering for bottom-bar destinations and source priorities.
 - Pull-to-refresh on library, Discover, Timeline, Statistics, and source views.
+- Inline Steam trailer playback on game detail pages; trailer streams load only when played and their links remain in saved metadata.
 
 ### Changed
 
 - Updated responsive layouts for tablet views, including dashboard, details, and statistics pages.
 - Refined navigation history so browser and Android system back follow the in-app route stack and dismiss open sheets first.
 - Saved discovery additions with source identity, merged provider metadata, and cached artwork for faster reopening and offline access.
+- Preferred HowLongToBeat portrait covers for Mix fetch results and detail pages, while keeping landscape artwork for wide backgrounds.
+- Deferred off-screen artwork and paged large library lists to reduce rendering and storage work while scrolling.
+- Limited blocking touch handlers to active pull-to-refresh and drag gestures to keep regular Android scrolling responsive.
 - Fresh-install appearance defaults: Light theme, inline icons, icon-color navigation, icon-only labels, solid background, sharp corners, and Home/Discover/Explore/Settings destinations.
 - Updated Settings, source configuration, filter sheets, details actions, and collection cards for clearer mobile and tablet use.
 

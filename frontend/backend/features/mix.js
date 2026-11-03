@@ -17,7 +17,7 @@
       if (!groups.has(key)) groups.set(key, { key, title: row.title, year: row.year || "", image: row.image || "", sources: [] });
       const group = groups.get(key);
       if (!group.year && row.year) group.year = row.year;
-      if (!group.image && row.image) group.image = row.image;
+      if (row.image && (row.source === "howlongtobeat" || !group.image)) group.image = row.image;
       if (!group.sources.includes(row.source)) group.sources.push(row.source);
     }
     return [...groups.values()].slice(0, 40);
@@ -32,7 +32,7 @@
   const toList = value => Array.isArray(value) ? value.map(String).filter(Boolean) : String(value ?? "").split(/,\s*/).map(part => part.trim()).filter(Boolean);
   const unique = (list, keyOf) => { const seen = new Set(); return list.filter(entry => { const key = keyOf(entry); if (!key || seen.has(key)) return false; seen.add(key); return true; }); };
 
-  function merge(entries, title) {
+  function merge(entries, title, trackedItem = {}) {
     const parts = entries.map(entry => entry.data);
     const first = pick => parts.map(pick).find(value => !isEmpty(value)) ?? "";
     const fields = new Map();
@@ -52,10 +52,16 @@
     const facts = {};
     for (const part of parts) for (const [key, value] of Object.entries(part.facts || {})) if (isEmpty(facts[key]) && !isEmpty(value)) facts[key] = value;
     const description = parts.map(part => part.description || "").sort((a, b) => b.length - a.length)[0] || "";
+    // HLTB's game image is portrait-oriented, so let it lead artwork selection
+    // whenever a mixed result has one. Other providers remain fallbacks.
+    const hltbPortrait = entries.find(entry => entry.key === "howlongtobeat" && entry.data?.portraitImage)?.data.portraitImage;
+    const portraitImage = hltbPortrait || parts.map(part => part.portraitImage).find(value => !isEmpty(value)) || first(part => part.image);
     return {
       source: "mix", mixSources: entries.map(entry => entry.name), title: first(part => part.title) || title, description,
-      image: first(part => part.image), portraitImage: first(part => part.portraitImage), landscapeImage: first(part => part.landscapeImage),
-      year: first(part => part.year), rating: Number(first(part => part.rating)) || 0, goal: Number(first(part => part.goal)) || 0, progress: 0,
+      image: portraitImage, portraitImage, landscapeImage: first(part => part.landscapeImage),
+      year: first(part => part.year), rating: Number(first(part => part.rating)) || 0,
+      goal: Number(trackedItem.goal) || Number(trackedItem.completionTargetHours) || Number(first(part => part.goal)) || 0,
+      progress: Number(trackedItem.progress) || 0,
       url: first(part => part.url),
       fields: [...fields.values()],
       links: unique(parts.flatMap(part => part.links || []), link => link.url),
@@ -81,12 +87,12 @@
       const rows = await withTimeout(discovery.searchSource(title, category, settings, source.key));
       const match = bestMatch(rows, title);
       if (!match) throw new Error("No match");
-      const data = await withTimeout(controller.load({ category, metadataSource: source.key, providerId: match.providerId, title: match.title, image: match.image, url: match.url, year: match.year, description: match.description }, settings));
+      const data = await withTimeout(controller.load({ ...item, category, metadataSource: source.key, providerId: match.providerId, title: match.title, image: match.image || item.image, url: match.url || item.url, year: match.year || item.year, description: match.description || item.description }, settings));
       return { key: source.key, name: source.name, data };
     }));
     const entries = settled.filter(result => result.status === "fulfilled").map(result => result.value);
     if (!entries.length) throw new Error(`No enabled source had details for “${title}”.`);
-    return merge(entries, title);
+    return merge(entries, title, item);
   }
 
   // Play-time only lookup for games whose saved provider (e.g. Steam) has no hours: HowLongToBeat first, then RAWG.

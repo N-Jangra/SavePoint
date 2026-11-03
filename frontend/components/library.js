@@ -5,7 +5,7 @@
       const { prefs, items, activeCategory, category, labelCategory, esc } = context;
       return { card, filteredItems, listOrEmpty, dashboardItems };
   function card(item) {
-    const cat = category(item.category), progress = Math.max(0, Number(item.progress) || 0), goal = Math.max(0, Number(item.goal) || 0);
+    const cat = category(item.category), progress = Math.max(0, Number(item.progress) || 0), goal = Math.max(0, Number(item.goal) || 0, Number(item.completionTargetHours) || 0);
     const percent = goal ? Math.min(100, Math.round(progress / goal * 100)) : 0;
     const unit = String(cat?.unit || "");
     const progressUnit = /^hours?$/i.test(unit) ? "h" : unit;
@@ -20,8 +20,9 @@
       const genres = displayValue(item.facts?.genres || item.cachedDetails?.genres || item.cachedDetails?.genre || fieldValue(/^(genre|genres)$/i));
       const subtitle = [developers, genres].filter(Boolean).join(" · ");
     const thumbnail = item.localThumbnailData || item.image;
-    const showArtwork = prefs.showThumbnails && thumbnail;
-    const art = `${showArtwork ? `<img src="${esc(thumbnail)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="item-art-fallback" aria-hidden="true"${showArtwork ? " hidden" : ""}>${esc(cat?.icon || "✦")}</span>`;
+    const localPending = !item.localThumbnailData && Boolean(item.thumbnailPath || item.localImageFiles?.length);
+    const showArtwork = prefs.showThumbnails && Boolean(thumbnail || localPending);
+    const art = `${showArtwork ? `<img data-deferred-image data-lazy-src="${esc(thumbnail || "")}"${localPending ? ` data-local-item-id="${esc(item.id)}"` : ""} alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="item-art-fallback" aria-hidden="true"${showArtwork ? " hidden" : ""}>${esc(cat?.icon || "✦")}</span>`;
     const accent = prefs.categoryColors[item.category] || cat?.color || prefs.mainColor;
     const actions = prefs.dashboardRowActions === "quick"
       ? `<button type="button" class="card-quick-progress-button" data-action="progress" data-id="${esc(item.id)}" aria-label="Add progress to ${esc(item.title)}" title="Add progress to ${esc(item.title)}">＋</button>`

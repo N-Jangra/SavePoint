@@ -10,12 +10,13 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 |---|---|
 | Library | Add games manually or from a metadata source; search, sort, filter, group, and change collection layouts. |
 | Game tracking | Set Backlog, Playing, On Hold, Dropped, or Completed; log playtime, set a goal, and rate games. |
-| Game details | View and cache provider descriptions, artwork, screenshots, tags, links, requirements, playtime estimates, and other available details. |
+| Game details | View and cache provider descriptions, portrait covers, screenshots, tags, links, requirements, playtime estimates, and other available details. Steam trailers play inline in the details page. |
 | Discover | Browse suggestions and search a single catalog or enabled sources together; add games directly to the library. |
 | Mix fetch | Experimental combined search that merges matching metadata from enabled sources into one saved game. |
 | Timeline and statistics | Review status changes and explore playtime, activity, library breakdown, and ratings. |
 | Settings | Customize appearance and navigation; configure metadata sources, storage, backups, tracking, and diagnostics. |
-| Offline use | Keep library data locally and cache provider details/artwork where the selected platform and storage settings allow. |
+| Performance | Load library batches and defer off-screen artwork until it approaches the viewport, keeping large image-heavy collections responsive. |
+| Offline use | Keep library data locally and cache provider details/artwork where the selected platform and storage settings allow. Video trailers stream when played and are not copied into the library folder. |
 
 ## Metadata sources
 
@@ -31,6 +32,10 @@ Built-in source availability and priority are managed in **Settings → Metadata
 | Custom JSON | Search and optional detail fields from a user-configured JSON endpoint. | Configure field mappings in **Settings → Metadata Sources → Add JSON**. |
 
 Provider data varies by game and source. RAWG and IGDB are disabled until configured. Keep API credentials private; they are stored with app preferences and may be included in exports.
+
+### Artwork and video behavior
+
+When Mix fetch has a HowLongToBeat match, its portrait cover is preferred for the game's portrait cover slot. Other source artwork remains available as a fallback, and landscape artwork is kept for wide hero backgrounds. Steam trailers use the browser's inline video player and stream from Steam when played (`preload="none"`); SavePoint stores the trailer URL with cached details but does not save the video file in the library folder.
 
 ## Screens and routes
 
@@ -90,6 +95,8 @@ cd android
 ```
 
 The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For release output, run `./gradlew assembleRelease` and configure signing for distribution. More details: [requirements and build instructions](docs/requirements.md).
+
+The current 0.1.0 release APK is also packaged as `dist/savepoint-0.1.0-release.apk` after a signed release build.
 
 ## Repository layout
 

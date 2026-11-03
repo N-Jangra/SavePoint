@@ -631,11 +631,6 @@ body:not([data-page="add"]) .app-shell { padding-bottom:calc(76px + env(safe-are
 body:not([data-page="add"]) #page-content > :first-child { padding-bottom:0!important; }
 body:not([data-page="add"]) #page-content > :first-child > :last-child { margin-bottom:0!important; }
 #page-content > .source-options-page,#page-content > .cs-page { padding-bottom:0!important; }
-body[data-bottom-bar-flow="true"] .app-shell { min-height:0; padding-bottom:0!important; }
-body[data-bottom-bar-flow="true"] .bottom-bar {
-  position:relative!important; inset:auto!important; left:auto!important; right:auto!important; bottom:auto!important;
-  width:100%!important; max-width:none!important; margin:0; transform:none!important;
-}
 @media (min-width:768px) {
   body[data-sidebar="shown"]:not([data-page="add"]) .app-shell { padding-bottom:40px; }
 }

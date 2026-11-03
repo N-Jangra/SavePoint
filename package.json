@@ -12,12 +12,12 @@
     "cap:open": "cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.2",
     "@capacitor/app": "^6.0.3",
-    "@capacitor/android": "^6.2.1",
-    "@capacitor/core": "^6.2.1"
+    "@capacitor/core": "^6.2.2"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.2.1"
+    "@capacitor/cli": "^6.2.2"
   },
   "author": "SavePoint Team",
   "license": "Apache-2.0"

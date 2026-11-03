@@ -17,7 +17,9 @@
     const avgRating = rated.length ? (rated.reduce((sum, item) => sum + Number(item.rating), 0) / rated.length).toFixed(1) : "—";
     const gameArtwork = item => {
       const artwork = item.localThumbnailData || item.image;
-      return `<span class="stats-game-art">${artwork ? `<img src="${esc(artwork)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="gamepad-2" aria-hidden="true"${artwork ? " hidden" : ""}></i></span>`;
+      const localPending = !item.localThumbnailData && Boolean(item.thumbnailPath || item.localImageFiles?.length);
+      const showArtwork = Boolean(artwork || localPending);
+      return `<span class="stats-game-art">${showArtwork ? `<img data-deferred-image data-lazy-src="${esc(artwork || "")}"${localPending ? ` data-local-item-id="${esc(item.id)}"` : ""} alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="gamepad-2" aria-hidden="true"${showArtwork ? " hidden" : ""}></i></span>`;
     };
     const sortedRated = [...rated].sort((a, b) => Number(b.rating) - Number(a.rating));
     const allRatingRows = sortedRated.map(item => `<button type="button" class="stats-rated-entry" data-open-details data-id="${esc(item.id)}">${gameArtwork(item)}<span class="stats-rated-copy"><strong>${esc(item.title)}</strong><small>${esc(item.status || "In your library")}</small></span><span class="stats-rated-score" aria-label="${Number(item.rating)} out of ${ratingMax}">${ratingMax === 5 ? "★".repeat(Math.min(5, Math.max(0, Math.round(Number(item.rating))))).padEnd(5, "☆") : `${Number(item.rating)}/${ratingMax}`}<small>${Number(item.rating)}</small></span></button>`).join("");
