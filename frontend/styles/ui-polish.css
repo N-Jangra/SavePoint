@@ -600,6 +600,34 @@ body[data-theme="dark"] .stats-section-heading h2 { color: var(--legacy-text, #f
   body[data-page="dashboard"] .library-section .item-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .detail-hero { min-height: 260px; }
 }
+@media (min-width: 768px) {
+  body[data-sidebar="shown"] .app-layout {
+    grid-template-columns: var(--sidebar-w, 76px) minmax(0, 1fr) !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    gap: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 100dvh;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  body[data-sidebar="shown"] .app-sidebar {
+    position: sticky !important;
+    top: 0 !important;
+    align-self: start;
+    height: 100dvh !important;
+    min-height: 100dvh;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+}
+/* On tablet and desktop the sidebar is primary navigation for these root pages. */
+@media (min-width: 768px) {
+  body[data-sidebar="shown"][data-page="timeline"] .timeline-page > .analytics-page-heading > .detail-back,
+  body[data-sidebar="shown"][data-page="statistics"] .stats-overview > .analytics-page-heading > .detail-back { display: none !important; }
+}
 /* The add/edit screen is a focused full-width editor with a persistent action bar. */
 body[data-page="add"] .app-layout { display: block !important; width: 100%; max-width: none !important; margin: 0; padding: 0 !important; }
 body[data-page="add"] .app-sidebar { display: none !important; }
@@ -1607,9 +1635,132 @@ body[data-page="dashboard"] .topbar h1 { font-size:1.78rem; line-height:1.04; le
 .cs-test:not(:empty) { padding:10px; border-radius:11px; font-size:.67rem; }
 .cs-bar { bottom:calc(58px + env(safe-area-inset-bottom)); gap:7px; padding:9px 12px; }
 .cs-bar .button { min-height:42px; border-radius:12px; font-size:.75rem; }
+.detail-content-layout { display:grid; gap:14px; min-width:0; }
+.detail-tracking-section { gap:8px; }
+.detail-tracking-section .ios-sub { margin:0; }
+
+/* Statistics use the tablet's available content width instead of the narrow phone column. */
+@media (min-width: 768px) {
+  body[data-page="statistics"] .app-shell { width:100%; max-width:none!important; margin:0; }
+  body[data-page="statistics"] .stats-page { width:100%; max-width:none; margin:0; }
+  body[data-page="statistics"] .stats-overview,
+  body[data-page="statistics"] .stats-subpage { width:100%; }
+  body[data-page="statistics"] .stats-overview-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  body[data-page="statistics"] .stats-destinations {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:12px;
+    overflow:visible;
+    border:0;
+    border-radius:0;
+    background:transparent;
+    box-shadow:none;
+  }
+  body[data-page="statistics"] .stats-destination {
+    min-height:88px;
+    padding:14px;
+    border:1px solid var(--line);
+    border-radius:15px;
+    background:var(--surface);
+    box-shadow:var(--shadow);
+  }
+  body[data-page="statistics"] .stats-destination:last-child { border-bottom:1px solid var(--line); }
+  body[data-page="statistics"] .stats-subpage {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    align-items:start;
+    column-gap:14px;
+    row-gap:16px;
+  }
+  body[data-page="statistics"] .stats-subpage > .analytics-page-heading,
+  body[data-page="statistics"] .stats-subpage > .stats-subpage-intro { grid-column:1 / -1; }
+  body[data-page="statistics"] .stats-subpage > .stats-panel { min-width:0; }
+  body[data-page="statistics"] .stats-subpage .stats-ratings-summary,
+  body[data-page="statistics"] .stats-subpage .stats-efficiency-panel { grid-column:1 / -1; }
+}
+@media (min-width: 1120px) {
+  body[data-page="statistics"] .stats-overview-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  body[data-page="statistics"] .stats-time-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+}
+@media (min-width: 768px) {
+  body[data-page="statistics"] .stats-subpage-playtime > .stats-panel,
+  body[data-page="statistics"] .stats-subpage-playtime > .stats-efficiency-panel,
+  body[data-page="statistics"] .stats-subpage-activity > .stats-activity-toolbar,
+  body[data-page="statistics"] .stats-subpage-activity > .stats-activity-panel,
+  body[data-page="statistics"] .stats-subpage-activity > .stats-activity-feed { grid-column:1 / -1; }
+  body[data-page="statistics"] .stats-subpage-playtime .stats-time-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  body[data-page="statistics"] .stats-subpage-ratings { grid-template-columns:minmax(0,1.65fr) minmax(280px,1fr); }
+  body[data-page="statistics"] .stats-subpage-ratings .stats-ratings-summary { grid-column:1 / -1; }
+  body[data-page="statistics"] .stats-subpage-ratings .stats-quick-rate-panel { align-self:start; }
+}
 @media(max-width:380px) {
   .source-options-page .settings-subpage-heading h1,.cs-page .settings-subpage-heading h1 { font-size:.88rem; }
   .source-options-page .source-row-actions,.cs-page .settings-subpage-icon { min-width:0; }
   .cs-hero { grid-template-columns:32px minmax(0,1fr); gap:8px; padding:10px; }
   .cs-hero-icon { width:32px; height:32px; }
+}
+
+/* Use tablet width for game details and collection, with a compact centered filter dialog. */
+@media (min-width: 768px) {
+  body[data-page="details"] .app-shell,
+  body[data-page="dashboard"] .app-shell { width:100%; max-width:none!important; margin:0; }
+  body[data-page="details"] .detail-page {
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    width:100%;
+    max-width:none;
+    margin:0;
+    gap:16px;
+  }
+  body[data-page="details"] .detail-page > :is(.detail-page-heading,.detail-hero,.detail-progress-card,.detail-edit-form,.detail-loading,.detail-error,.detail-content-layout,dialog) { grid-column:1 / -1; }
+  body[data-page="details"] .detail-page > .detail-page-heading {
+    min-height:64px;
+    padding:calc(10px + env(safe-area-inset-top)) clamp(14px,2vw,26px) 10px;
+    border-radius:0 0 16px 16px;
+  }
+  body[data-page="details"] .detail-page .detail-preview-add { min-height:46px; padding-inline:16px; }
+  body[data-page="details"] .detail-content-layout { min-width:0; }
+  body[data-page="details"] .detail-content-layout:not(:has(.detail-tabs)) { display:block; column-count:2; column-gap:16px; column-fill:balance; }
+  body[data-page="details"] .detail-content-layout:not(:has(.detail-tabs)) > .detail-section { break-inside:avoid; margin:0 0 16px; }
+  body[data-page="details"] .detail-content-layout:has(.detail-tabs) { display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
+  body[data-page="details"] .detail-content-layout .detail-tabs { grid-column:1 / -1; }
+  body[data-page="details"] .detail-content-layout .detail-tab-panel:not([hidden]) { display:block; column-count:2; column-gap:16px; column-fill:balance; }
+  body[data-page="details"] .detail-content-layout .detail-tab-panel > .detail-section { break-inside:avoid; margin:0 0 16px; }
+  body[data-page="details"] .detail-content-layout .detail-section:has(.detail-description),
+  body[data-page="details"] .detail-content-layout .detail-section:has(.detail-gallery),
+  body[data-page="details"] .detail-content-layout .detail-section:has(.detail-requirements),
+  body[data-page="details"] .detail-content-layout .detail-section:has(.detail-rating-breakdown) { column-span:all; }
+  body[data-page="details"] .detail-hero.ios-hero { min-height:230px; }
+  body[data-page="details"] .ios-hero-bg { height:150px; }
+  body[data-page="details"] .ios-hero-body { gap:18px; padding-inline:22px; }
+  body[data-page="details"] .ios-hero-body .detail-image,
+  body[data-page="details"] .ios-hero-body .detail-image-placeholder,
+  body[data-page="details"] .ios-hero-body .detail-cover-trigger { width:112px; height:148px; }
+  body[data-page="dashboard"] .home-collection-page { width:100%; max-width:none; margin:0; }
+  body[data-page="dashboard"] #collection-results { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:18px; }
+  body[data-page="dashboard"] .dashboard-filter-dialog[open] {
+    inset:0;
+    width:min(92vw,820px);
+    max-width:820px;
+    height:auto!important;
+    max-height:90dvh;
+    margin:auto;
+    border:1px solid var(--line);
+    border-radius:24px;
+  }
+  body[data-page="dashboard"] .dashboard-filter-dialog #dashboard-filter-form {
+    height:auto!important;
+    max-height:90dvh;
+    grid-template-rows:auto auto minmax(0,1fr) auto;
+  }
+  body[data-page="dashboard"] .dashboard-filter-dialog .ios-sheet-body {
+    max-height:calc(90dvh - 190px);
+    overflow-y:auto;
+  }
+}
+@media (min-width: 768px) {
+  body[data-page="dashboard"] #collection-results {
+    grid-template-columns:minmax(0,1fr);
+    align-content:start;
+    gap:20px;
+  }
+  body[data-page="dashboard"] #collection-results > .dashboard-status-group { width:100%; min-width:0; }
 }
