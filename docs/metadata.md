@@ -1,36 +1,48 @@
 # SavePoint metadata sources
 
-The metadata registry in `frontend/backend/features/metadata.js` is the source of truth for enabled providers and API-key validation. All providers are scoped to the `game` category.
+The registry in `frontend/backend/features/metadata.js` defines built-in game sources. Provider availability, enabled state, and ordering are managed from **Settings → Metadata Sources**.
 
-| Registry key | Provider | API key |
+| Registry key | Source | Credentials |
 |---|---|---|
-| `freetogame` | FreeToGame | Not required |
-| `steamdb` | Steam Store search/details, with SteamDB links | Not required |
-| `howlongtobeat` | HowLongToBeat (Android app only) | Not required |
-| `rawg` | RAWG | Required; setup link: [RAWG API docs](https://rawg.io/apidocs) |
+| `freetogame` | FreeToGame | None |
+| `steamdb` | Steam Store search/details with SteamDB links | None |
+| `howlongtobeat` | HowLongToBeat search and completion-time details | None; browser preview uses the local proxy, Android can use its consent/session plugin |
+| `rawg` | RAWG games catalog | API key from [RAWG](https://rawg.io/apidocs) |
+| `igdb` | IGDB games catalog | Twitch Client ID and access token; see [Twitch authentication](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/) |
 
-## Custom sources
+RAWG and IGDB are disabled on a fresh install until configured. IGDB credentials are both required; access tokens can expire and may need replacement. Never publish API credentials in source control.
 
-Users can add their own JSON search APIs in **Settings → Metadata → Metadata Sources → Add custom source**. They are stored in `preferences.customSources` and registered at runtime with `SplitAppMetadata.setCustom()`, which gives each a registry key of `custom:<id>`. They appear in the same list, toggles and ordering as built-in sources.
+## Custom JSON sources
+
+Users can configure a JSON search endpoint from **Settings → Metadata Sources → Add JSON**. The guided editor maps search results and optional detail fields, supports an optional API key/header and suggestions endpoint, and can run a sample search before saving. Custom source definitions are stored in `preferences.customSources` and registered at runtime as `custom:<id>`.
+
+Example mapping:
 
 ```json
 {
-  "id": "a1b2c3d4", "name": "My games",
+  "id": "catalog-id",
+  "name": "My games",
   "searchUrl": "https://api.example.com/games?search={query}&key={apikey}",
-  "apiKey": "", "apiKeyHeader": "",
+  "apiKey": "",
+  "apiKeyHeader": "",
   "resultsPath": "data.results",
-  "map": { "title": "name", "id": "id", "image": "cover.url", "year": "released", "description": "summary", "rating": "rating", "url": "url", "subtitle": "genre" },
-  "imageTemplate": "https://img.example.com/{id}.jpg",
-  "suggestionsUrl": "", "detailUrl": "https://api.example.com/games/{id}", "detailRoot": "data",
-  "detailMap": { "genres": "genres", "developers": "developers", "hours": "playtime", "screenshots": "screenshots" }
+  "map": {
+    "title": "name",
+    "id": "id",
+    "image": "cover.url",
+    "year": "released",
+    "description": "summary",
+    "rating": "rating",
+    "url": "url",
+    "subtitle": "genre"
+  }
 }
 ```
 
-Paths use dots and `[index]`. Only `http(s)` URLs are used; nothing from a custom source is executed. In a PC browser the API must send CORS headers; the Android app is not limited by CORS.
+Field paths support dot notation and array indexes. Custom endpoints are fetched as data; custom code is not executed. In a regular browser, the endpoint must allow CORS. Android requests are not constrained by browser CORS rules.
 
-Sources are enabled by default unless the user turns them off. Settings can also set source order. Discovery and source-backed Details use the same enabled-source preferences. See [Metadata analysis](metadata-analysis.md) for request methods, returned fields, caching, and errors.
+## Source options and Mix fetch
 
+Per-source settings can override the source domain and configure request headers/cookies where the platform allows them. Browser security prevents JavaScript from setting some restricted headers; the local preview proxy and Android request paths handle supported source-specific headers.
 
-## Per-source options
-
-Settings → Metadata Sources → a source's ⚙ page stores `preferences.sourceOptions[key] = { domain, userAgent, cookies }`. `SplitAppMetadata.resolve` swaps the host when `domain` is set and the request layer adds `User-Agent` / `Cookie` headers for every request to that source's default host; these override built-in headers (including HowLongToBeat's session cookie). The Android app sends them natively; `dev-server.js` forwards `x-source-user-agent` / `x-source-cookie`; a plain browser drops them.
+Mix fetch is an experimental combined search. It retains each result's source identity and merges provider detail fields when a matching game is previewed or added. See [metadata analysis](metadata-analysis.md) for request, cache, and failure behavior.

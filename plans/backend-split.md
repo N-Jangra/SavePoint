@@ -11,5 +11,5 @@ SavePoint keeps its app-specific storage and metadata code under `frontend/backe
 - `features/show-detail-controller.js` loads provider-specific details for a saved result.
 - `features/show-detail.js` exposes the detail controller to the rest of the frontend.
 
-The registry is the source of truth for metadata source toggles and which providers may be queried. The local preview server's HTTPS proxy separately validates allowed hostnames and limits POST requests to HowLongToBeat's search endpoint. For provider behavior, see [metadata analysis](../docs/metadata-analysis.md); for state persistence, see [storage](../docs/storage.md).
+The registry is the source of truth for built-in and runtime custom metadata providers. The local preview server's HTTPS proxy separately validates allowed hostnames and restricts POST requests to HowLongToBeat search and IGDB game queries. It supports browser preview only and is not a production backend. For provider behavior, see [metadata analysis](../docs/metadata-analysis.md); for state persistence, see [storage](../docs/storage.md).
 

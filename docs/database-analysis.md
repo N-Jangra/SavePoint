@@ -9,9 +9,9 @@ See [Data schema](db-schema.md) for field definitions and examples.
 ## Read/write path
 
 1. `frontend/app.js` starts from the `splitapp_savepoint_v1` localStorage value.
-2. `frontend/backend/app.js` exposes `load()` and `save()`. In a browser it uses that localStorage value. On Android, when the `EncryptedStore` plugin is available, successful native item and metadata reads replace the browser mirror's items and merge native history/preferences into the mirror values.
+2. `frontend/backend/app.js` exposes `load()` and `save()`. In a browser it uses that localStorage value. On Android, the storage bridge can restore folder data and native encrypted records when available, with the browser mirror retained as a compatibility/fallback copy.
 3. App changes call `persist()`, which passes all three arrays/object to the storage bridge.
-4. The bridge writes the full JSON payload to localStorage first. On Android it also writes each item by ID and stores history/preferences as one native metadata JSON record.
+4. The bridge writes the browser mirror and, on Android, updates native item/metadata storage and any configured folder database and per-game records.
 
 The localStorage key and native record key prefix are app-specific. The app currently has one category (`game`), but items still carry `category` so the schema and UI can filter consistently.
 
@@ -26,4 +26,4 @@ The localStorage key and native record key prefix are app-specific. The app curr
 
 ## Analysis limits
 
-This is a small local JSON store with no schema-versioned migration framework, relational database engine, transaction boundary, or cross-device sync service. The export format has a version field, but imports currently consume only `items`; they do not restore history/preferences. The browser mirror is written even on Android, which matters for the security interpretation described in [Storage](storage.md).
+This is a local document/JSON store, not a relational database. It has no account-based cross-device sync service. The export format has a version field, but imports currently consume only `items`; they do not restore history/preferences. The browser mirror is written even on Android, which matters for the security interpretation described in [Storage](storage.md).

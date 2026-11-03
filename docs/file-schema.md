@@ -8,8 +8,8 @@ SavePoint/
 │   ├── app-config.js              # SavePoint identity and game category
 │   ├── pages/                      # screen renderers
 │   ├── components/                 # shared UI
-│   ├── backend/                    # storage bridge and metadata modules (incl. features/mix.js, experimental)
-│   └── styles/                     # theme, details, ios-ui.css (iOS look + multi-screen), motion.css (animations, low-memory mode)
+│   ├── backend/                    # storage bridge and metadata/search/detail/mix modules
+│   └── styles/                     # shared, theme, responsive, settings, and page-specific styles
 ├── android/                        # Capacitor Android project and native plugins
 ├── docs/                           # technical documentation
 ├── CHANGELOG.md                    # release notes
@@ -20,7 +20,7 @@ SavePoint/
 └── compile_apk.py                  # Android packaging helper
 ```
 
-`capacitor.config.json` sets `frontend/` as `webDir`. The JavaScript under `frontend/backend/` is maintained in place and packaged as part of that directory; there is no separate generated copy. Native source is under `android/app/src/main/java/com/cuemark/savepoint/` (encrypted store, folder storage, backup scheduler, and `ProviderConsentPlugin`, which opens a provider consent screen and exposes its session).
+`capacitor.config.json` sets `frontend/` as `webDir`. JavaScript under `frontend/backend/` is maintained in place and packaged with that directory; there is no separate generated backend copy or JSX build step. Native source is under `android/app/src/main/java/com/cuemark/savepoint/`, including encrypted storage, folder storage, backup scheduling, and the HowLongToBeat consent/session plugin.
 
 The app-root `.gitignore` excludes dependencies, generated Android assets/build output, local SDK configuration, APKs, and local environment files. See [requirements](requirements.md) for the preview/build commands and [storage](storage.md) for runtime state locations.
 

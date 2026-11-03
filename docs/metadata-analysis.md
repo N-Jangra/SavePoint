@@ -2,7 +2,7 @@
 
 ## Request flow
 
-The registry at `frontend/backend/features/metadata.js` lists the five supported game providers and marks RAWG as key-required. Discovery runs each enabled provider search concurrently, collects successful results, de-duplicates by source plus provider ID, and returns at most 36 results. Individual provider failures become warnings if another provider returns results; if every source fails and none returns results, the search fails with the collected errors. The Discover screen renders at most 12 results from that response.
+The registry at `frontend/backend/features/metadata.js` lists five built-in game providers: FreeToGame, Steam + SteamDB, HowLongToBeat, RAWG, and IGDB. RAWG requires an API key; IGDB requires a Twitch Client ID and access token. Discovery runs enabled provider searches concurrently, combines successful results, de-duplicates by source plus provider ID, and limits the response. Individual failures are retained as warnings when another source succeeds; an all-source failure is surfaced to the UI.
 
 Results carry a `source` and `providerId`; when added to the library they are saved as `metadataSource` and `providerId`. Details routes only to the corresponding registered provider, and only when that provider remains enabled. Manually created items have no provider ID and use their local fields without a remote detail request.
 
@@ -14,6 +14,7 @@ Results carry a `source` and `providerId`; when added to the library they are sa
 | Steam + SteamDB (`steamdb`) | Searches Steam Store (`storesearch`), up to 20. Stores the app ID as `app:<id>`, and maps name, small image, type/price, and SteamDB URL. | Requests Steam app details. Maps description, capsule/header art, screenshots, developer/publisher, genres, release date, platform availability, price, Steam Store link, and SteamDB link. |
 | HowLongToBeat | Requests an init token, then posts a game search; maps game ID, title, release year, cover, summary, completion times, and score. | Attempts to read the game page's embedded data first, then falls back to token-based search. Displays main story, main plus extras, completionist time, platforms, game type, and community score. |
 | RAWG | Searches the games endpoint (up to 15) with the API key; maps ID, name, release year, background image, rating, RAWG URL, and summary rating text. | Loads game details and attempts a separate screenshot request. Maps description, release date, Metacritic, genres, platforms, developers, publishers, average playtime, website, and artwork. |
+| IGDB | Searches the IGDB v4 games endpoint with Twitch Client ID and access token; maps title, release year, cover, rating, genres, platforms, and IGDB URL. | Loads summary/storyline, artwork and screenshots, release date, rating, genres, platforms, developers, publishers, game modes, perspectives, themes, and website links where present. |
 
 Exact returned fields vary by provider and by what that provider has published. Missing values are omitted or shown as empty; the app keeps provider result fields in the saved JSON item.
 
@@ -27,7 +28,7 @@ When several providers describe the same game, facts merge: a later provider nev
 
 Details also carry two structured tables: `requirements` (`minimum` / `recommended`, each a list of `[label, value]` rows parsed from Steam HTML lists, RAWG text lines or FreeToGame fields) and `languages` (`{ name, audio }` from Steam). The details page shows them as tables; `facts` keeps flattened text and language names.
 
-Play time comes from HowLongToBeat (`mainHours`, `extrasHours`, `completionistHours`) or RAWG (`averageHours`); Steam and FreeToGame do not provide hours. `SplitAppMix.hours(title)` looks up only the hours (HowLongToBeat in the Android app, then RAWG) and Statistics uses it for games that lack them. Statistics treats a game's length as `mainHours`, else `averageHours`.
+Play time comes from HowLongToBeat (`mainHours`, `extrasHours`, `completionistHours`) or RAWG (`averageHours`); Steam and FreeToGame do not provide hours. Mix fetch preserves the separate HowLongToBeat targets when available. Statistics treats a game's estimated length as `mainHours`, else `averageHours`.
 
 ### Extras by provider
 
@@ -42,7 +43,7 @@ Play time comes from HowLongToBeat (`mainHours`, `extrasHours`, `completionistHo
 
 ## HowLongToBeat access
 
-HowLongToBeat rejects non-browser clients with HTTP 403, and browsers cannot call it because it sends no CORS header. In the Android app the user reviews the site's consent screen in an in-app window (`ProviderConsentPlugin`). Afterwards the app reads that window's cookies and WebView User-Agent (`getHowLongToBeatSession`) and sends them with its own search, token and detail requests. The app never accepts consent on the user's behalf. In a PC browser HowLongToBeat search and details show a short "Android app only" message instead of making failing requests. If the site still refuses, the 403 message and consent dialog appear again.
+HowLongToBeat requests are routed through the local preview server's restricted `/proxy` endpoint in browser preview, avoiding direct browser CORS restrictions. The proxy permits the provider's supported search POST route and GET requests. Android can obtain the user's consent/session in an in-app window through `ProviderConsentPlugin`; the app does not accept consent on the user's behalf. Provider-side blocking or expired session data can still cause a request to fail.
 
 ## Cache and offline behavior
 
@@ -52,7 +53,7 @@ The metadata settings include refresh interval, retry limit, sync frequency, and
 
 ## Local preview proxy
 
-When served from `localhost` or `127.0.0.1`, browser requests go through `/proxy`. `dev-server.js` accepts HTTPS URLs for a fixed host allowlist: Steam Store, HowLongToBeat, FreeToGame, and RAWG. POST is accepted only for HowLongToBeat's `/api/search/site` endpoint. In the Android app and other non-local origins, the frontend requests providers directly through `fetch` (Capacitor HTTP is enabled in app configuration).
+When served from `localhost` or `127.0.0.1`, browser requests can go through `/proxy`. `dev-server.js` accepts HTTPS URLs only for a fixed host allowlist: Steam Store, HowLongToBeat, FreeToGame, RAWG, and IGDB. POST is restricted to HowLongToBeat search and IGDB v4 game queries. In the Android app, Capacitor HTTP is enabled and provider requests use the app's native-capable fetch path. The preview proxy is a development convenience, not a production metadata service.
 
 The development proxy is only part of the local preview server; it is not a production metadata backend. For storage of provider settings and cached responses, see [Storage](storage.md).
 

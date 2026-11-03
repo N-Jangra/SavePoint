@@ -17,11 +17,11 @@ The Android plugin encrypts native records, but the app continues to maintain a 
 
 ## Saved provider data
 
-Opening a game's details (or **Fetch details** on Statistics) saves the provider's full response in `cachedDetails` and a compact `facts` summary on the item. Both are part of the item record, so they are stored in the encrypted Android record, the localStorage mirror and the folder `index.json`. Every image in `cachedDetails` (cover, screenshots, series, achievements, team) is converted to a thumbnail and written next to the item as `.image-N` files, so the details page and Statistics keep working offline. **Settings → Storage** shows library size and cache usage and can clear metadata and image caches.
+Opening a game's details, adding a metadata result, or using **Fetch details** on Statistics can save provider data in `cachedDetails` and a compact `facts` summary on the item. Sources can include HowLongToBeat completion targets, RAWG average hours, IGDB details, and other provider fields. On Android these are part of the saved item and are mirrored to native storage and, when selected, the folder `index.json`. With image storage enabled, cached detail artwork is copied into adjacent `.image-*` files for offline use. **Settings → Metadata & Storage** shows estimated library/cache usage and provides cache-clearing controls. Browser caching and Android folder image storage are separate mechanisms.
 
 ## Metadata cache
 
-JSON GET metadata responses are stored in browser Cache Storage under `splitapp_savepoint_metadata`. Fresh cache entries are reused for six hours, and stale entries can be used after request failures unless the Offline Fallback preference is set to `none`. Requests with an API key in `key`/`apikey` query parameters, HowLongToBeat POST searches, and HTML text requests are not cached by this JSON cache. See [metadata analysis](metadata-analysis.md).
+JSON GET metadata responses are stored in browser Cache Storage under `splitapp_savepoint_metadata`. Fresh cache entries are reused for six hours, and stale entries can be used after request failures unless the Offline Fallback preference is set to `none`. Requests with an API key in `key`/`apikey` query parameters, IGDB and HowLongToBeat POST searches, and HTML text requests are not cached by this JSON cache. See [metadata analysis](metadata-analysis.md).
 
 ## Backups and secrets
 

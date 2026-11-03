@@ -1,41 +1,41 @@
 # Changelog
 
-All notable changes to SavePoint are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/) (`0.x` while the app is still taking shape).
+Notable SavePoint changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/) (`0.x` while the app is evolving).
 
-## [0.1.0] — 2026-10-29
-
-First tracked release of SavePoint: a local-first game library and playtime tracker that runs in a browser and as an Android app (Capacitor, app ID `com.cuemark.savepoint`).
-
-### How the app works
-
-- **Library:** each game has a cover, description, status (Backlog, Playing, On Hold, Dropped, Completed), playtime and goal in hours, and a rating (5 stars or 10 points). Add games by hand or from a metadata source.
-- **Screens:** Home (grouped by status, category or year, with search and a filter sheet), Discover, Details, Statistics, Timeline, Explore and Settings, with custom metadata sources.
-- **Data:** JSON under `splitapp_savepoint_v1`; on Android games and metadata also live in an encrypted native store, mirrored to an optional shared folder with per-game JSON and image thumbnails, daily TAR backups and JSON export.
+## Unreleased
 
 ### Added
 
-- **Interface:** iOS-style cards, sheets and pills; Light, Dark and other themes with per-theme text contrast; phone bottom bar, tablet icon rail and desktop sidebar; direction-aware transitions and a low-memory mode; deep links for every screen; in-app confirmation sheets; pull to refresh on Details.
-- **Details:** tabs (Overview, Ratings, Achievements, Team & series) shown when a game has that data; playtime stepper, status pills and star rating; buy strip, tags, player ratings, facts, system requirements, languages, screenshots, related games; Edit and Delete in the header with Cancel / Save while editing.
-- **Metadata:** FreeToGame, Steam + SteamDB, HowLongToBeat (Android only) and RAWG (API key), each loading cast, requirements, tags and prices into one common shape; custom JSON sources added on a guided page with a Test button; Mix fetch (beta) merging every source.
-- **Source options:** per-source page for enable, domain, user agent, cookies and API key, with Clear cookies and Reset.
-- **Settings:** Animations (speed, easing, transitions, card entrance, sheets, press and hover effects); Date format; Icon style (inside boxes or inline); Image storage (save all, covers only, or online only); Backups & sync; Metadata & Storage; Bottom Menu Icons; Logcat.
-- **Discover / Statistics / Timeline:** suggestion rows from Steam, FreeToGame, RAWG and custom sources; *Time to beat*, Week / Month activity chart and ratings; a status timeline with covers.
+- IGDB game search and details using a Twitch Client ID and access token.
+- Browser-preview HowLongToBeat search and detail requests through the local allowlisted proxy, alongside the Android consent/session flow.
+- Mix fetch for combined source search and merged metadata when a result is saved.
+- More detailed playtime, activity, ratings, and library statistics pages.
+- Touch drag-and-drop ordering for bottom-bar destinations and source priorities.
+- Pull-to-refresh on library, Discover, Timeline, Statistics, and source views.
 
 ### Changed
 
-- Fresh installs start on the Light theme with FreeToGame, Steam + SteamDB and HowLongToBeat on (RAWG needs a key).
-- Wikidata is no longer a source.
-- Dashboard views reduced to List, Compact list, Poster grid, Detailed grid, Compact grid, Large poster grid and Timeline.
-- Status, sort, layout and density options use pills and segmented controls; the three-dot menu is a bottom sheet.
+- Updated responsive layouts for tablet views, including dashboard, details, and statistics pages.
+- Refined navigation history so browser and Android system back follow the in-app route stack and dismiss open sheets first.
+- Saved discovery additions with source identity, merged provider metadata, and cached artwork for faster reopening and offline access.
+- Fresh-install appearance defaults: Light theme, inline icons, icon-color navigation, icon-only labels, solid background, sharp corners, and Home/Discover/Explore/Settings destinations.
+- Updated Settings, source configuration, filter sheets, details actions, and collection cards for clearer mobile and tablet use.
 
 ### Fixed
 
-- Covers saved in the chosen storage folder now load on start, so they still show offline after the app cache is cleared (previously they only came from the cache or the internet).
-- Filter chips applying the wrong value, Discover cards reloading the page, Details overflowing the screen width, a lost Details URL after refresh, HowLongToBeat 403 after consent, Statistics "Left to play" counting, Details header not spanning the page, and Metadata & Storage missing from the Settings index.
+- Home game action menus, including View details and status/color actions.
+- Details navigation during metadata loading, source-options back navigation, and deletion returning to the library.
+- Missing separators between grouped dashboard game rows.
+- Bottom-bar placement and excess page spacing across scrollable screens and settings subpages.
+- Discover cards accurately reflecting games already in the library.
 
-### Known limitations
+### Notes
 
-- HowLongToBeat works only in the Android app and can still refuse requests.
-- Custom sources accept JSON only; in a PC browser the API must allow cross-origin requests.
-- JSON import restores items only, not history or preferences. Exports and folder backups are not encrypted.
-- Games previewed from Discover cannot be reopened after a page refresh.
+- HowLongToBeat can still reject requests or require renewed consent/session data.
+- Custom sources provide JSON only. A browser endpoint must allow CORS unless requests pass through a supported local preview proxy.
+- JSON import currently imports items only; it does not restore history or preferences. JSON and folder backups are plaintext unless separately protected.
+- Opening the app with `file://` can block browser metadata requests; use `npm run serve` for browser preview.
+
+## [0.1.0] — 2026-10-29
+
+Initial tracked version of SavePoint, a local-first game library and playtime tracker for browsers and Android (Capacitor application ID `com.cuemark.savepoint`). It introduced game status/playtime/rating tracking, Home, Discover, Details, Add Game, Timeline, Statistics, Explore, and Settings; browser localStorage, Android storage and folder backups; provider-based metadata; and responsive phone/tablet/desktop navigation.
