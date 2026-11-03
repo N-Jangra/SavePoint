@@ -7,7 +7,9 @@
   function renderSearch() {
     const q = libraryQuery;
     const list = filteredItems(q);
-    return `<section class="search-page"><label class="search-box collection-search"><span aria-hidden="true">⌕</span><input id="library-search" type="search" placeholder="Search your collection" value="${esc(q)}" autofocus aria-label="Search your collection"></label><div id="search-results">${listOrEmpty(list, "No matches found.")}</div></section>`;
+    const emptyTitle = q ? "No matches found." : "Your collection is empty.";
+    const emptyHint = q ? "Try another title or shorten your search." : "Add a game to your library to get started.";
+    return `<section class="search-page"><div class="search-box collection-search" role="search"><i data-lucide="search" aria-hidden="true"></i><input id="library-search" type="search" placeholder="Search your collection" value="${esc(q)}" autofocus aria-label="Search your collection"><button type="button" data-clear-library-search aria-label="Clear search" ${q ? "" : "hidden"}>×</button></div><div id="search-results">${listOrEmpty(list, emptyTitle, emptyHint)}</div></section>`;
   }
     return renderSearch();
   };

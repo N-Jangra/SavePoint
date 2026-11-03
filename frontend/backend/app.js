@@ -576,12 +576,22 @@
     return { ...data, loadedFromFolder: Boolean(folderData) };
   }
 
-  async function save(data) {
+  let appSaveQueue = Promise.resolve();
+
+  // Capture each revision before waiting in the queue. Encrypted-store writes
+  // must finish in the same order as user changes or an older snapshot can win.
+  function save(data) {
     const payload = {
-      items: Array.isArray(data.items) ? data.items.map(item => ({ ...item })) : [],
-      history: Array.isArray(data.history) ? data.history : [],
-      preferences: data.preferences && typeof data.preferences === "object" ? data.preferences : {}
+      items: Array.isArray(data.items) ? JSON.parse(JSON.stringify(data.items)) : [],
+      history: Array.isArray(data.history) ? JSON.parse(JSON.stringify(data.history)) : [],
+      preferences: data.preferences && typeof data.preferences === "object" ? JSON.parse(JSON.stringify(data.preferences)) : {}
     };
+    const write = appSaveQueue.then(() => saveSnapshot(payload), () => saveSnapshot(payload));
+    appSaveQueue = write.catch(() => {});
+    return write;
+  }
+
+  async function saveSnapshot(payload) {
     localStorage.setItem(storageKey, JSON.stringify(activeFolderUri ? portableData(payload) : browserData(payload)));
     const folderWrite = queueFolderDatabaseWrite(payload);
     const plugin = window.Capacitor?.Plugins?.EncryptedStore;

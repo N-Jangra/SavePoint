@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="styles/details.css">
   <link rel="stylesheet" href="styles/ios-ui.css">
   <link rel="stylesheet" href="styles/motion.css">
+  <link rel="stylesheet" href="styles/ui-polish.css">
   <script defer src="lucide.min.js"></script>
   <script defer src="app-config.js"></script>
   <script defer src="backend/app.js"></script>
@@ -83,10 +84,12 @@
     <div class="app-shell">
     <header class="topbar">
       <div><p class="eyebrow" id="app-kicker"></p><h1 id="page-title">Dashboard</h1></div>
-      <button class="icon-button" id="header-filter" aria-label="Filter games" title="Filter games"><i data-lucide="list-filter" aria-hidden="true"></i></button>
+      <div class="collection-header-actions topbar-actions" id="topbar-actions" hidden>
+        <a class="icon-button collection-add-button" href="#add" aria-label="Add a game" title="Add a game"><i data-lucide="plus" aria-hidden="true"></i></a>
+        <button type="button" class="icon-button collection-filter-button" data-open-collection-filter aria-label="Filter and sort games" aria-haspopup="dialog" aria-controls="dashboard-filter-dialog" title="Filter and sort games"><i data-lucide="sliders-horizontal" aria-hidden="true"></i><span class="collection-filter-badge" id="collection-filter-badge" hidden></span></button>
+      </div>
     </header>
     <main id="page-content" tabindex="-1"></main>
-    <button class="floating-add-button" id="floating-add" type="button" aria-label="Add game" title="Add game"><i data-lucide="plus" aria-hidden="true"></i></button>
     <nav class="bottom-bar" id="bottom-bar" aria-label="Main navigation">
       <button data-page="dashboard" class="nav-button active"><span class="nav-icon">⌂</span><span>Home</span></button>
       <button data-page="discover" class="nav-button"><span class="nav-icon">✧</span><span>Discover</span></button>

@@ -8,6 +8,12 @@
   const nativeHttp = window.CapacitorHttp || capacitor?.Plugins?.CapacitorHttp || capacitor?.Plugins?.Http || null;
   const localPreview = !nativeApp && location.protocol.startsWith("http") && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
   const encode = value => encodeURIComponent(String(value || "").trim());
+  function responseError(status, statusText, data) {
+    let payload = data;
+    if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch (_) {} }
+    const detail = payload?.detail || payload?.error || payload?.message || statusText || "Metadata request failed";
+    return Object.assign(new Error(`${status} ${detail}`), { status });
+  }
   async function wireRequest(url, options = {}, responseType = "json") {
     const method = String(options.method || "GET").toUpperCase();
     const headers = { Accept: responseType === "text" ? "text/html,application/xhtml+xml,*/*" : "application/json", ...(options.headers || {}) };
@@ -24,8 +30,8 @@
         responseType: responseType === "text" ? "text" : "json", connectTimeout: 15000, readTimeout: 20000
       });
       const status = Number(response?.status || 0);
-      if (status >= 400) throw Object.assign(new Error(`${status} ${response.statusText || "Metadata request failed"}`), { status });
       const data = response?.data;
+      if (status >= 400) throw responseError(status, response.statusText, data);
       if (responseType === "text") return typeof data === "string" ? data : String(data ?? "");
       if (typeof data === "string") {
         try { return JSON.parse(data); }
@@ -35,7 +41,10 @@
     }
     const requestUrl = localPreview ? `/proxy?url=${encodeURIComponent(url)}` : url;
     const response = await fetch(requestUrl, { method, headers, body: options.body });
-    if (!response.ok) throw Object.assign(new Error(`${response.status} ${response.statusText}`), { status: response.status });
+    if (!response.ok) {
+      const data = await response.text().catch(() => "");
+      throw responseError(response.status, response.statusText, data);
+    }
     return responseType === "text" ? await response.text() : await response.json();
   }
   // Every request to a known source picks up that source's domain / user agent / cookies from Settings (the user's values win over built-in headers).
@@ -178,6 +187,30 @@
       throw error;
     }
   }
+  async function collectProviderJobs(jobs, { timeoutMs = 10000, graceMs = 1200 } = {}) {
+    const results = [], errors = [];
+    let completed = 0, resolveFirstResult;
+    const firstResult = new Promise(resolve => { resolveFirstResult = resolve; });
+    const running = jobs.map(async job => {
+      try {
+        const value = await job.run();
+        if (Array.isArray(value)) results.push(...value);
+        if (value?.length) resolveFirstResult();
+      } catch (error) {
+        errors.push(`${job.name}: ${error?.message || String(error)}`);
+      } finally { completed++; }
+    });
+    const allDone = Promise.all(running);
+    let deadline;
+    const timedOut = new Promise(resolve => { deadline = setTimeout(resolve, timeoutMs); });
+    const collectAfterFirst = firstResult.then(() => new Promise(resolve => {
+      const grace = setTimeout(resolve, graceMs);
+      allDone.then(() => { clearTimeout(grace); resolve(); });
+    }));
+    await Promise.race([allDone, collectAfterFirst, timedOut]);
+    clearTimeout(deadline);
+    return { results, errors, pending: Math.max(0, jobs.length - completed) };
+  }
   function howLongToBeatPayload(query, token) {
     const payload = { searchType:"games", searchTerms:String(query).trim().split(/\s+/).filter(Boolean), searchPage:1, size:15, searchOptions:{ games:{userId:0,platform:"",sortCategory:"popular",rangeCategory:"main",rangeTime:{min:null,max:null},gameplay:{perspective:"",flow:"",genre:"",difficulty:""},rangeYear:{min:"",max:""},modifier:""},users:{sortCategory:"postcount"},lists:{sortCategory:"follows"},filter:"",sort:0,randomizer:0 }, useCache:true };
     if (token.hpKey && token.hpVal != null) payload[token.hpKey] = token.hpVal;
@@ -209,9 +242,11 @@
     if (!String(query || "").trim()) return [];
     const sources = metadata.available(category, settings).filter(source => typeof searcherFor(source) === "function");
     if (!sources.length) throw new Error(`No enabled metadata sources are available for ${category}.`);
-    const settled = await Promise.allSettled(sources.map(source => runSourceSearch(source, query.trim(), category, settings)));
-    const results = settled.flatMap(entry => entry.status === "fulfilled" ? entry.value : []);
-    const errors = settled.filter(entry => entry.status === "rejected").map(entry => entry.reason?.message || String(entry.reason));
+    const { results, errors, pending } = await collectProviderJobs(sources.map(source => ({
+      name: source.name || source.key,
+      run: () => runSourceSearch(source, query.trim(), category, settings)
+    })));
+    if (pending) errors.push(`${pending} source(s) still responding.`);
     const unique = new Map();
     for (const item of results) if (item?.title) unique.set(`${item.source}:${item.providerId || item.title.toLowerCase()}`, item);
     if (!unique.size && errors.length) throw new Error(errors.join("; "));
@@ -225,7 +260,13 @@
     if (!source) throw new Error("Enable this metadata source in Settings → Metadata Sources first.");
     const searcher = searcherFor(source);
     if (typeof searcher !== "function") throw new Error("This metadata source does not support search.");
-    const results = await runSourceSearch(source, query.trim(), category, settings);
+    // RAWG can take longer on mobile networks than the other providers. Its
+    // Android HTTP bridge allows a 15s connect + 20s read window, so don't
+    // mark a healthy request as failed after only the old 10s UI deadline.
+    const sourceTimeout = source.key === "rawg" && nativeApp ? 35000 : source.key === "rawg" ? 25000 : 10000;
+    const { results, errors, pending } = await collectProviderJobs([{ name: source.name || source.key, run: () => runSourceSearch(source, query.trim(), category, settings) }], { timeoutMs: sourceTimeout, graceMs: 0 });
+    if (pending) throw new Error(errors[0] || `${source.name || source.key} did not respond in time.`);
+    if (!results.length && errors.length) throw new Error(errors.join("; "));
     const unique = new Map();
     for (const item of results) if (item?.title) unique.set(`${item.source}:${item.providerId || item.title.toLowerCase()}`, item);
     return [...unique.values()].slice(0, 36);
@@ -259,9 +300,10 @@
       const [hot, best, upcoming] = await Promise.all([list(`ordering=-added&dates=${year - 1}-01-01,${year}-12-31`), list(`ordering=-metacritic&metacritic=80,100&dates=${year - 2}-01-01,${year}-12-31`), list(`ordering=-added&dates=${today},${year + 1}-12-31`)]);
       return [{ source: "rawg", title: "Trending on RAWG", items: map(hot) }, { source: "rawg", title: "Critically acclaimed", items: map(best) }, { source: "rawg", title: "Upcoming", items: map(upcoming) }];
     });
-    const settled = await Promise.allSettled(jobs.map(job => job()));
-    const sections = settled.flatMap(entry => entry.status === "fulfilled" ? entry.value : []).filter(section => section.items.length);
-    if (!sections.length && settled.some(entry => entry.status === "rejected")) throw settled.find(entry => entry.status === "rejected").reason;
+    const { results: collected, errors, pending } = await collectProviderJobs(jobs.map((run, index) => ({ name: `Suggestion source ${index + 1}`, run })), { timeoutMs: 10000, graceMs: 1200 });
+    const sections = collected.filter(section => section.items.length);
+    if (!sections.length && (errors.length || pending)) throw new Error(errors[0] || "Suggestion sources are taking too long. Try a search above.");
+    sections.warnings = [...errors, ...(pending ? [`${pending} source(s) still responding.`] : [])];
     return sections;
   }
   function clearSourceCooldown(sourceKey) {
