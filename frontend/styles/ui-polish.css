@@ -623,6 +623,22 @@ body[data-theme="dark"] .stats-section-heading h2 { color: var(--legacy-text, #f
     border-radius: 0 !important;
   }
 }
+
+/* Keep short screens compact while retaining a fixed bar on pages that scroll. */
+main#page-content { min-height:0; }
+.collection-page,.discover-page,.search-page,.settings-page { min-height:0; }
+body:not([data-page="add"]) .app-shell { padding-bottom:calc(76px + env(safe-area-inset-bottom)); }
+body:not([data-page="add"]) #page-content > :first-child { padding-bottom:0!important; }
+body:not([data-page="add"]) #page-content > :first-child > :last-child { margin-bottom:0!important; }
+#page-content > .source-options-page,#page-content > .cs-page { padding-bottom:0!important; }
+body[data-bottom-bar-flow="true"] .app-shell { min-height:0; padding-bottom:0!important; }
+body[data-bottom-bar-flow="true"] .bottom-bar {
+  position:relative!important; inset:auto!important; left:auto!important; right:auto!important; bottom:auto!important;
+  width:100%!important; max-width:none!important; margin:0; transform:none!important;
+}
+@media (min-width:768px) {
+  body[data-sidebar="shown"]:not([data-page="add"]) .app-shell { padding-bottom:40px; }
+}
 /* On tablet and desktop the sidebar is primary navigation for these root pages. */
 @media (min-width: 768px) {
   body[data-sidebar="shown"][data-page="timeline"] .timeline-page > .analytics-page-heading > .detail-back,
@@ -1633,7 +1649,7 @@ body[data-page="dashboard"] .topbar h1 { font-size:1.78rem; line-height:1.04; le
 .cs-test-card > header { grid-template-columns:28px minmax(0,1fr); }
 .cs-test-card > .cs-test-btn { min-height:40px; border-radius:11px; }
 .cs-test:not(:empty) { padding:10px; border-radius:11px; font-size:.67rem; }
-.cs-bar { bottom:calc(58px + env(safe-area-inset-bottom)); gap:7px; padding:9px 12px; }
+.cs-bar { position:static; width:100%; max-width:none; margin:0; padding:12px 0 0; border-top:1px solid var(--line); background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none; gap:7px; }
 .cs-bar .button { min-height:42px; border-radius:12px; font-size:.75rem; }
 .detail-content-layout { display:grid; gap:14px; min-width:0; }
 .detail-tracking-section { gap:8px; }
@@ -1796,4 +1812,54 @@ body[data-page="dashboard"] .topbar h1 { font-size:1.78rem; line-height:1.04; le
     gap:20px;
   }
   body[data-page="dashboard"] #collection-results > .dashboard-status-group { width:100%; min-width:0; }
+}
+
+/* Size the filter sheet to its controls; scroll the controls only on short screens. */
+.dashboard-filter-dialog[open] {
+  height:auto!important;
+  max-height:min(98dvh,900px)!important;
+}
+.dashboard-filter-dialog #dashboard-filter-form {
+  height:auto!important;
+  max-height:inherit;
+  grid-template-rows:auto auto minmax(0,1fr) auto;
+}
+.dashboard-filter-dialog .ios-sheet-body {
+  max-height:calc(98dvh - 220px);
+  overflow-y:auto;
+}
+
+/* Keep the Explore source search, provider list, and beta entry visually grouped. */
+.explore-page { gap:12px; }
+.explore-page > .explore-group-title { margin:0 2px -2px; }
+.explore-page > .explore-source-search { margin:0; }
+.explore-page > .explore-source-list { min-width:0; }
+.explore-page > .explore-list-group { min-width:0; }
+
+/* Bottom bar destinations reorder by dragging; keep each row on one line. */
+.nav-layout-row { grid-template-columns:20px minmax(0,1fr) auto; align-items:center; }
+.nav-layout-row .drag-handle { display:grid; place-items:center; width:20px; min-height:44px; touch-action:none; user-select:none; }
+.nav-layout-row .nav-layout-actions { grid-column:auto; width:auto; margin:0; gap:0; }
+.nav-layout-row .nav-layout-actions > button { display:none; }
+.nav-layout-row .nav-layout-actions .toggle { margin:0; }
+@media (max-width:360px) {
+  .nav-layout-row { grid-template-columns:20px minmax(0,1fr) auto; align-items:center; }
+  .nav-layout-row .sortable-label { min-height:44px; }
+  .nav-layout-row .nav-layout-actions { grid-column:auto; width:auto; margin:0; }
+}
+
+/* Keep settings subpage navigation and title on one compact row on phones. */
+@media (max-width:480px) {
+  .settings-detail-page .settings-subpage-heading {
+    grid-template-columns:minmax(0,1fr) minmax(0,auto) minmax(0,1fr);
+    grid-template-rows:minmax(0,1fr);
+    align-items:center;
+  }
+  .settings-detail-page .settings-subpage-heading .settings-back { grid-column:1; grid-row:1; }
+  .settings-detail-page .settings-subpage-heading h1 {
+    grid-column:2; grid-row:1; justify-self:center; min-width:0; max-width:min(54vw,340px);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font-size:clamp(.74rem,4.1vw,1.12rem); line-height:1.2;
+  }
+  .settings-detail-page .settings-subpage-heading .settings-subpage-icon { grid-column:3; grid-row:1; justify-self:end; }
 }

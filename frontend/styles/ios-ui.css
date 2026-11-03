@@ -242,7 +242,7 @@ dialog.ios-action-sheet::backdrop{background:#00000066;backdrop-filter:blur(2px)
 .ios-action-group button,.ios-action-cancel{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border:0;background:transparent;color:inherit;font-size:.8rem;font-weight:600;cursor:pointer}
 .ios-action-group button+button{border-top:1px solid var(--line)}
 .ios-action-group button:active,.ios-action-cancel:active{background:var(--surface-2)}
-.ios-action-group .accent{color:var(--accent-text,var(--accent))}.ios-action-group .success{color:#059669}.ios-action-group .danger{color:#ef4444}
+.ios-action-group .accent{color:var(--accent-text,var(--accent))}.ios-action-group .success{color:#059669}.ios-action-group .warning{color:var(--warn-text,#d97706)}.ios-action-group .danger{color:#ef4444}.ios-action-group .neutral{color:var(--muted)}
 .ios-action-group svg{width:16px;height:16px}
 .ios-action-cancel{border-radius:18px;background:var(--surface);font-weight:700;box-shadow:0 12px 40px #0004}
 .ios-action-group button:focus,.ios-action-cancel:focus{outline:none}

@@ -138,6 +138,7 @@
   const dashboardPageSize = 40;
   let dashboardLazyObserver = null;
   let timelineArtworkObserver = null;
+  let bottomBarFlowObserver = null, bottomBarFlowFrame = 0;
   let searchRenderTimer = null;
   let discoverRequestId = 0;
   let addMetadataRequestId = 0;
@@ -185,10 +186,18 @@
     dialog.dataset.popupFallback = "true";
     document.body.dataset.popupFallback = "true";
   }
-  function closePopup(dialog) {
+  function closePopup(dialog, { preserveHistory = false } = {}) {
     if (!dialog) return;
     if (typeof dialog.close === "function") {
-      try { const wasOpen = dialog.open; dialog.close(); if (wasOpen && !closingFromPop) popDialogEntry(); return; } catch (_) {}
+      try {
+        const wasOpen = dialog.open;
+        dialog.close();
+        if (wasOpen && !closingFromPop) {
+          if (preserveHistory) dialogEntries = Math.max(0, dialogEntries - 1);
+          else popDialogEntry();
+        }
+        return;
+      } catch (_) {}
     }
     dialog.removeAttribute("open");
     dialog.removeAttribute("aria-modal");
@@ -331,6 +340,7 @@
   function goto(next, updateHistory = true) {
     if (next === "search") next = "dashboard";
     const [nextPage, nextSection] = String(next).split("/");
+    if (page === "details" && nextPage !== "details") { detailRequest++; detailLoading = false; }
     page = nextPage in titles ? nextPage : "dashboard";
     statsSubpage = page === "statistics" && statsSections.includes(nextSection) ? normalizeStatsSection(nextSection) : "";
     if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverRequestId++; discoverCache = null; }
@@ -338,10 +348,10 @@
     if (page !== "settings") settingsGroup = null;
     if (updateHistory) historyPush();
     document.body.dataset.navDir = "forward";
-    render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
+    render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" }); syncBottomBarFlow();
   }
   function historyPush() {
-    const route = page === "details" && detailItemId && !detailPreview ? `details?id=${encodeURIComponent(detailItemId)}` : page === "settings" && settingsGroup ? `settings/${settingsGroup}${settingsParam ? `?id=${encodeURIComponent(settingsParam)}` : ""}` : page === "discover" && discoverSource ? `discover?source=${encodeURIComponent(discoverSource)}` : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page;
+    const route = currentHistoryRoute();
     const url = new URL(location.href);
     url.search = "";
     if (page === "dashboard" && libraryQuery) url.searchParams.set("q", libraryQuery);
@@ -350,6 +360,35 @@
     if (`${location.pathname}${location.search}${location.hash}` !== nextUrl) {
       try { window.history.pushState({ page, settingsGroup }, "", nextUrl); } catch (_) {}
     }
+  }
+  function currentHistoryRoute() {
+    return page === "details" && detailItemId && !detailPreview ? `details?id=${encodeURIComponent(detailItemId)}`
+      : page === "settings" && settingsGroup ? `settings/${settingsGroup}${settingsParam ? `?id=${encodeURIComponent(settingsParam)}` : ""}`
+      : page === "discover" && discoverSource ? `discover?source=${encodeURIComponent(discoverSource)}`
+      : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page;
+  }
+  function historyReplace() {
+    const url = new URL(location.href);
+    url.search = "";
+    if (page === "dashboard" && libraryQuery) url.searchParams.set("q", libraryQuery);
+    url.hash = currentHistoryRoute();
+    try { window.history.replaceState({ page, settingsGroup }, "", `${url.pathname}${url.search}${url.hash}`); } catch (_) {}
+  }
+  function navigateBackTo(route) {
+    const [path, query = ""] = String(route || "dashboard").replace(/^#/, "").split("?");
+    if (path.split("/")[0] === "settings") {
+      const section = path.split("/")[1] || "";
+      settingsGroup = section === "manage-backups" ? "backups" : section || null;
+      settingsParam = new URLSearchParams(query).get("id") || "";
+    }
+    goto(path || "dashboard", false);
+    historyReplace();
+  }
+  function currentPageBackRoute() {
+    const control = $("#page-content [data-back], #page-content .detail-back[data-go]");
+    if (!control || getComputedStyle(control).display === "none") return "";
+    if (control.dataset.go) return control.dataset.go;
+    return new URL(control.getAttribute("href") || "#dashboard", location.href).hash;
   }
 
   function pageContext() {
@@ -406,6 +445,30 @@
     }), { rootMargin: "640px 0px" });
     loaders.forEach(button => dashboardLazyObserver.observe(button));
   }
+  function syncBottomBarFlow() {
+    const bar = $("#bottom-bar"), content = $("#page-content");
+    if (!bar || !content) return;
+    if (!bottomBarFlowObserver && window.ResizeObserver) {
+      bottomBarFlowObserver = new ResizeObserver(() => {
+        if (bottomBarFlowFrame) return;
+        bottomBarFlowFrame = requestAnimationFrame(() => { bottomBarFlowFrame = 0; syncBottomBarFlow(); });
+      });
+      bottomBarFlowObserver.observe(content);
+    }
+    const keepBarPinned = ["explore", "discover", "mix", "statistics"].includes(page)
+      || (page === "settings" && ["metadata-sources", "source-options", "app-info", "logcat", "nav-layout", "tracking"].includes(settingsGroup));
+    if (page === "add" || keepBarPinned || getComputedStyle(bar).display === "none") {
+      delete document.body.dataset.bottomBarFlow;
+      return;
+    }
+    const contentBottom = window.scrollY + content.getBoundingClientRect().bottom;
+    const fitsWithoutGap = contentBottom + bar.offsetHeight <= document.documentElement.clientHeight;
+    document.body.dataset.bottomBarFlow = String(fitsWithoutGap);
+  }
+  window.addEventListener("resize", () => {
+    if (bottomBarFlowFrame) return;
+    bottomBarFlowFrame = requestAnimationFrame(() => { bottomBarFlowFrame = 0; syncBottomBarFlow(); });
+  }, { passive: true });
   async function showCachedTimelineImage(image, sourceUrl) {
     if (!image?.isConnected || !sourceUrl || !window.caches || !/^https?:\/\//i.test(sourceUrl)) return false;
     try {
@@ -677,6 +740,7 @@
     });
     if (page === "timeline") hydrateTimelineThumbnails();
     observeDashboardLoaders();
+    syncBottomBarFlow();
     content.querySelector("[data-clear-collection-search]")?.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
@@ -797,7 +861,7 @@
         openDetails(button.dataset.id);
       });
     });
-    content.querySelectorAll("[data-go]").forEach(button => button.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); goto(button.dataset.go); }));
+    content.querySelectorAll("[data-go]").forEach(button => button.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); if (button.classList.contains("detail-back")) navigateBackTo(button.dataset.go); else goto(button.dataset.go); }));
     content.querySelectorAll("[data-entry-status]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
       const form = button.closest("form");
@@ -875,11 +939,6 @@
         const enabled = row.dataset.sourceEnabledState === "true";
         row.hidden = metadataSourceFilter === "enabled" ? !enabled : metadataSourceFilter === "disabled" ? enabled : false;
       });
-    }));
-    content.querySelectorAll("[data-nav-move]").forEach(button => button.addEventListener("click", event => {
-      event.preventDefault(); event.stopPropagation();
-      prefs.navBar.order = moveInOrder([...prefs.navBar.order], button.dataset.navKey, button.dataset.navMove);
-      persist(); applyPreferences(); render();
     }));
     content.querySelectorAll("[data-backup-folder-action]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
@@ -1807,7 +1866,12 @@
     return true;
   }
   function openItemActions(id) {
-    const item = items.find(entry => entry.id === id); if (!item) return;
+    const item = items.find(entry => String(entry.id) === String(id)); if (!item) return;
+    const statusIcons = { Playing: "gamepad-2", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus", Completed: "check-circle" };
+    const statusColors = { Playing: "accent", Backlog: "neutral", "On Hold": "warning", Dropped: "danger", Completed: "success" };
+    const availableStatuses = [...new Set(category(item.category)?.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed"])]
+      .filter(status => status !== item.status);
+    const statusActions = availableStatuses.map(status => `<button type="button" class="${statusColors[status] || "neutral"}" data-sheet-action="${esc(status)}"><i data-lucide="${statusIcons[status] || "circle"}"></i>Mark as ${esc(status)}</button>`).join("");
     let dialog = $("#item-action-dialog");
     if (!dialog) {
       dialog = document.createElement("dialog"); dialog.id = "item-action-dialog"; dialog.className = "ios-action-sheet";
@@ -1815,11 +1879,16 @@
       dialog.addEventListener("click", async event => {
         if (event.target === dialog) { closePopup(dialog); return; }
         const button = event.target.closest("[data-sheet-action]"); if (!button) return;
-        const target = items.find(entry => entry.id === dialog.dataset.itemId);
-        closePopup(dialog);
+        const target = items.find(entry => String(entry.id) === String(dialog.dataset.itemId));
         if (!target) return;
         const action = button.dataset.sheetAction;
-        if (action === "details") openDetails(target.id);
+        if (action === "details") {
+          closePopup(dialog, { preserveHistory: true });
+          openDetails(target.id);
+          return;
+        }
+        closePopup(dialog);
+        if (action === "edit") openEdit(target.id);
         else if (action === "remove") {
           if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
           if (prefs.backupBeforeDestructive) exportList();
@@ -1828,7 +1897,7 @@
       });
     }
     dialog.dataset.itemId = id;
-    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p><button type="button" data-sheet-action="Playing" class="accent"><i data-lucide="gamepad-2"></i>Mark as Playing</button><button type="button" data-sheet-action="Completed" class="success"><i data-lucide="check-circle"></i>Mark as Completed</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
+    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p>${statusActions}<button type="button" data-sheet-action="edit"><i data-lucide="pencil"></i>Edit entry</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
   }
@@ -2271,7 +2340,7 @@
     const mixOpen = event.target.closest("[data-mix-open]");
     if (mixOpen) { const row = mixCache?.results?.[Number(mixOpen.dataset.mixOpen)]; if (row) openMixDetails(row); return; }
     const backLink = event.target.closest("[data-back]");
-    if (backLink && inAppNav) { event.preventDefault(); window.history.back(); return; }
+    if (backLink && inAppNav) { event.preventDefault(); navigateBackTo(new URL(backLink.getAttribute("href") || "#dashboard", location.href).hash); return; }
     const csInsert = event.target.closest("[data-cs-insert]");
     if (csInsert) { const input = $("#custom-source-form")?.elements.searchUrl; if (input) { const at = input.selectionStart ?? input.value.length; input.setRangeText(csInsert.dataset.csInsert, at, input.selectionEnd ?? at, "end"); input.focus(); } return; }
     if (event.target.closest("[data-custom-source-test]")) { testCustomSourceForm(); return; }
@@ -2352,10 +2421,8 @@
     }
     const resetOptions = event.target.closest("[data-source-reset-options]");
     if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist(); render(); toast("Source options reset."); return; }
-    const go = event.target.closest("[data-go]"); if (go) { goto(go.dataset.go); return; }
+    const go = event.target.closest("[data-go]"); if (go) { if (go.classList.contains("detail-back")) navigateBackTo(go.dataset.go); else goto(go.dataset.go); return; }
     if (event.target.closest("[data-category-colors-picker]")) { openCategoryColorsPicker(); return; }
-    const navMove = event.target.closest("[data-nav-move]");
-    if (navMove) { prefs.navBar.order = moveInOrder([...prefs.navBar.order], navMove.dataset.navKey, navMove.dataset.navMove); persist(); applyPreferences(); render(); return; }
     const sourceFilter = event.target.closest("[data-source-filter]");
     if (sourceFilter) {
       metadataSourceFilter = sourceFilter.dataset.sourceFilter;
@@ -2456,6 +2523,43 @@
     if (input.matches("[data-source-api-key]")) { prefs.apiKeys[input.dataset.sourceApiKey] = input.value.trim(); persist(); }
     if (input.matches("[data-setting-action=import]")) { const file = input.files?.[0]; input.value = ""; importList(file); }
   });
+  let navTouchDrag = null;
+  document.addEventListener("touchstart", event => {
+    if (navTouchDrag || event.touches.length !== 1) return;
+    const handle = event.target.closest?.(".nav-layout-row .drag-handle");
+    const row = handle?.closest("[data-nav-row]");
+    if (!handle || !row) return;
+    const touch = event.touches[0];
+    navTouchDrag = { identifier: touch.identifier, row, startY: touch.clientY, moved: false, wasDraggable: row.draggable };
+    row.draggable = false;
+  }, { passive: true });
+  document.addEventListener("touchmove", event => {
+    const drag = navTouchDrag;
+    const touch = drag && [...event.changedTouches].find(point => point.identifier === drag.identifier);
+    if (!drag || !touch) return;
+    if (!drag.moved && Math.abs(touch.clientY - drag.startY) < 7) return;
+    drag.moved = true;
+    event.preventDefault();
+    drag.row.classList.add("dragging");
+    const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest("[data-nav-row]");
+    if (!target || target === drag.row || target.parentElement !== drag.row.parentElement) return;
+    const rect = target.getBoundingClientRect();
+    target.parentElement.insertBefore(drag.row, touch.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
+  }, { passive: false });
+  const finishNavTouchDrag = event => {
+    const drag = navTouchDrag;
+    if (!drag || (event && ![...event.changedTouches].some(touch => touch.identifier === drag.identifier))) return;
+    navTouchDrag = null;
+    drag.row.classList.remove("dragging");
+    drag.row.draggable = drag.wasDraggable;
+    if (!drag.moved) return;
+    const list = drag.row.closest("#nav-bar-arrangement-list");
+    if (!list) return;
+    prefs.navBar.order = [...list.querySelectorAll("[data-nav-row]")].map(row => row.dataset.navRow);
+    persist(); applyPreferences(); render();
+  };
+  document.addEventListener("touchend", finishNavTouchDrag);
+  document.addEventListener("touchcancel", finishNavTouchDrag);
   document.addEventListener("dragstart", event => {
     const row = event.target.closest("[data-nav-row], [data-source-row]");
     if (!row || !event.dataTransfer) return;
@@ -2644,6 +2748,8 @@
     const route = hashPath.split("/"); const next = route[0];
     if (next === "search") { page = "dashboard"; settingsGroup = null; historyPush(); render(); syncPageNavigation(); return; }
     if (!(next in titles)) return;
+    const previousPage = page;
+    if (previousPage === "details" && next !== "details") { detailRequest++; detailLoading = false; }
     if (next !== "discover") { discoverQuery = ""; discoverRequestId++; }
     if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; }
     const previousDiscoverSource = discoverSource;
@@ -2657,7 +2763,7 @@
       const changedDetail = Boolean(id && id !== detailItemId);
       if (changedDetail) { detailItemId = id; detailPreview = null; detailData = null; detailError = ""; }
       if (!detailRestorePending && !detailPreview && !items.some(item => String(item.id) === String(detailItemId))) { redirectHomeIfDetailMissing(); return; }
-      if (changedDetail) { render(); syncPageNavigation(); loadDetails(); return; }
+      if (changedDetail || previousPage !== "details") { render(); syncPageNavigation(); loadDetails(); return; }
     }
     render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
     if (next === "discover" && previousDiscoverSource !== discoverSource && discoverQuery.trim()) submitDiscover();
@@ -2680,7 +2786,10 @@
   window.Capacitor?.Plugins?.App?.addListener?.("backButton", () => {
     const openDialog = document.querySelector("dialog[open]");
     if (openDialog) { closePopup(openDialog); return; }
-    if (page !== "dashboard" || settingsGroup) { if (window.history.length > 1) window.history.back(); else goto("dashboard"); return; }
+    const backRoute = currentPageBackRoute();
+    if (backRoute) { navigateBackTo(backRoute); return; }
+    if (window.history.length > 1 && inAppNav) { window.history.back(); return; }
+    if (page !== "dashboard") { navigateBackTo("dashboard"); return; }
     window.Capacitor.Plugins.App.exitApp?.();
   });
   window.addEventListener("hashchange", syncRouteFromHash);
