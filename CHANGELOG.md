@@ -2,7 +2,7 @@
 
 Notable SavePoint changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/) (`0.x` while the app is evolving).
 
-## Unreleased
+## [0.1.0] — 2026-11-04
 
 ### Added
 
@@ -36,6 +36,4 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - JSON import currently imports items only; it does not restore history or preferences. JSON and folder backups are plaintext unless separately protected.
 - Opening the app with `file://` can block browser metadata requests; use `npm run serve` for browser preview.
 
-## [0.1.0] — 2026-10-29
-
-Initial tracked version of SavePoint, a local-first game library and playtime tracker for browsers and Android (Capacitor application ID `com.cuemark.savepoint`). It introduced game status/playtime/rating tracking, Home, Discover, Details, Add Game, Timeline, Statistics, Explore, and Settings; browser localStorage, Android storage and folder backups; provider-based metadata; and responsive phone/tablet/desktop navigation.
+Initial tracked version of SavePoint, a local-first game library and playtime tracker for browsers and Android (Capacitor application ID `com.cuemark.savepoint`). Version 0.1.0 includes game status/playtime/rating tracking, Home, Discover, Details, Add Game, Timeline, Statistics, Explore, and Settings; browser localStorage, Android storage and folder backups; provider-based metadata; responsive layouts; and the additions, changes, and fixes listed above.
