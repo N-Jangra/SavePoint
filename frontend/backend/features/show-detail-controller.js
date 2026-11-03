@@ -99,23 +99,22 @@
       return details("steamdb",item,{title:d.name,description:d.short_description||d.about_the_game,image:d.capsule_image||d.header_image,portraitImage:d.capsule_image||d.capsule_imagev5||d.header_image,landscapeImage:d.header_image||d.background,year:d.release_date?.date?.match(/\d{4}/)?.[0],rating:d.metacritic?.score?d.metacritic.score/20:0,url:steamDbUrl,purchase:{url:steamUrl,price:d.price_overview?.final_formatted||(d.is_free?"Free":"Price unavailable"),isFree:Boolean(d.is_free)},links:[{label:"View in SteamDB",url:steamDbUrl},...(d.website?[{label:"Website",url:d.website}]:[]),...(d.metacritic?.url?[{label:"Metacritic",url:d.metacritic.url}]:[])],sections,requirements:{minimum:requirementRows(pcReq.minimum,"Minimum"),recommended:requirementRows(pcReq.recommended,"Recommended")},languages:steamLanguages(d.supported_languages),tags:(d.categories||[]).map(x=>x.description).slice(0,14),badge:Number(d.required_age)>0?`Age ${d.required_age}+`:"",fields:[["Developer",d.developers],["Publisher",d.publishers],["Genres",d.genres?.map(x=>x.description)],["Release date",d.release_date?.date],["Platforms",Object.entries(d.platforms||{}).filter(([,v])=>v).map(([k])=>k)],["Price",d.price_overview?.final_formatted||(d.is_free?"Free":"")],["Discount",d.price_overview?.discount_percent?`${d.price_overview.discount_percent}% off`:""],["Metacritic",d.metacritic?.score],["Steam recommendations",d.recommendations?.total?d.recommendations.total.toLocaleString():""],["Achievements",d.achievements?.total],["Controller support",d.controller_support],["DLC",dlc?`${dlc} available`:""]].map(([label,value])=>({label,value}))});
     },    howlongtobeat: async (item,s) => {
       const id=String(item.providerId).replace(/^howlongtobeat:/, "");
-      if(!window.Capacitor?.isNativePlatform?.()) throw new Error("HowLongToBeat details only load in the Android app. Browsers block this site.");
       // Reuse the session from the in-app popup the user completed (cookies + that WebView's own User-Agent).
       let sess={}; try { const r=await window.Capacitor?.Plugins?.ProviderConsent?.getHowLongToBeatSession?.(); if(r?.cookie) sess.Cookie=r.cookie; if(r?.userAgent) sess["User-Agent"]=r.userAgent; } catch {}
       let game=null, pageError=null;
       try {
-        const url=`https://howlongtobeat.com/game/${encode(id)}`, html=await getText(url,{...s,headers:{...(s?.headers||{}),...sess}});
+        const url=`https://howlongtobeat.com/game/${encode(id)}`, html=await controller.requestHowLongToBeatText(url,{...s,headers:{...(s?.headers||{}),...sess}});
         const raw=html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/)?.[1];
         game=raw?JSON.parse(raw)?.props?.pageProps?.game?.data?.game?.[0]:null;
       } catch(error) { pageError=error; }
       if(!game) {
         const base="https://howlongtobeat.com";
-        const token=await get(`${base}/api/search/site/init?t=${Date.now()}`,{...s,noCache:true,headers:{Accept:"application/json",Referer:`${base}/`,...sess}});
+        const token=await controller.requestHowLongToBeatJson(`${base}/api/search/site/init?t=${Date.now()}`,{...s,noCache:true,headers:{Accept:"application/json",Referer:`${base}/`,...sess}});
         if(!token?.token) throw pageError || new Error("HowLongToBeat session unavailable.");
         const payload={searchType:"games",searchTerms:String(item.title||`game ${id}`).trim().split(/\s+/),searchPage:1,size:15,searchOptions:{games:{userId:0,platform:"",sortCategory:"popular",rangeCategory:"main",rangeTime:{min:null,max:null},gameplay:{perspective:"",flow:"",genre:"",difficulty:""},rangeYear:{min:"",max:""},modifier:""},users:{sortCategory:"postcount"},lists:{sortCategory:"follows"},filter:"",sort:0,randomizer:0},useCache:true};
         const headers={Accept:"application/json","Content-Type":"application/json",Origin:base,Referer:`${base}/`,"x-auth-token":token.token,...sess};
         if(token.hpKey&&token.hpVal!=null){headers["x-hp-key"]=token.hpKey;headers["x-hp-val"]=token.hpVal;payload[token.hpKey]=token.hpVal;}
-        const data=await get(`${base}/api/search/site`,{...s,method:"POST",headers,body:JSON.stringify(payload)});
+        const data=await controller.requestHowLongToBeatJson(`${base}/api/search/site`,{...s,method:"POST",headers,body:JSON.stringify(payload)});
         game=(data.data||[]).find(row=>String(row.game_id)===id)||(data.data||[])[0];
       }
       if(!game) throw pageError || new Error("HowLongToBeat game was not found.");
@@ -153,6 +152,29 @@
       const mc=(d.metacritic_platforms||[]).map(row=>`${row.platform?.name||row.platform?.platform?.name||""} ${row.metascore}`.trim()).join(" · ");
       return details("rawg",item,{title:d.name,description:d.description_raw,image:item.image||d.background_image,portraitImage:item.image||d.background_image,landscapeImage,year:d.released?.slice(0,4),rating:d.rating,url:d.website||`https://rawg.io/games/${d.slug}`,sections,links,stores:storeLinks,requirements:{minimum:requirementRows(pc.minimum,"Minimum"),recommended:requirementRows(pc.recommended,"Recommended")},tags:(d.tags||[]).filter(t=>!t.language||t.language==="eng").slice(0,16).map(x=>x.name),badge:d.esrb_rating?.name?`ESRB ${d.esrb_rating.name}`:"",ratingBreakdown,ratingCount:d.ratings_count,fields:[["Released",d.released],["Metacritic",d.metacritic],["Metacritic by platform",mc],["Genres",d.genres?.map(x=>x.name)],["Platforms",d.platforms?.map(x=>x.platform?.name)],["Developers",d.developers?.map(x=>x.name)],["Publishers",d.publishers?.map(x=>x.name)],["Also known as",d.alternative_names],["Playtime",d.playtime?`${d.playtime} hours average`:""],["Achievements",d.parent_achievements_count||d.achievements_count||""],["Website",d.website]].map(([label,value])=>({label,value}))});
     },
+  };
+  loaders.igdb = async (item,s) => {
+    const id = Number(item.providerId);
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error("This IGDB entry has an invalid game ID.");
+    const rows = await controller.igdbRequest(`fields id,name,slug,summary,storyline,first_release_date,cover.url,artworks.url,screenshots.url,rating,rating_count,genres.name,platforms.name,involved_companies.developer,involved_companies.publisher,involved_companies.company.name,game_modes.name,player_perspectives.name,themes.name,websites.url,url; where id = ${id}; limit 1;`, s);
+    const game = Array.isArray(rows) ? rows[0] : null;
+    if (!game) throw new Error("IGDB could not find this game's details.");
+    const image = url => controller.igdbImage(url, "t_screenshot_med");
+    const cover = controller.igdbImage(game.cover?.url, "t_cover_big") || item.image;
+    const screenshots = [...(game.screenshots || []), ...(game.artworks || [])].map((shot,index) => ({ title:`Image ${index + 1}`, image:image(shot.url), url:image(shot.url) })).filter(row => row.image).slice(0,16);
+    const companies = game.involved_companies || [];
+    const developers = companies.filter(row => row.developer).map(row => row.company?.name).filter(Boolean);
+    const publishers = companies.filter(row => row.publisher).map(row => row.company?.name).filter(Boolean);
+    const genres = (game.genres || []).map(row => row.name).filter(Boolean);
+    const platforms = (game.platforms || []).map(row => row.name).filter(Boolean);
+    const modes = (game.game_modes || []).map(row => row.name).filter(Boolean);
+    const themes = (game.themes || []).map(row => row.name).filter(Boolean);
+    const released = game.first_release_date ? new Date(Number(game.first_release_date) * 1000).toISOString().slice(0,10) : "";
+    const igdbUrl = game.url || (game.slug ? `https://www.igdb.com/games/${game.slug}` : "");
+    const sites = (game.websites || []).filter(row => /^https?:\/\//i.test(row.url || ""));
+    const links = [...(igdbUrl ? [{label:"IGDB page",url:igdbUrl}] : []), ...sites.slice(0,6).map((site,index) => ({label:index === 0 ? "Related website" : `Website ${index + 1}`,url:site.url}))];
+    const sections = screenshots.length ? [{title:"Screenshots and artwork",kind:"gallery",items:screenshots}] : [];
+    return details("igdb",item,{title:game.name,description:game.summary||game.storyline,image:cover,portraitImage:cover,landscapeImage:screenshots[0]?.image||"",year:released.slice(0,4),rating:Number(game.rating)?Number((game.rating/20).toFixed(1)):0,url:igdbUrl,links,sections,tags:[...genres,...themes],ratingCount:game.rating_count||0,fields:[["Released",released],["Genres",genres],["Platforms",platforms],["Developers",developers],["Publishers",publishers],["IGDB rating",Number(game.rating)?`${Math.round(game.rating)}/100`:""],["Game modes",modes],["Player perspectives",(game.player_perspectives||[]).map(row=>row.name).filter(Boolean)]].map(([label,value])=>({label,value}))});
   };
   const load = async (item, settings = {}) => {
     if (!item?.metadataSource || !item?.providerId) throw new Error("This entry has no source ID to load details from.");

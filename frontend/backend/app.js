@@ -537,10 +537,10 @@
     };
     let folderData = null;
     const encryptedItemIds = new Set();
-    // Do not launch Android's document picker from startup. The encrypted
-    // app-private store is a usable local fallback until the user chooses a
-    // shared folder from Settings → Backups.
-    const folderUri = await getFolderUri({ prompt: false });
+    // Require a reachable shared database folder at every native app launch.
+    // If the folder has not been chosen yet, or its persisted access was lost,
+    // open Android's picker before loading the library.
+    const folderUri = await getFolderUri({ prompt: true });
     if (folderUri) folderData = await readFolderDatabase(folderUri);
 
     const plugin = window.Capacitor?.Plugins?.EncryptedStore;
@@ -576,12 +576,22 @@
     return { ...data, loadedFromFolder: Boolean(folderData) };
   }
 
-  async function save(data) {
+  let appSaveQueue = Promise.resolve();
+
+  // Capture each revision before waiting in the queue. Encrypted-store writes
+  // must finish in the same order as user changes or an older snapshot can win.
+  function save(data) {
     const payload = {
-      items: Array.isArray(data.items) ? data.items.map(item => ({ ...item })) : [],
-      history: Array.isArray(data.history) ? data.history : [],
-      preferences: data.preferences && typeof data.preferences === "object" ? data.preferences : {}
+      items: Array.isArray(data.items) ? JSON.parse(JSON.stringify(data.items)) : [],
+      history: Array.isArray(data.history) ? JSON.parse(JSON.stringify(data.history)) : [],
+      preferences: data.preferences && typeof data.preferences === "object" ? JSON.parse(JSON.stringify(data.preferences)) : {}
     };
+    const write = appSaveQueue.then(() => saveSnapshot(payload), () => saveSnapshot(payload));
+    appSaveQueue = write.catch(() => {});
+    return write;
+  }
+
+  async function saveSnapshot(payload) {
     localStorage.setItem(storageKey, JSON.stringify(activeFolderUri ? portableData(payload) : browserData(payload)));
     const folderWrite = queueFolderDatabaseWrite(payload);
     const plugin = window.Capacitor?.Plugins?.EncryptedStore;

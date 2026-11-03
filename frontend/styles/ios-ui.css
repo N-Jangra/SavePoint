@@ -1,7 +1,7 @@
 /* iOS-style visual layer for Home, Details, Add and Filter sheet. Loaded last; structure/JS hooks unchanged. */
 :root{--ios-violet:#7c3aed;--ios-indigo:#6366f1;--ios-grad:linear-gradient(135deg,#7c3aed,#6366f1);--ios-card-border:rgba(148,163,184,.28)}
-body[data-theme=light]{--accent:#7c3aed;--accent-soft:#ede9fe;--surface:#fff;--surface-2:#f1f1f5;--line:rgba(60,60,67,.12);background:#f2f2f7;--ios-card-border:rgba(203,213,225,.8)}
-body[data-theme=dark]{--accent:#8b5cf6;--accent-soft:#2a2144;--surface:#1c1c1e;--surface-2:#2c2c2e;--line:rgba(84,84,88,.45);background:#000;--ios-card-border:#27272a}
+body[data-theme=light]{--ios-card-border:rgba(203,213,225,.8)}
+body[data-theme=dark]{--ios-card-border:#27272a}
 body[data-theme=light] .app-shell,body[data-theme=dark] .app-shell{background:transparent}
 .ios-press,.button:active,.item-card:active,.floating-add-button:active{transform:scale(.97)}
 
@@ -173,7 +173,7 @@ body[data-theme=dark] .ios-status-badge{background:#064e3b!important;color:#6ee7
 .detail-tracking-section textarea{width:100%;padding:10px 12px;border:0;border-radius:14px;background:var(--surface-2);color:inherit;font-size:.76rem;resize:none}
 .detail-tracking-section textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 50%,transparent)}
 .detail-tracking-row{margin:12px 0 0;padding-top:12px;border-top:1px solid var(--line)}
-.detail-status-pills{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.detail-status-pills{flex-wrap:wrap;overflow:visible}
 .detail-status-pills .ios-pill{flex:none}
 
 /* Add */
@@ -242,7 +242,7 @@ dialog.ios-action-sheet::backdrop{background:#00000066;backdrop-filter:blur(2px)
 .ios-action-group button,.ios-action-cancel{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border:0;background:transparent;color:inherit;font-size:.8rem;font-weight:600;cursor:pointer}
 .ios-action-group button+button{border-top:1px solid var(--line)}
 .ios-action-group button:active,.ios-action-cancel:active{background:var(--surface-2)}
-.ios-action-group .accent{color:var(--accent-text,var(--accent))}.ios-action-group .success{color:#059669}.ios-action-group .danger{color:#ef4444}
+.ios-action-group .accent{color:var(--accent-text,var(--accent))}.ios-action-group .success{color:#059669}.ios-action-group .warning{color:var(--warn-text,#d97706)}.ios-action-group .danger{color:#ef4444}.ios-action-group .neutral{color:var(--muted)}
 .ios-action-group svg{width:16px;height:16px}
 .ios-action-cancel{border-radius:18px;background:var(--surface);font-weight:700;box-shadow:0 12px 40px #0004}
 .ios-action-group button:focus,.ios-action-cancel:focus{outline:none}
@@ -695,6 +695,7 @@ dialog.app-confirm[open]{animation:sp-pop calc(var(--speed,180ms) * 1.2) var(--e
 
 /* ===== Icon style: Inside boxes (default) or inline ===== */
 body[data-icon-style=inline] :is(.setting-icon,.settings-subpage-icon,.settings-category-icon,.explore-source-icon,.explore-list-icon,.storage-action-icon,.storage-total-icon,.manage-nav-row-icon,.app-info-row-icon,.app-info-feature-icon,.setting-search-result-icon,.setting-option-preview,.mix-intro-icon,.logcat-summary-icon,.cs-hero-icon,.explore-icon-btn){background:transparent!important;border-color:transparent!important;box-shadow:none!important;width:auto!important;height:auto!important;min-width:26px;padding:0!important}
+body[data-icon-style=inline] .explore-icon-btn{display:grid;place-items:center;width:40px!important;height:40px!important;min-width:40px!important;padding:0!important;border:1px solid var(--ios-card-border)!important;border-radius:50%;background:var(--surface)!important;box-shadow:0 1px 3px #00000012!important}
 body[data-icon-style=inline] .explore-list-icon{color:var(--tile,var(--accent-text,var(--accent)))}
 body[data-icon-style=inline] :is(.setting-icon,.explore-source-icon,.storage-action-icon,.manage-nav-row-icon,.setting-option-preview){color:var(--accent-text,var(--accent))}
 body[data-icon-style=inline] :is(.setting-icon svg,.explore-list-icon svg,.explore-source-icon svg,.storage-action-icon svg,.setting-option-preview svg){width:22px;height:22px}
@@ -710,9 +711,9 @@ button.ios-pill.active em{background:color-mix(in srgb,var(--accent) 16%,transpa
 .metadata-source-row .sortable-label strong{font-size:1.02rem}
 .source-options-link{width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--muted)}
 .source-api-key a{color:var(--accent-text,var(--accent))!important;font-weight:800;text-decoration:none!important}
-.source-api-key span{font-weight:700}
+.source-api-key label{font-weight:700}
 .source-enable-card{background:linear-gradient(135deg,#7c3aed,var(--accent));border-radius:26px;padding:22px 20px;box-shadow:0 14px 28px -14px color-mix(in srgb,var(--accent) 70%,transparent)}
-.source-option>strong{font-size:1.1rem;font-weight:800}
+.source-option>strong,.source-option>label strong{font-size:1.1rem;font-weight:800}
 .source-option input,.source-option textarea{border-radius:20px;padding:14px 16px;font-size:.9rem}
 .source-actions-card{margin-top:14px;border:1px solid var(--line);border-radius:24px;background:var(--surface);overflow:hidden}
 .source-actions-card .storage-action{width:100%;border:0;border-radius:0;background:transparent;padding:16px}

@@ -19,16 +19,21 @@
           <i data-lucide="chevron-right" aria-hidden="true"></i>
         </a>`;
     }).join("");
+    const sourceEmptyState = `<div class="explore-source-empty" id="explore-no-enabled-sources" role="status" ${sourceRows ? "hidden" : ""}>
+        <span class="explore-source-empty-icon"><i data-lucide="database" aria-hidden="true"></i></span>
+        <div><strong>No sources enabled</strong><p>Enable a metadata source to browse and search for games.</p></div>
+        <a href="#settings/metadata-sources">Manage sources <i data-lucide="chevron-right" aria-hidden="true"></i></a>
+      </div>`;
     return `<section class="explore-page">
-      <header class="explore-heading"><h1>Explore</h1><a class="explore-icon-btn" href="#settings/metadata-sources" aria-label="Manage metadata sources" title="Manage metadata sources"><i data-lucide="wrench" aria-hidden="true"></i></a></header>
+      <header class="explore-heading"><div><h1>Explore</h1><p class="explore-description">Browse activity and discover games from your sources.</p></div><a class="explore-icon-btn" href="#settings/metadata-sources" aria-label="Manage metadata sources" title="Manage metadata sources"><i data-lucide="wrench" aria-hidden="true"></i></a></header>
       <h2 class="explore-group-title">Insights &amp; Activity</h2>
       <div class="explore-list-group">
         <button class="explore-list-row" type="button" data-go="timeline"><span class="explore-list-icon" style="background:#34c759"><i data-lucide="clock" aria-hidden="true"></i></span><span class="explore-list-body"><span class="explore-list-name">Timeline</span></span><i data-lucide="chevron-right" class="explore-list-chevron" aria-hidden="true"></i></button>
         <button class="explore-list-row" type="button" data-go="statistics"><span class="explore-list-icon" style="background:#ff9500"><i data-lucide="bar-chart-3" aria-hidden="true"></i></span><span class="explore-list-body"><span class="explore-list-name">Statistics</span></span><i data-lucide="chevron-right" class="explore-list-chevron" aria-hidden="true"></i></button>
       </div>
       <h2 class="explore-group-title">Metadata Sources</h2>
-      <label class="search-box explore-source-search"><span aria-hidden="true">⌕</span><input id="explore-source-search" type="search" placeholder="Search metadata sources" autocomplete="off" aria-label="Search metadata sources"></label>
-      <div class="explore-source-list">${sourceRows}</div><p class="explore-no-sources" id="explore-no-sources" hidden>No matching metadata sources.</p>
+      <label class="search-box explore-source-search"><i data-lucide="search" aria-hidden="true"></i><input id="explore-source-search" type="search" placeholder="Search metadata sources" autocomplete="off" aria-label="Search metadata sources"></label>
+      <div class="explore-source-list">${sourceRows}</div>${sourceEmptyState}<p class="explore-no-sources" id="explore-no-sources" hidden>No matching metadata sources.</p>
       <h2 class="explore-group-title">Beta</h2>
       <div class="explore-list-group">
         <button class="explore-list-row" type="button" data-go="mix"><span class="explore-list-icon" style="background:#7c3aed"><i data-lucide="blend" aria-hidden="true"></i></span><span class="explore-list-body"><span class="explore-list-name">Mix fetch <em class="mix-beta">EXPERIMENTAL</em></span><small class="explore-list-sub">One list from all sources; details merged when you open or add a game.</small></span><i data-lucide="chevron-right" class="explore-list-chevron" aria-hidden="true"></i></button>
