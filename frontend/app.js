@@ -13,9 +13,9 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "tiles", imageStorage: "all", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
-    showSidebar: true, showScrollbars: false, bottomBarStyle: "box", bottomBarCorners: "round", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
-    navBar: { order: navKeys, visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
+    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
+    showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarCorners: "sharp", bottomBarLabels: "icons-only", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
+    navBar: { order: ["dashboard", "discover", "explore", "settings", "timeline", "statistics"], visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
     metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
@@ -130,7 +130,7 @@
   let detailTab = "";
   let detailItemId = initialRoute[0] === "details" ? detailIdFromQuery(initialHashQuery) || null : null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "dashboard", detailRequest = 0;
   let detailRestorePending = Boolean(detailItemId);
-  let detailImagePosition = 0;
+  let detailImagePosition = 0, detailImageOpener = null;
   const dashboardPageSize = 40;
   let dashboardLazyObserver = null;
   let timelineArtworkObserver = null;
@@ -705,7 +705,20 @@
       event.preventDefault(); event.stopPropagation();
       submitDiscover();
     });
-    content.querySelector("#discover-query")?.addEventListener("input", event => { discoverQuery = event.target.value; });
+    content.querySelector("#discover-query")?.addEventListener("input", event => {
+      discoverQuery = event.target.value;
+      const clearButton = content.querySelector("[data-clear-discover]");
+      if (clearButton) clearButton.hidden = !discoverQuery;
+    });
+    content.querySelector("[data-clear-discover]")?.addEventListener("click", event => {
+      event.preventDefault(); event.stopPropagation();
+      discoverQuery = ""; discoverRequestId++; discoverCache = null;
+      const input = content.querySelector("#discover-query");
+      if (input) { input.value = ""; input.focus(); }
+      const clearButton = content.querySelector("[data-clear-discover]");
+      if (clearButton) clearButton.hidden = true;
+      discover();
+    });
     content.querySelector("[data-open-discover-consent]")?.addEventListener("click", event => { event.preventDefault(); showPopup($("#discover-consent-dialog")); });
     content.querySelectorAll("[data-close-discover-consent]").forEach(button => button.addEventListener("click", () => closePopup($("#discover-consent-dialog"))));
     content.querySelector("[data-review-hltb-consent]")?.addEventListener("click", async event => {
@@ -850,11 +863,6 @@
       prefs.navBar.order = moveInOrder([...prefs.navBar.order], button.dataset.navKey, button.dataset.navMove);
       persist(); applyPreferences(); render();
     }));
-    content.querySelectorAll("[data-source-move]").forEach(button => button.addEventListener("click", event => {
-      event.preventDefault(); event.stopPropagation();
-      prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], button.dataset.sourceKey, button.dataset.sourceMove);
-      persist(); render();
-    }));
     content.querySelectorAll("[data-backup-folder-action]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
       if (button.dataset.backupFolderAction === "choose") chooseBackupDatabaseFolder();
@@ -888,7 +896,33 @@
     content.querySelectorAll("[data-detail-image-src]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation(); showDetailImage($$('[data-detail-image-src]', content).indexOf(button));
     }));
-    content.querySelector("[data-detail-image-close]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#detail-image-modal")); });
+    const imageDialog = content.querySelector("#detail-image-modal");
+    imageDialog?.addEventListener("cancel", event => { event.preventDefault(); closeDetailImage(); });
+    imageDialog?.addEventListener("keydown", event => {
+      if (event.key === "ArrowRight") { event.preventDefault(); showDetailImage(detailImagePosition + 1); }
+      else if (event.key === "ArrowLeft") { event.preventDefault(); showDetailImage(detailImagePosition - 1); }
+    });
+    imageDialog?.addEventListener("click", event => {
+      if (event.target === imageDialog) closeDetailImage();
+    });
+    let imageTouchStart = null;
+    imageDialog?.addEventListener("touchstart", event => {
+      if (event.touches.length !== 1 || event.target.closest("button")) { imageTouchStart = null; return; }
+      imageTouchStart = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+    }, { passive: true });
+    imageDialog?.addEventListener("touchend", event => {
+      if (!imageTouchStart || !event.changedTouches.length) return;
+      const dx = event.changedTouches[0].clientX - imageTouchStart.x;
+      const dy = event.changedTouches[0].clientY - imageTouchStart.y;
+      imageTouchStart = null;
+      if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+      showDetailImage(detailImagePosition + (dx < 0 ? 1 : -1));
+    }, { passive: true });
+    imageDialog?.addEventListener("touchcancel", () => { imageTouchStart = null; }, { passive: true });
+    content.querySelector("[data-detail-image-close]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closeDetailImage(); });
+    content.querySelector("[data-detail-image-download]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); downloadDetailImage(); });
+    content.querySelector("[data-detail-image-copy]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); copyDetailImage(); });
+    content.querySelector("[data-detail-image-share]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); shareDetailImage(); });
     content.querySelector("[data-detail-image-prev]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showDetailImage(detailImagePosition - 1); });
     content.querySelector("[data-detail-image-next]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showDetailImage(detailImagePosition + 1); });
   }
@@ -992,7 +1026,7 @@
       Object.keys(prefs).forEach(key => delete prefs[key]);
       Object.assign(prefs, JSON.parse(JSON.stringify(prefsDefaults)));
       prefs.navIcons = { ...prefsDefaults.navIcons };
-      prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
+      prefs.navBar = { order: [...prefsDefaults.navBar.order], visible: { ...prefsDefaults.navBar.visible } };
       prefs.categoryColors = {}; prefs.apiKeys = {}; prefs.sourceOptions = {};
       refreshSourceRegistry();
       persist(); applyPreferences(); render(); toast("SavePoint has been reset.");
@@ -1201,6 +1235,10 @@
     const hasImage = Boolean(image);
     return `<div class="discover-card-art">${hasImage ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="discover-art-fallback" aria-hidden="true"${hasImage ? " hidden" : ""}><i data-lucide="gamepad-2"></i></span></div>`;
   }
+  function setDiscoverStatusState(state) {
+    const banner = $("#discover-message")?.closest(".discover-status-banner");
+    if (banner) banner.dataset.state = state;
+  }
   function paintDiscoverResults(results, sourceKey) {
     const key = config.categories[0].key;
     const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
@@ -1217,7 +1255,8 @@
     currentMessage.textContent = results.length
       ? results.length + " results found" + (sourceName ? " from " + sourceName : "") + partialMessage
       : "No results found" + (sourceName ? " from " + sourceName : "") + ".";
-    box.innerHTML = results.slice(0, 12).map((result, index) => `<article class="discover-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">Add</button></div></div></article>`).join("");
+    setDiscoverStatusState(warnings.length ? "warning" : results.length ? "success" : "neutral");
+    box.innerHTML = results.slice(0, 12).map((result, index) => `<article class="discover-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">+ Add</button></div></div></article>`).join("");
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
     empty.hidden = results.length > 0;
     if (!results.length) setDiscoverEmptyState(
@@ -1241,9 +1280,11 @@
       if (prefs.metadataMode === "offline") {
         setDiscoverEmptyState("Online discovery is off", "Enable metadata sources in Settings to browse suggestions.");
         if (message) message.textContent = "Online metadata is disabled in Settings.";
+        setDiscoverStatusState("warning");
       } else {
         setDiscoverEmptyState("You’re offline", "Reconnect to load suggestions. Your saved library is still available.");
         if (message) message.textContent = "No saved suggestions are available offline.";
+        setDiscoverStatusState("warning");
       }
       return;
     }
@@ -1252,7 +1293,7 @@
       box.setAttribute("aria-busy", "true");
       box.innerHTML = `<div class="discover-suggest-loading" aria-hidden="true">${"<span></span>".repeat(6)}</div>`;
       let suggestionsTimeout;
-      if (message && navigator.onLine) message.textContent = "Loading suggestions. You can still search above.";
+      if (message && navigator.onLine) { message.textContent = "Loading suggestions. You can still search above."; setDiscoverStatusState("neutral"); }
       try {
         sections = await Promise.race([
           window.SplitAppDiscovery.trending(category, detailSettings(), sourceKey),
@@ -1264,7 +1305,7 @@
         box.setAttribute("aria-busy", "false");
         box.innerHTML = ""; if (empty) empty.hidden = false;
         setDiscoverEmptyState("Suggestions unavailable", "Search for a game instead, or try again later.", "Try suggestions again");
-        if (message && navigator.onLine) message.textContent = "Could not load suggestions. Search for a game above.";
+        if (message && navigator.onLine) { message.textContent = "Could not load suggestions. Search for a game above."; setDiscoverStatusState("warning"); }
         return;
       } finally { clearTimeout(suggestionsTimeout); }
       suggestionsCache = { key: cacheKey, sections };
@@ -1273,7 +1314,7 @@
     const flat = [];
     const html = sections.map(section => `<section class="discover-suggest"><h2>${esc(section.title)}</h2><div class="discover-rail">${section.items.map(result => {
       const index = flat.push(result) - 1;
-      return `<article class="discover-card discover-suggest-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.subtitle || result.year || "")}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">Add</button></div></div></article>`;
+      return `<article class="discover-card discover-suggest-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.subtitle || result.year || "")}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">+ Add</button></div></div></article>`;
     }).join("")}</div></section>`).join("");
     box.setAttribute("aria-busy", "false");
     box.innerHTML = html || ""; box._results = flat;
@@ -1285,6 +1326,7 @@
       : sections.warnings?.length
         ? "Some sources did not respond. Showing available suggestions."
         : "Suggestions from your enabled sources — or search above.";
+    setDiscoverStatusState(sections.warnings?.length ? "warning" : !navigator.onLine || prefs.metadataMode === "offline" ? "neutral" : "success");
   }
   async function discover() {
     const query = String(discoverQuery || "").trim(); const key = config.categories[0].key;
@@ -1298,17 +1340,19 @@
     if (initialEmpty?.isConnected) initialEmpty.hidden = false;
     if (prefs.metadataMode === "offline") {
       message.textContent = "Online metadata is disabled in Settings.";
+      setDiscoverStatusState("warning");
       setDiscoverEmptyState("Online discovery is off", "Enable metadata sources in Settings to search games.");
       return;
     }
     if (!navigator.onLine) {
       message.textContent = "You are offline. Reconnect and try again.";
+      setDiscoverStatusState("warning");
       setDiscoverEmptyState("You’re offline", "Reconnect to search connected catalogs.");
       return;
     }
     if (initialEmpty?.isConnected) initialEmpty.hidden = true;
     if (initialBox?.isConnected) initialBox.setAttribute("aria-busy", "true");
-    if (message?.isConnected) message.textContent = "Searching connected sources…";
+    if (message?.isConnected) { message.textContent = "Searching connected sources…"; setDiscoverStatusState("neutral"); }
     try {
       const results = sourceKey ? await exploreSourceSearch(query, sourceKey) : await discoverSearch(query, key);
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
@@ -1332,6 +1376,7 @@
                 ? "RAWG is temporarily unreachable (Cloudflare 522). Try again in a little while."
                 : error?.message || "Please try again.";
       const currentMessage = $("#discover-message"); if (currentMessage) currentMessage.textContent = `Could not search${sourceName ? ` ${sourceName}` : " sources"}: ${providerMessage}`;
+      setDiscoverStatusState("warning");
       const empty = $("#discover-empty"); if (empty) empty.hidden = false;
       setDiscoverEmptyState("Search couldn’t finish", "Check your connection or source settings, then try again.", "Try search again");
       const consentLink = $("#discover-consent-link");
@@ -1677,15 +1722,152 @@
     const dialog = $("#detail-image-modal");
     const triggers = $$("#page-content [data-detail-image-src]");
     if (!dialog || !triggers.length) return;
-    detailImagePosition = (position + triggers.length) % triggers.length;
+    const wasOpen = dialog.open;
+    const previousPosition = detailImagePosition;
+    detailImagePosition = ((position % triggers.length) + triggers.length) % triggers.length;
     const trigger = triggers[detailImagePosition];
     const image = $("[data-detail-modal-img]", dialog);
+    if (!image || !trigger) return;
+    if (!wasOpen) detailImageOpener = trigger;
+    const requestId = Number(dialog.dataset.imageRequest || 0) + 1;
+    dialog.dataset.imageRequest = String(requestId);
+    const status = $("[data-detail-image-status]", dialog);
+    const label = trigger.dataset.detailImageLabel || "Game image";
+    image.classList.remove("is-loaded", "is-switching");
+    image.classList.toggle("is-switching", wasOpen);
+    if (wasOpen) window.setTimeout(() => image.classList.remove("is-switching"), 220);
+    dialog.dataset.imageDirection = position >= previousPosition ? "next" : "previous";
+    image.alt = label;
+    if (status) { status.hidden = false; status.textContent = "Loading image…"; }
+    image.onload = () => {
+      if (Number(dialog.dataset.imageRequest) !== requestId) return;
+      image.classList.add("is-loaded");
+      if (status) status.hidden = true;
+    };
+    image.onerror = () => {
+      if (Number(dialog.dataset.imageRequest) !== requestId) return;
+      image.classList.remove("is-loaded");
+      if (status) { status.hidden = false; status.textContent = "This image couldn’t be loaded."; }
+    };
     image.src = trigger.dataset.detailImageSrc;
-    image.alt = trigger.dataset.detailImageLabel || "Game image";
-    $("[data-detail-modal-caption]", dialog).textContent = image.alt;
+    if (image.complete) {
+      if (image.naturalWidth > 0) image.onload?.();
+      else image.onerror?.();
+    }
+    $("[data-detail-modal-caption]", dialog).textContent = label;
+    $("[data-detail-image-counter]", dialog).textContent = `${detailImagePosition + 1} / ${triggers.length}`;
+    dialog.setAttribute("aria-label", `Image viewer, ${detailImagePosition + 1} of ${triggers.length}`);
     $("[data-detail-image-prev]", dialog).hidden = triggers.length < 2;
     $("[data-detail-image-next]", dialog).hidden = triggers.length < 2;
-    if (!dialog.open) showPopup(dialog);
+    const hint = $("[data-detail-image-hint]", dialog);
+    if (hint) hint.hidden = triggers.length < 2;
+    if (!wasOpen) {
+      showPopup(dialog);
+      $("[data-detail-image-close]", dialog)?.focus({ preventScroll: true });
+    }
+  }
+  function closeDetailImage() {
+    const dialog = $("#detail-image-modal");
+    if (!dialog) return;
+    const opener = detailImageOpener;
+    detailImageOpener = null;
+    closePopup(dialog);
+    requestAnimationFrame(() => { if (opener?.isConnected) opener.focus({ preventScroll: true }); });
+  }
+  function currentDetailImage() {
+    const trigger = $$("#page-content [data-detail-image-src]")[detailImagePosition];
+    const src = trigger?.dataset.detailImageSrc;
+    if (!src) { toast("Image is unavailable."); return null; }
+    const label = trigger.dataset.detailImageLabel || "SavePoint image";
+    const baseName = label.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "savepoint-image";
+    return { src, label, baseName };
+  }
+  async function detailImageBlob(src) {
+    const response = await fetch(src);
+    if (!response.ok) throw new Error("Could not read this image.");
+    return response.blob();
+  }
+  function detailImageFilename(baseName, blob) {
+    const ext = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/avif": "avif" })[blob.type] || "jpg";
+    return `${baseName}.${ext}`;
+  }
+  async function downloadDetailImage() {
+    const image = currentDetailImage();
+    if (!image) return;
+    const nativeShare = window.Capacitor?.Plugins?.ShareIntent;
+    if (nativeShare?.downloadImage) {
+      try {
+        const result = await nativeShare.downloadImage({ src: image.src, filename: image.baseName, title: image.label });
+        const location = result?.location || "image to Downloads";
+        toast(result?.notification ? `Saved ${location}. Download complete notification sent.` : `Saved ${location}. Turn on notifications for download alerts.`);
+      }
+      catch (error) { toast(error?.message || "Could not save the image."); }
+      return;
+    }
+    try {
+      const blob = await detailImageBlob(image.src);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url; anchor.download = detailImageFilename(image.baseName, blob); anchor.style.display = "none";
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast("Image downloaded.");
+    } catch (_) {
+      const anchor = document.createElement("a");
+      anchor.href = image.src; anchor.download = `${image.baseName}.jpg`; anchor.target = "_blank"; anchor.rel = "noopener noreferrer";
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      toast("Opened the image so you can save it.");
+    }
+  }
+  async function copyDetailImage() {
+    const image = currentDetailImage();
+    if (!image) return;
+    const nativeShare = window.Capacitor?.Plugins?.ShareIntent;
+    if (nativeShare?.copyImage) {
+      try { await nativeShare.copyImage({ src: image.src, filename: image.baseName, title: image.label }); toast("Image copied to clipboard."); }
+      catch (error) { toast(error?.message || "Could not copy the image."); }
+      return;
+    }
+    try {
+      const blob = await detailImageBlob(image.src);
+      if (navigator.clipboard?.write && window.ClipboardItem && /^image\/(png|jpeg|webp)$/.test(blob.type)) {
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        toast("Image copied."); return;
+      }
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(image.src);
+      toast("Image link copied.");
+    } catch (_) {
+      try { await navigator.clipboard.writeText(image.src); toast("Image link copied."); }
+      catch (_) { toast("Could not copy this image on this device."); }
+    }
+  }
+  async function shareDetailImage() {
+    const image = currentDetailImage();
+    if (!image) return;
+    const nativeShare = window.Capacitor?.Plugins?.ShareIntent;
+    if (nativeShare?.shareImage) {
+      try { await nativeShare.shareImage({ src: image.src, filename: image.baseName, title: image.label }); }
+      catch (error) { toast(error?.message || "Could not open Android sharing."); }
+      return;
+    }
+    try {
+      const blob = await detailImageBlob(image.src);
+      const file = new File([blob], detailImageFilename(image.baseName, blob), { type: blob.type || "image/jpeg" });
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share({ files: [file], title: image.label }); return;
+      }
+      if (navigator.share) { await navigator.share({ title: image.label, text: image.label, url: image.src }); return; }
+      if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(image.src); toast("Sharing isn’t available here; image link copied."); return; }
+      toast("Sharing isn’t available on this device.");
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      try {
+        if (navigator.share) { await navigator.share({ title: image.label, text: image.label, url: image.src }); return; }
+        if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(image.src); toast("Image link copied."); return; }
+      } catch (fallbackError) { if (fallbackError?.name === "AbortError") return; }
+      toast("Could not share this image.");
+    }
   }
 
 
@@ -1867,7 +2049,7 @@
     ["theme", "textSize", "font", "dateFormat", "iconStyle", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
     prefs.categoryColors = {};
     prefs.navIcons = { ...prefsDefaults.navIcons };
-    prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
+    prefs.navBar = { order: [...prefsDefaults.navBar.order], visible: { ...prefsDefaults.navBar.visible } };
     persist(); applyPreferences(); render(); toast("Appearance settings restored.");
   }
 
@@ -1887,6 +2069,18 @@
     tabs[next]?.click();
   });
   $("#page-content").addEventListener("click", event => {
+    const sourceKeyToggle = event.target.closest("[data-toggle-source-key]");
+    if (sourceKeyToggle) {
+      const sourceKey = sourceKeyToggle.dataset.toggleSourceKey;
+      const keyInput = [...document.querySelectorAll("[data-source-api-key]")].find(input => input.dataset.sourceApiKey === sourceKey);
+      if (keyInput) {
+        const reveal = keyInput.type === "password";
+        keyInput.type = reveal ? "text" : "password";
+        sourceKeyToggle.textContent = reveal ? "Hide" : "Show";
+        sourceKeyToggle.setAttribute("aria-label", `${reveal ? "Hide" : "Show"} ${sourceKey} API key`);
+      }
+      return;
+    }
     if (event.target.closest("[data-discover-retry]")) {
       submitDiscover();
       return;
@@ -1949,10 +2143,10 @@
       showDetailImage($$("[data-detail-image-src]", $("#page-content")).indexOf(detailImage));
       return;
     }
-    if (event.target.closest("[data-detail-image-close]")) { closePopup($("#detail-image-modal")); return; }
+    if (event.target.closest("[data-detail-image-close]")) { closeDetailImage(); return; }
     if (event.target.closest("[data-detail-image-prev]")) { showDetailImage(detailImagePosition - 1); return; }
     if (event.target.closest("[data-detail-image-next]")) { showDetailImage(detailImagePosition + 1); return; }
-    if (event.target.id === "detail-image-modal") { closePopup(event.target); return; }
+    if (event.target.id === "detail-image-modal") { closeDetailImage(); return; }
     const statsFilter = event.target.closest("[data-stats-filter]");
     if (statsFilter) { setPreference("dashboardStatusFilter", statsFilter.dataset.statsFilter); goto("dashboard"); return; }
     if (event.target.closest("[data-mix-search]")) { runMixSearch(); return; }
@@ -2046,8 +2240,6 @@
     if (event.target.closest("[data-category-colors-picker]")) { openCategoryColorsPicker(); return; }
     const navMove = event.target.closest("[data-nav-move]");
     if (navMove) { prefs.navBar.order = moveInOrder([...prefs.navBar.order], navMove.dataset.navKey, navMove.dataset.navMove); persist(); applyPreferences(); render(); return; }
-    const sourceMove = event.target.closest("[data-source-move]");
-    if (sourceMove) { prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], sourceMove.dataset.sourceKey, sourceMove.dataset.sourceMove); persist(); render(); return; }
     const sourceFilter = event.target.closest("[data-source-filter]");
     if (sourceFilter) {
       metadataSourceFilter = sourceFilter.dataset.sourceFilter;
@@ -2317,6 +2509,7 @@
     if (!(next in titles)) return;
     if (next !== "discover") { discoverQuery = ""; discoverRequestId++; }
     if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; }
+    const previousDiscoverSource = discoverSource;
     discoverSource = next === "discover" ? new URLSearchParams(hashQuery).get("source") || "" : "";
     page = next; settingsGroup = next === "settings" ? (route[1] === "manage-backups" ? "backups" : route[1] || null) : null;
     statsSubpage = next === "statistics" && statsSections.includes(route[1]) ? normalizeStatsSection(route[1]) : "";
@@ -2330,6 +2523,7 @@
       if (changedDetail) { render(); syncPageNavigation(); loadDetails(); return; }
     }
     render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
+    if (next === "discover" && previousDiscoverSource !== discoverSource && discoverQuery.trim()) submitDiscover();
   }
   document.addEventListener("keydown", event => { if (event.key === "Enter" && event.target?.id === "mix-query") { event.preventDefault(); runMixSearch(); } });
   window.addEventListener("popstate", event => {
