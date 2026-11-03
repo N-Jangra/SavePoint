@@ -142,6 +142,8 @@
   let discoverRequestId = 0;
   let addMetadataRequestId = 0;
   let localMutationRevision = 0;
+  const mixEnrichmentByItem = new Map();
+  const detailRefreshByItem = new Map();
   let discoverCache = null;
   let timelineThumbnailHydration = null;
   let timelineThumbnailLookup = null;
@@ -197,7 +199,8 @@
   function persist() {
     localMutationRevision += 1;
     const write = window.SplitAppBackend?.save({ items, history, preferences: prefs });
-    if (write?.catch) write.catch(error => recordLog("error", `App data save failed: ${error.message || error}`));
+    if (write?.catch) return write.catch(error => { recordLog("error", `App data save failed: ${error.message || error}`); });
+    return Promise.resolve();
   }
   function recordLog(level, message) {
     try {
@@ -739,16 +742,27 @@
     content.querySelector("#detail-edit-form")?.addEventListener("submit", saveDetailEdit);
     content.querySelectorAll(".detail-page [data-action]").forEach(button => button.addEventListener("click", event => {
       const action = button.dataset.action;
-      if (!["edit", "progress", "refresh-details", "delete-detail", "cancel-detail-edit", "save-detail-item"].includes(action)) return;
+      if (!["edit", "progress", "refresh-details", "delete-detail", "cancel-detail-edit", "save-detail-item", "open-saved-entry"].includes(action)) return;
       event.preventDefault(); event.stopPropagation();
       if (action === "edit") { detailEditMode = true; render(); }
       else if (action === "progress") updateProgress(button.dataset.id);
-      else if (action === "refresh-details") loadDetails();
+      else if (action === "refresh-details") loadDetails({ force: true });
       else if (action === "delete-detail") requestDeleteDetails(button.dataset.id);
+      else if (action === "open-saved-entry") openDetails(button.dataset.id);
       else if (action === "cancel-detail-edit") { detailEditMode = false; render(); }
       else if (action === "save-detail-item") {
-        const saved = addDiscoverResult(detailPreview);
-        if (saved) { detailPreview = null; detailItemId = saved.id; detailData = null; loadDetails(); }
+        const preview = detailPreview;
+        detailRequest++; // Discard any in-flight provider preview load before switching to the saved entry.
+        const saved = addDiscoverResult(preview, "Details");
+        if (saved) {
+          detailPreview = null; detailItemId = saved.id; detailData = saved.cachedDetails || null; detailError = ""; detailLoading = true;
+          goto("details");
+          const pending = mixEnrichmentByItem.get(String(saved.id));
+          if (pending) pending.then(loaded => {
+            if (page === "details" && String(detailItemId) === String(saved.id)) { detailData = loaded || saved.cachedDetails || null; detailLoading = false; render(); }
+          });
+          else loadDetails();
+        }
       }
     }));
     content.querySelector("[data-detail-save]")?.addEventListener("click", event => {
@@ -1167,6 +1181,7 @@
     if (old) items[items.indexOf(old)] = entry; else items.unshift(entry);
     if (entry.status !== "Backlog" && entry.status !== old?.status) history.unshift({ itemId: entry.id, title: entry.title, action: entry.status, status: entry.status, at: Date.now() });
     persist(); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
+    if (!old && key === "game") enrichLibraryEntryWithMix(entry, { ...entry, source: entry.metadataSource }, "Add Game");
   }
   async function saveAddForm(form) {
     if (!form?.isConnected || !form.reportValidity()) return;
@@ -1240,6 +1255,30 @@
     const hasImage = Boolean(image);
     return `<div class="discover-card-art">${hasImage ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="discover-art-fallback" aria-hidden="true"${hasImage ? " hidden" : ""}><i data-lucide="gamepad-2"></i></span></div>`;
   }
+  function findLibraryMatch(result) {
+    if (!result?.title) return null;
+    const normalize = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const title = normalize(result.title);
+    return items.find(item => item.category === result.category && normalize(item.title) === title) || null;
+  }
+  function discoverAddButton(result, index) {
+    const saved = Boolean(findLibraryMatch(result));
+    return `<button class="button ${saved ? "secondary" : "primary"} small" data-discover-row-add="${index}"${saved ? " disabled aria-label=\"Already in your library\"" : ` data-discover-add="${index}"`}>${saved ? "✓ In library" : "+ Add"}</button>`;
+  }
+  function updateDiscoverLibraryActions() {
+    const box = $("#discover-results"); if (!box) return;
+    const results = box._results || [];
+    $$("[data-discover-row-add]", box).forEach(button => {
+      const result = results[Number(button.dataset.discoverRowAdd)], saved = result && findLibraryMatch(result);
+      button.disabled = Boolean(saved);
+      button.classList.toggle("primary", !saved);
+      button.classList.toggle("secondary", Boolean(saved));
+      button.textContent = saved ? "✓ In library" : "+ Add";
+      button.setAttribute("aria-label", saved ? "Already in your library" : `Add ${result?.title || "game"} to your library`);
+      if (saved) button.removeAttribute("data-discover-add");
+      else button.dataset.discoverAdd = button.dataset.discoverRowAdd;
+    });
+  }
   function setDiscoverStatusState(state) {
     const banner = $("#discover-message")?.closest(".discover-status-banner");
     if (banner) banner.dataset.state = state;
@@ -1261,7 +1300,7 @@
       ? results.length + " results found" + (sourceName ? " from " + sourceName : "") + partialMessage
       : "No results found" + (sourceName ? " from " + sourceName : "") + ".";
     setDiscoverStatusState(warnings.length ? "warning" : results.length ? "success" : "neutral");
-    box.innerHTML = results.slice(0, 12).map((result, index) => `<article class="discover-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">+ Add</button></div></div></article>`).join("");
+    box.innerHTML = results.slice(0, 12).map((result, index) => `<article class="discover-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button>${discoverAddButton(result, index)}</div></div></article>`).join("");
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
     empty.hidden = results.length > 0;
     if (!results.length) setDiscoverEmptyState(
@@ -1269,15 +1308,16 @@
       discoverQuery.trim() ? "Try another title or search a different source." : "Search your connected catalogs to find a game."
     );
     box._results = results;
+    updateDiscoverLibraryActions();
     return true;
   }
   let suggestionsCache = null, suggestionsRequest = 0;
-  async function loadDiscoverSuggestions() {
+  async function loadDiscoverSuggestions(forceRefresh = false) {
     const requestId = ++suggestionsRequest, sourceKey = discoverSource, category = config.categories[0].key;
     const box = $("#discover-results"), empty = $("#discover-empty"), message = $("#discover-message");
     if (!box) return;
     const cacheKey = `${sourceKey}|${new Date().toDateString()}|${prefs.apiKeys?.rawg ? "k" : ""}`;
-    let sections = suggestionsCache?.key === cacheKey ? suggestionsCache.sections : null;
+    let sections = !forceRefresh && suggestionsCache?.key === cacheKey ? suggestionsCache.sections : null;
     if (!sections && (prefs.metadataMode === "offline" || !navigator.onLine)) {
       box.innerHTML = "";
       box.setAttribute("aria-busy", "false");
@@ -1301,7 +1341,7 @@
       if (message && navigator.onLine) { message.textContent = "Loading suggestions. You can still search above."; setDiscoverStatusState("neutral"); }
       try {
         sections = await Promise.race([
-          window.SplitAppDiscovery.trending(category, detailSettings(), sourceKey),
+          window.SplitAppDiscovery.trending(category, detailSettings({ forceRefresh }), sourceKey),
           new Promise((_, reject) => { suggestionsTimeout = setTimeout(() => reject(new Error("Suggestions took too long to load.")), 8000); })
         ]);
       }
@@ -1319,10 +1359,11 @@
     const flat = [];
     const html = sections.map(section => `<section class="discover-suggest"><h2>${esc(section.title)}</h2><div class="discover-rail">${section.items.map(result => {
       const index = flat.push(result) - 1;
-      return `<article class="discover-card discover-suggest-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.subtitle || result.year || "")}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">+ Add</button></div></div></article>`;
+      return `<article class="discover-card discover-suggest-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.subtitle || result.year || "")}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button>${discoverAddButton(result, index)}</div></div></article>`;
     }).join("")}</div></section>`).join("");
     box.setAttribute("aria-busy", "false");
     box.innerHTML = html || ""; box._results = flat;
+    updateDiscoverLibraryActions();
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
     if (empty) empty.hidden = flat.length > 0;
     if (!flat.length) setDiscoverEmptyState("No suggestions available", "Search for a game above or check your enabled sources.");
@@ -1333,7 +1374,7 @@
         : "Suggestions from your enabled sources — or search above.";
     setDiscoverStatusState(sections.warnings?.length ? "warning" : !navigator.onLine || prefs.metadataMode === "offline" ? "neutral" : "success");
   }
-  async function discover() {
+  async function discover({ forceRefresh = false } = {}) {
     const query = String(discoverQuery || "").trim(); const key = config.categories[0].key;
     if (query) suggestionsRequest += 1;
     const requestId = ++discoverRequestId; const sourceKey = discoverSource;
@@ -1359,7 +1400,7 @@
     if (initialBox?.isConnected) initialBox.setAttribute("aria-busy", "true");
     if (message?.isConnected) { message.textContent = "Searching connected sources…"; setDiscoverStatusState("neutral"); }
     try {
-      const results = sourceKey ? await exploreSourceSearch(query, sourceKey) : await discoverSearch(query, key);
+      const results = sourceKey ? await exploreSourceSearch(query, sourceKey, { forceRefresh }) : await discoverSearch(query, key, { forceRefresh });
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
       const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
       if (!paintDiscoverResults(results, sourceKey)) return;
@@ -1398,18 +1439,18 @@
       recordLog("warning", `Discover search failed${sourceName ? ` for ${sourceName}` : ""}: ${providerMessage}`);
     }
   }
-  async function discoverSearch(query, key) {
+  async function discoverSearch(query, key, { forceRefresh = false } = {}) {
     if (!window.SplitAppDiscovery) throw new Error("This app's discovery backend did not load.");
     return window.SplitAppDiscovery.search(query, key, {
       metadataSources: prefs.metadataSources, metadataSourceOrder: prefs.metadataSourceOrder, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions,
-      offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval
+      offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval, forceRefresh
     });
   }
-  async function exploreSourceSearch(query, sourceKey) {
+  async function exploreSourceSearch(query, sourceKey, { forceRefresh = false } = {}) {
     if (!window.SplitAppDiscovery?.searchSource) throw new Error("The metadata search service did not load.");
     return window.SplitAppDiscovery.searchSource(query, config.categories[0].key, {
       metadataSources: prefs.metadataSources, metadataSourceOrder: prefs.metadataSourceOrder, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions,
-      offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval
+      offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval, forceRefresh
     }, sourceKey);
   }
   function syncBackupSchedule() {
@@ -1437,25 +1478,21 @@
   }
   function addDiscoverResult(result, origin = "Discover") {
     if (!result) return null;
-    const existing = items.find(item => item.category === result.category && item.title.toLowerCase() === result.title.toLowerCase());
-    if (existing) {
-      // A Mix add of a game that was saved from a single source upgrades that entry to a Mix entry.
-      if (result.source === "mix" && existing.metadataSource !== "mix") {
-        const from = window.SplitAppSources.list().find(source => source.key === existing.metadataSource)?.name || existing.metadataSource || "a manual entry";
-        appConfirm(`“${existing.title}” is already in your library (${from}). Convert it to a Mix entry that merges every enabled source?`, { title: "Convert to Mix entry", confirmLabel: "Convert" }).then(ok => {
-          if (ok) { applyMixIdentity(existing, result); existing.updatedAt = Date.now(); persist(); render(); toast("Converted to a Mix entry."); }
-        });
-        return existing;
-      }
-      if (result.source === "mix" && existing.metadataSource === "mix") {
-        applyMixIdentity(existing, result); existing.updatedAt = Date.now(); persist();
-        toast("Updated the sources for this Mix entry."); return existing;
-      }
-      toast("That entry is already in your library."); return existing;
+    let item = findLibraryMatch(result);
+    const wasSaved = Boolean(item);
+    if (!item) {
+      item = { ...result, metadataSource: result.source || result.metadataSource || "", id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
+      applyMixIdentity(item, result);
+      items.unshift(item);
+      if (["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     }
-    const item = { ...result, metadataSource: result.source, id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
-    applyMixIdentity(item, result);
-    items.unshift(item); if (["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist(); toast("Added to your library."); return item;
+    item.updatedAt = Date.now();
+    persist();
+    updateDiscoverLibraryActions();
+    if (page === "mix") paintMixResults();
+    toast(wasSaved ? "Refreshing this library entry from enabled sources…" : `Added to your library. Fetching details from enabled sources…`);
+    enrichLibraryEntryWithMix(item, result, origin);
+    return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
   function mergeFacts(previous = {}, next = {}) {
@@ -1466,12 +1503,65 @@
     }
     return merged;
   }
+  function enrichLibraryEntryWithMix(item, sourceResult = {}, origin = "Library") {
+    if (!item?.id || item.category !== "game" || !window.SplitAppMix?.load) return Promise.resolve(null);
+    if (mixEnrichmentByItem.has(String(item.id))) return mixEnrichmentByItem.get(String(item.id));
+    const itemId = String(item.id);
+    const task = (async () => {
+      await persist();
+      const saved = items.find(row => String(row.id) === itemId);
+      if (!saved) return null;
+      let loaded = null, mixed = false;
+      try {
+        loaded = await window.SplitAppMix.load({ ...saved, ...sourceResult, title: saved.title, category: saved.category }, detailSettings());
+        mixed = true;
+      } catch (mixError) {
+        recordLog("warning", `Mix fetch could not load ${saved.title}: ${mixError?.message || mixError}`);
+        const sourceKey = sourceResult.metadataSource || sourceResult.source || saved.metadataSource;
+        const providerId = sourceResult.providerId || saved.providerId;
+        if (sourceKey && sourceKey !== "mix" && providerId && window.SplitAppDetailController?.load) {
+          try { loaded = await window.SplitAppDetailController.load({ ...saved, ...sourceResult, metadataSource: sourceKey, providerId, title: saved.title, category: saved.category }, detailSettings()); }
+          catch (error) { recordLog("warning", `Could not load source details for ${saved.title}: ${error?.message || error}`); }
+        }
+      }
+      const current = items.find(row => String(row.id) === itemId);
+      if (!current || !loaded) return null;
+      if (mixed) {
+        applyMixIdentity(current, loaded);
+        current.mixSourceKeys = [...new Set(loaded.facts?.sources || [])];
+        current.mixSources = [...new Set(loaded.mixSources || current.mixSourceKeys.map(key => window.SplitAppSources.list().find(source => source.key === key)?.name || key))];
+      }
+      current.cachedDetails = loaded;
+      current.facts = mergeFacts(current.facts, loaded.facts);
+      current.description = loaded.description || current.description;
+      current.year = loaded.year || current.year;
+      current.url = loaded.url || current.url;
+      current.image = current.localThumbnailData || loaded.portraitImage || loaded.image || current.image;
+      current.backdrop = loaded.landscapeImage || loaded.backgroundImage || current.backdrop;
+      current.updatedAt = Date.now();
+      await persist();
+      try {
+        const localImages = await window.SplitAppBackend?.loadItemImages?.(current);
+        if (localImages && Object.keys(localImages).length) current.localImageData = localImages;
+      } catch (error) { recordLog("warning", `Could not load local images for ${current.title}: ${error?.message || error}`); }
+      if (page === "details" && String(detailItemId) === itemId) { detailData = loaded; detailLoading = false; render(); }
+      updateDiscoverLibraryActions();
+      if (page === "dashboard" || page === "discover" || page === "mix") render();
+      toast(mixed ? `Saved merged details from ${current.mixSources?.length || 0} sources.` : "Saved source details to your library.");
+      return loaded;
+    })().catch(error => {
+      recordLog("error", `Could not save fetched details for ${item.title}: ${error?.message || error}`);
+      return null;
+    }).finally(() => mixEnrichmentByItem.delete(itemId));
+    mixEnrichmentByItem.set(itemId, task);
+    return task;
+  }
   // ---- Mix fetch (experimental) ----
   const mixChips = keys => (keys || []).map(key => window.SplitAppSources.list().find(source => source.key === key)?.name || key).map(name => `<span class="mix-chip">${esc(name)}</span>`).join("");
   function paintMixResults() {
     const box = $("#mix-results"), message = $("#mix-message"); if (!box) return;
     const rows = mixCache?.results || [];
-    box.innerHTML = rows.map((row, index) => `<li class="mix-row"><button type="button" class="mix-result-main" data-mix-open="${index}" aria-label="View details for ${esc(row.title)}"><span class="mix-row-art">${row.image ? `<img src="${esc(row.image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="gamepad-2" aria-hidden="true"${row.image ? " hidden" : ""}></i></span><span class="mix-row-copy"><strong>${esc(row.title)}</strong><small>${row.year ? esc(row.year) : "Game"}</small><span class="mix-row-sources">${mixChips(row.sources)}</span></span></button><button type="button" class="button primary small" data-mix-add="${index}" aria-label="Add ${esc(row.title)} to library"><i data-lucide="plus" aria-hidden="true"></i><span>Add</span></button></li>`).join("");
+    box.innerHTML = rows.map((row, index) => { const saved = findLibraryMatch({ ...row, category: config.categories[0].key }); return `<li class="mix-row"><button type="button" class="mix-result-main" data-mix-open="${index}" aria-label="View details for ${esc(row.title)}"><span class="mix-row-art">${row.image ? `<img src="${esc(row.image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="gamepad-2" aria-hidden="true"${row.image ? " hidden" : ""}></i></span><span class="mix-row-copy"><strong>${esc(row.title)}</strong><small>${row.year ? esc(row.year) : "Game"}</small><span class="mix-row-sources">${mixChips(row.sources)}</span></span></button><button type="button" class="button ${saved ? "secondary" : "primary"} small" data-mix-add="${index}" aria-label="${saved ? "Already in your library" : `Add ${esc(row.title)} to library`}"${saved ? " disabled" : ""}><i data-lucide="${saved ? "check" : "plus"}" aria-hidden="true"></i><span>${saved ? "In library" : "Add"}</span></button></li>`; }).join("");
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
     if (message && mixCache && !message.textContent) message.textContent = rows.length ? `${rows.length} games · open one to merge details from all sources.` : "No games found.";
   }
@@ -1494,32 +1584,7 @@
   async function addMixResult(row) {
     if (!row) return;
     const candidate = mixItem(row);
-    let saved = items.find(item => item.category === candidate.category && item.title.toLowerCase() === candidate.title.toLowerCase());
-    if (saved && saved.metadataSource !== "mix") {
-      const from = window.SplitAppSources.list().find(source => source.key === saved.metadataSource)?.name || saved.metadataSource || "a manual entry";
-      if (!(await appConfirm(`“${saved.title}” is already in your library (${from}). Convert it to a Mix entry that merges every enabled source?`, { title: "Convert to Mix entry", confirmLabel: "Convert" }))) return;
-      Object.assign(saved, candidate, { id: saved.id, status: saved.status, progress: saved.progress, goal: saved.goal, rating: saved.rating, createdAt: saved.createdAt });
-      saved.facts = { ...(saved.facts || {}) };
-    } else if (saved) {
-      saved.mixSourceKeys = [...new Set([...(saved.mixSourceKeys || []), ...(candidate.mixSourceKeys || [])])];
-      saved.mixSources = [...new Set([...(saved.mixSources || []), ...(candidate.mixSources || [])])];
-    } else {
-      saved = { ...candidate, id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(candidate.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
-      items.unshift(saved);
-      if (["Dropped", "Completed", "On Hold", "Playing"].includes(saved.status)) history.unshift({ itemId: saved.id, title: saved.title, action: saved.status, status: saved.status, at: Date.now() });
-    }
-    saved.source = saved.metadataSource = "mix";
-    saved.providerId = candidate.providerId;
-    saved.updatedAt = Date.now();
-    persist();
-    toast("Saved as a Mix entry. Merging details…");
-    try {
-      const loaded = await window.SplitAppDetails.load(saved, detailSettings());
-      saved.metadataSource = "mix"; saved.source = "mix"; saved.mixSources = loaded.mixSources || saved.mixSources || []; saved.mixSourceKeys = loaded.facts?.sources || saved.mixSourceKeys || [];
-      saved.cachedDetails = loaded; saved.facts = mergeFacts(saved.facts, loaded.facts);
-      saved.description = loaded.description || saved.description; saved.year = loaded.year || saved.year; saved.image = loaded.portraitImage || loaded.image || saved.image;
-      saved.updatedAt = Date.now(); persist(); toast(`Merged details from ${loaded.mixSources?.length || 0} sources.`);
-    } catch (error) { recordLog("warning", `Mix fetch could not merge details for ${saved.title}: ${error?.message || error}`); toast("Added. Details could not be merged yet."); }
+    return addDiscoverResult(candidate, "Mix fetch");
   }
   // Looks up play time (HowLongToBeat in the Android app, then RAWG) for games whose saved source has no hours.
   async function findMissingHours(button) {
@@ -1595,26 +1660,67 @@
     delete prefs.metadataSources[`custom:${id}`]; refreshSourceRegistry();
     persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
   }
-  function detailSettings() { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback }; }
-  async function loadDetails() {
+  function detailSettings({ forceRefresh = false } = {}) { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval, forceRefresh }; }
+  function detailCacheIsFresh(item) {
+    const stamp = Number(item?.cachedDetails?.fetchedAt || item?.cachedDetails?.facts?.fetchedAt || item?.facts?.fetchedAt) || 0;
+    if (!stamp) return false;
+    const maxAge = { daily: 86400000, weekly: 604800000, monthly: 2592000000, never: Infinity }[prefs.metadataRefreshInterval] ?? 604800000;
+    return Date.now() - stamp < maxAge;
+  }
+  async function loadDetails({ force = false } = {}) {
+    const isPreview = Boolean(detailPreview);
     const item = detailPreview || items.find(row => row.id === detailItemId);
     const requestId = ++detailRequest; detailData = item?.cachedDetails || null; detailError = "";
     if (!item) { detailLoading = false; render(); return; }
-    if (!detailPreview && window.SplitAppBackend?.loadItemImages) {
-      try {
-        const localImageData = await window.SplitAppBackend.loadItemImages(item);
-        if (requestId === detailRequest && Object.keys(localImageData).length) item.localImageData = localImageData;
-      } catch (_) {}
+    const hasCachedDetails = Boolean(item.cachedDetails);
+    detailLoading = !hasCachedDetails;
+    render();
+    // Artwork restoration can touch several folder files. Let the cached page paint
+    // first so local file reads never delay opening an otherwise ready game.
+    if (!isPreview && window.SplitAppBackend?.loadItemImages) {
+      window.SplitAppBackend.loadItemImages(item).then(localImageData => {
+        if (requestId === detailRequest && page === "details" && Object.keys(localImageData || {}).length) { item.localImageData = localImageData; render(); }
+      }).catch(() => {});
     }
-    if (!item.metadataSource || !item.providerId) { detailLoading = false; detailError = ""; render(); return; }
-    detailLoading = true; render();
+    if (!item.metadataSource || !item.providerId) { detailLoading = false; return; }
+    if (!force && hasCachedDetails && detailCacheIsFresh(item)) { detailLoading = false; return; }
+    if (prefs.metadataMode === "offline" || !navigator.onLine) { detailLoading = false; return; }
+    // Stale cached content stays visible while this refresh runs in the background.
+    detailLoading = !hasCachedDetails;
+    if (detailLoading) render();
     try {
-      const loaded = await window.SplitAppDetails.load(item, detailSettings());
+      const settings = detailSettings({ forceRefresh: force });
+      const requestKey = isPreview ? `preview:${item.metadataSource}:${item.providerId}` : String(item.id);
+      let refresh = detailRefreshByItem.get(requestKey);
+      if (!refresh) {
+        refresh = (async () => {
+          let loaded, upgradedToMix = false;
+          // A stale single-source game checks all enabled catalogs. Multiple matches
+          // upgrade it to Mix; otherwise its original provider remains authoritative.
+          if (!isPreview && item.category === "game" && item.metadataSource !== "mix" && window.SplitAppMix?.load) {
+            try {
+              const combined = await window.SplitAppMix.load(item, settings);
+              if ((combined?.facts?.sources || []).length > 1) { loaded = combined; upgradedToMix = true; }
+            } catch (_) { /* Keep the saved provider as a fallback if cross-source lookup fails. */ }
+          }
+          if (!loaded) loaded = await window.SplitAppDetails.load(item, settings);
+          return { loaded, upgradedToMix };
+        })();
+        detailRefreshByItem.set(requestKey, refresh);
+      }
+      let refreshed;
+      try { refreshed = await refresh; }
+      finally { if (detailRefreshByItem.get(requestKey) === refresh) detailRefreshByItem.delete(requestKey); }
+      const { loaded, upgradedToMix } = refreshed;
       if (requestId === detailRequest) {
         detailData = loaded;
-        if (!detailPreview) {
+        if (!isPreview) {
+          if (upgradedToMix) applyMixIdentity(item, loaded);
           item.cachedDetails = loaded;
-          if (item.metadataSource === "mix") item.mixSources = loaded.mixSources || item.mixSources;
+          if (item.metadataSource === "mix") {
+            item.mixSources = loaded.mixSources || item.mixSources;
+            item.mixSourceKeys = loaded.facts?.sources || item.mixSourceKeys || [];
+          }
           item.facts = mergeFacts(item.facts, loaded.facts);
           item.description = loaded.description || item.description;
           item.year = loaded.year || item.year;
@@ -1622,12 +1728,13 @@
           item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
           item.updatedAt = Date.now();
           persist();
-          const localImageData = await window.SplitAppBackend?.loadItemImages?.(item);
-          if (localImageData && Object.keys(localImageData).length) item.localImageData = localImageData;
+          window.SplitAppBackend?.loadItemImages?.(item).then(localImageData => {
+            if (requestId === detailRequest && page === "details" && Object.keys(localImageData || {}).length) { item.localImageData = localImageData; render(); }
+          }).catch(() => {});
         }
       }
     }
-    catch (error) { if (requestId === detailRequest) { detailError = error?.message || "Could not load source details."; recordLog("error", `${item.metadataSource} detail request failed: ${detailError}`); } }
+    catch (error) { if (requestId === detailRequest) { detailError = hasCachedDetails ? "" : error?.message || "Could not load source details."; recordLog(hasCachedDetails ? "warning" : "error", `${item.metadataSource} detail request failed: ${error?.message || error}`); } }
     finally { if (requestId === detailRequest) { detailLoading = false; render(); } }
   }
   function toggleEpisodeWatched(itemId, episodeId, episodeTitle) {
@@ -2287,7 +2394,7 @@
       return;
     }
     const action = event.target.closest("[data-action]");
-    if (action) { if (action.dataset.action === "add") openItem(); else if (action.dataset.action === "progress") updateProgress(action.dataset.id); else if (action.dataset.action === "edit") { if (page === "details") { detailEditMode = true; render(); } else openEdit(action.dataset.id); } else if (action.dataset.action === "cancel-detail-edit") { detailEditMode = false; render(); } else if (action.dataset.action === "details") openDetails(action.dataset.id); else if (action.dataset.action === "refresh-details") loadDetails(); else if (action.dataset.action === "delete-detail") requestDeleteDetails(action.dataset.id); else if (action.dataset.action === "save-detail-item") { const saved = addDiscoverResult(detailPreview); if (saved) { detailPreview = null; detailItemId = saved.id; detailData = null; loadDetails(); } } return; }
+    if (action) { if (action.dataset.action === "add") openItem(); else if (action.dataset.action === "progress") updateProgress(action.dataset.id); else if (action.dataset.action === "edit") { if (page === "details") { detailEditMode = true; render(); } else openEdit(action.dataset.id); } else if (action.dataset.action === "cancel-detail-edit") { detailEditMode = false; render(); } else if (action.dataset.action === "details") openDetails(action.dataset.id); else if (action.dataset.action === "refresh-details") loadDetails({ force: true }); else if (action.dataset.action === "delete-detail") requestDeleteDetails(action.dataset.id); else if (action.dataset.action === "save-detail-item") { const saved = addDiscoverResult(detailPreview); if (saved) { detailPreview = null; detailItemId = saved.id; detailData = null; loadDetails(); } } return; }
     const deleteButton = event.target.closest("#delete-item"); if (deleteButton) { deleteItem(deleteButton.dataset.id); return; }
     const settingAction = event.target.closest("[data-setting-action]");
     if (settingAction && settingAction.type !== "file") {
@@ -2472,7 +2579,24 @@
     settingsGroup = null;
     goto(button.dataset.sidebarPage);
   });
-  // ---- Pull to refresh on Details and drill-down pages (touch or mouse drag from the very top) ----
+  async function refreshCurrentPage() {
+    if (page === "details") { await loadDetails({ force: true }); return; }
+    if (page === "discover") {
+      if (prefs.metadataMode === "offline" || !navigator.onLine) { render(); return; }
+      if (discoverQuery.trim()) { await discover({ forceRefresh: true }); return; }
+      suggestionsCache = null;
+      await loadDiscoverSuggestions(true);
+      return;
+    }
+    if (page === "timeline") {
+      render();
+      fetchTimelineOnlineThumbnails();
+      return;
+    }
+    if (page === "settings" && ["metadata-sources", "source-options", "custom-source"].includes(settingsGroup)) refreshSourceRegistry();
+    render();
+  }
+  // Pull to refresh on the requested library, activity, discovery, statistics, and source pages.
   (() => {
     const THRESHOLD = 72, MAX = 130; let ptr = null, startY = 0, candidate = false, pulling = false, distance = 0, busy = false;
     const element = () => {
@@ -2483,7 +2607,11 @@
     };
     const show = (state, text, offset) => { const el = element(); el.dataset.state = state; el.querySelector(".ptr-text").textContent = text; el.style.setProperty("--pull", `${offset}px`); el.style.setProperty("--turn", `${Math.min(1, offset / THRESHOLD) * 180}deg`); el.classList.add("show"); };
     const hide = () => { if (ptr) { ptr.classList.remove("show"); ptr.dataset.state = ""; ptr.style.setProperty("--pull", "0px"); } };
-    const allowed = target => page === "details" && !busy && window.scrollY <= 0 && !target.closest?.("input, textarea, select, dialog, [data-detail-image-src], .detail-carousel, .detail-gallery, .ep-ratings-scroll, .season-pills, .detail-tabs");
+    const allowed = target => {
+      const settingsSourcePage = page === "settings" && ["metadata-sources", "source-options", "custom-source"].includes(settingsGroup);
+      const refreshable = ["dashboard", "timeline", "statistics", "discover", "details"].includes(page) || settingsSourcePage;
+      return refreshable && !busy && window.scrollY <= 0 && !target.closest?.("input, textarea, select, button, a, label, dialog, [draggable=true], [role=button], [data-detail-image-src], .detail-carousel, .detail-gallery, .discover-rail, .ep-ratings-scroll, .season-pills, .detail-tabs");
+    };
     const begin = (y, target) => { candidate = allowed(target); startY = y; pulling = false; distance = 0; };
     const move = (y, event) => {
       if (!candidate) return;
@@ -2497,7 +2625,7 @@
       const shouldRefresh = pulling && distance >= THRESHOLD; candidate = false; pulling = false;
       if (!shouldRefresh) { hide(); return; }
       busy = true; show("loading", "Refreshing…", 62);
-      try { await loadDetails(); show("done", "Updated", 62); }
+      try { await refreshCurrentPage(); show("done", "Updated", 62); }
       catch (_) { show("done", "Could not refresh", 62); }
       await new Promise(resolve => setTimeout(resolve, 650)); hide(); busy = false;
     };

@@ -1639,6 +1639,39 @@ body[data-page="dashboard"] .topbar h1 { font-size:1.78rem; line-height:1.04; le
 .detail-tracking-section { gap:8px; }
 .detail-tracking-section .ios-sub { margin:0; }
 
+/* Keep the five status choices and rating control readable on narrow phones. */
+@media (max-width: 480px) {
+  .detail-status-pills {
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:6px;
+  }
+  .detail-status-pills button.ios-pill {
+    min-width:0;
+    min-height:40px;
+    justify-content:center;
+    padding:6px 2px;
+    font-size:clamp(.56rem, 2.7vw, .7rem);
+    white-space:nowrap;
+  }
+  .detail-tracking-row {
+    flex-direction:row;
+    align-items:center;
+    gap:8px;
+  }
+  .detail-tracking-row > span { flex:none; white-space:nowrap; }
+  .detail-rating-stars {
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    width:min(260px,calc(100% - 82px));
+    gap:0;
+  }
+  .detail-rating-stars button {
+    min-width:0;
+    min-height:44px;
+  }
+}
+
 /* Statistics use the tablet's available content width instead of the narrow phone column. */
 @media (min-width: 768px) {
   body[data-page="statistics"] .app-shell { width:100%; max-width:none!important; margin:0; }

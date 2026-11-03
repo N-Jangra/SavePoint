@@ -73,7 +73,7 @@
       try {
         cache = await window.caches.open(cacheName); stale = await cache.match(url);
         const fetchedAt = Number(stale?.headers.get("x-splitapp-cached-at")) || 0;
-        if (stale && fetchedAt && Date.now() - fetchedAt < 6 * 60 * 60 * 1000) return stale.json();
+        if (stale && !options.forceRefresh && fetchedAt && Date.now() - fetchedAt < 6 * 60 * 60 * 1000) return stale.json();
       } catch { cache = null; stale = null; }
     }
     try {
