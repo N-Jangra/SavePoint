@@ -1,57 +1,150 @@
 # SavePoint
 
-SavePoint is a local-first game library and playtime tracker. It runs as a browser single-page app and as a Capacitor Android app. The current library category is `game`.
+SavePoint is a local-first game library and playtime tracker for web and Android. Organize the games you own or want to play, record progress and ratings, discover titles from multiple catalogs, and review your collection through activity and statistics.
 
-## What it does
+> SavePoint is built with HTML, CSS, and vanilla JavaScript. The Android app packages the same `frontend/` app using Capacitor.
 
-- Track game status, playtime, goals, ratings, artwork, and provider metadata.
-- Search and organize a personal library, review activity in Timeline, and explore collection and playtime statistics.
-- Discover games through FreeToGame, Steam + SteamDB, HowLongToBeat, RAWG, IGDB, and user-configured JSON sources.
-- Use Mix fetch (experimental) to search enabled sources together and merge metadata when previewing or saving a game.
-- Save provider details and artwork for faster repeat opens and offline use, with Android folder backup and JSON export/import options.
+## Features
 
-See [the documentation index](docs/README.md) and [release notes](CHANGELOG.md).
+| Area | What you can do |
+|---|---|
+| Library | Add games manually or from a metadata source; search, sort, filter, group, and change collection layouts. |
+| Game tracking | Set Backlog, Playing, On Hold, Dropped, or Completed; log playtime, set a goal, and rate games. |
+| Game details | View and cache provider descriptions, artwork, screenshots, tags, links, requirements, playtime estimates, and other available details. |
+| Discover | Browse suggestions and search a single catalog or enabled sources together; add games directly to the library. |
+| Mix fetch | Experimental combined search that merges matching metadata from enabled sources into one saved game. |
+| Timeline and statistics | Review status changes and explore playtime, activity, library breakdown, and ratings. |
+| Settings | Customize appearance and navigation; configure metadata sources, storage, backups, tracking, and diagnostics. |
+| Offline use | Keep library data locally and cache provider details/artwork where the selected platform and storage settings allow. |
+
+## Metadata sources
+
+Built-in source availability and priority are managed in **Settings → Metadata Sources**.
+
+| Source | Data | Setup |
+|---|---|---|
+| FreeToGame | Free-to-play catalog, descriptions, screenshots, platform and requirements where available. | No key required. |
+| Steam + SteamDB | Steam search and game details, store links, price, artwork, screenshots, categories and requirements. | No key required. |
+| HowLongToBeat | Main story, main plus extras, completionist estimates and community details. | Browser preview uses the local proxy; Android can use the provider consent/session integration. |
+| RAWG | Game catalog, ratings, artwork, screenshots, genres, platforms, achievements and related titles. | Configure a personal API key in Settings. [RAWG API](https://rawg.io/apidocs) |
+| IGDB | Game catalog, ratings, covers, screenshots, genres, platforms, modes, credits and website links. | Configure a Twitch Client ID and access token in source options. [Twitch authentication](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/) |
+| Custom JSON | Search and optional detail fields from a user-configured JSON endpoint. | Configure field mappings in **Settings → Metadata Sources → Add JSON**. |
+
+Provider data varies by game and source. RAWG and IGDB are disabled until configured. Keep API credentials private; they are stored with app preferences and may be included in exports.
+
+## Screens and routes
+
+| Screen | Route | Purpose |
+|---|---|---|
+| Home / Collection | `#dashboard` | Search and manage saved games. |
+| Discover | `#discover` | Browse suggestions and search providers. |
+| Explore | `#explore` | Open source catalogs, Mix fetch, Timeline, and Statistics. |
+| Mix fetch | `#mix` | Search enabled providers together. |
+| Timeline | `#timeline` | Review game status-change activity. |
+| Statistics | `#statistics` | Collection overview and statistics subpages. |
+| Settings | `#settings` | Configure app behavior, sources, and storage. |
+| Add game | `#add` | Create or edit a library entry. |
+| Game details | `#details?id=<entry-id>` | View and update a saved game or metadata preview. |
+
+Navigation adapts to phone, tablet, and desktop widths. On phones it uses the configurable bottom bar; wider layouts can use a sidebar. The route is part of the URL hash, so screens can be linked or refreshed.
+
+## Data and storage
+
+SavePoint keeps the library on the user's device. In a browser, app state is stored under `splitapp_savepoint_v1` in `localStorage`; metadata responses can also use browser Cache Storage. Android adds native storage and optional folder-based database/artwork backups. Native encrypted records, the browser mirror, and folder JSON are separate storage layers; **folder and exported JSON/TAR backups are plaintext** unless protected separately.
+
+The core state has three parts:
+
+| Part | Contents |
+|---|---|
+| `items` | Game identity, status, playtime, goals, rating, source identifiers, cached details and image references. |
+| `history` | Activity records used by the Timeline and recent-activity views. |
+| `preferences` | Appearance, navigation, tracking, metadata source settings, credentials, and backup options. |
+
+JSON import currently imports items only; it does not restore history or preferences. Save backups before moving or resetting app data. See [storage documentation](docs/storage.md) and [data schema](docs/db-schema.md).
 
 ## Run the browser preview
 
-Requires Node.js 18 or newer and npm. From this directory:
+### Requirements
+
+- Node.js 18 or newer
+- npm
+- Network access for live provider searches
+
+From the repository's `SavePoint/` directory:
 
 ```sh
 npm install
 npm run serve
 ```
 
-Open the loopback URL printed by the server. Browser library data uses `localStorage`. The preview server also provides a restricted HTTPS proxy for supported metadata providers; opening `frontend/index.html` directly with `file://` can prevent cross-origin requests from working.
+Open the loopback URL printed by the server. Use this server for browser metadata searches: opening `frontend/index.html` directly with `file://` can block cross-origin requests. `dev-server.js` serves the frontend and provides a restricted proxy for supported providers; it is a development tool, not a production metadata backend.
 
 ## Build Android
 
-Install dependencies, synchronize the Capacitor project, then build:
+Requirements: JDK 17, Android SDK/platform tools, and the project-managed Gradle wrapper. After installing npm dependencies:
 
 ```sh
-npm install
 npm run cap:sync
 cd android
 ./gradlew assembleDebug
 ```
 
-The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. See [requirements](docs/requirements.md) for toolchain details and release builds.
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For release output, run `./gradlew assembleRelease` and configure signing for distribution. More details: [requirements and build instructions](docs/requirements.md).
 
-## Project map
+## Repository layout
 
-- `frontend/index.html` — SPA shell and ordered styles/scripts.
-- `frontend/app.js` — routing, app state, interactions, and UI persistence.
-- `frontend/pages/` and `frontend/components/` — screen renderers and shared components.
-- `frontend/backend/` — storage bridge and metadata registry/search/detail/mix features.
-- `frontend/styles/` — base, responsive, theme, and page styles.
-- `dev-server.js` — local static preview server and allowlisted metadata proxy.
-- `android/` — Capacitor Android project and native storage/backup plugins.
-- `docs/` — product and technical documentation.
+```text
+SavePoint/
+├── android/                         # Capacitor Android project and native plugins
+│   └── app/src/main/java/com/cuemark/savepoint/
+├── docs/                            # Product and technical documentation
+├── frontend/
+│   ├── backend/                      # Storage and metadata service modules
+│   │   └── features/                 # Providers, search, details, sources, Mix fetch
+│   ├── components/                   # Shared UI components
+│   ├── icons/                        # App and interface icon assets
+│   ├── pages/                        # Dashboard, Discover, Details, Settings, etc.
+│   ├── static/                       # Static supporting pages/assets
+│   ├── styles/                       # Base, responsive, theme, and page styles
+│   ├── app.js                        # Routing, app state, interactions, persistence
+│   └── index.html                    # SPA shell and frontend entry point
+├── plans/                            # Engineering notes
+├── dev-server.js                     # Local preview server and metadata proxy
+├── capacitor.config.json             # Capacitor app identity and web directory
+├── package.json                      # Scripts and Capacitor dependencies
+└── README.md
+```
+
+### Important frontend modules
+
+| Path | Responsibility |
+|---|---|
+| `frontend/app.js` | Hash routing, shared state, user actions, settings, import/export. |
+| `frontend/backend/app.js` | Browser and Android storage bridge. |
+| `frontend/backend/features/metadata.js` | Built-in provider registry and preference normalization. |
+| `frontend/backend/features/discover.js` | Provider searches, suggestions, request cache, and result mapping. |
+| `frontend/backend/features/show-detail-controller.js` | Provider-specific details loaders. |
+| `frontend/backend/features/mix.js` | Matching and merging data across enabled providers. |
+| `frontend/pages/` | Screen rendering modules. |
+| `dev-server.js` | Local static hosting and restricted provider proxy. |
 
 ## App identity
 
-- npm package: `savepoint`
-- Capacitor / Android application ID: `com.cuemark.savepoint`
-- Browser storage key: `splitapp_savepoint_v1`
-- Capacitor web directory: `frontend/`
+| Property | Value |
+|---|---|
+| Package | `savepoint` |
+| Version | `0.1.0` |
+| Capacitor / Android application ID | `com.cuemark.savepoint` |
+| Capacitor web directory | `frontend/` |
+| Browser state key | `splitapp_savepoint_v1` |
 
-The app is implemented with HTML, CSS, and vanilla JavaScript; it does not use React or JSX.
+## Documentation
+
+- [App walkthrough](docs/app-walkthrough.md)
+- [Metadata sources and credentials](docs/metadata.md)
+- [Metadata request and cache behavior](docs/metadata-analysis.md)
+- [Storage and backups](docs/storage.md)
+- [Data schema](docs/db-schema.md)
+- [Database analysis](docs/database-analysis.md)
+- [Requirements and builds](docs/requirements.md)
+- [Changelog](CHANGELOG.md)
