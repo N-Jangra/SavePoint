@@ -13,7 +13,8 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 | Game details | View and cache provider descriptions, portrait covers, screenshots, tags, links, requirements, playtime estimates, and other available details. Steam trailers play inline in the details page. |
 | Discover | Browse suggestions and search a single catalog or enabled sources together; add games directly to the library. |
 | Mix fetch | Experimental combined search that merges matching metadata from enabled sources into one saved game. |
-| Timeline and statistics | Review status changes and explore playtime, activity, library breakdown, and ratings. |
+| Timeline and statistics | Review status changes by day on the Timeline, and explore a Statistics overview with Play time, Library breakdown, Activity and Ratings sub-pages (grouped ratings and quick rate). |
+| Favorites | Heart a game from its details or the ⋮ menu and filter Home to favorites. |
 | Settings | Customize appearance and navigation; configure metadata sources, storage, backups, tracking, and diagnostics. |
 | Performance | Load library batches and defer off-screen artwork until it approaches the viewport, keeping large image-heavy collections responsive. |
 | Offline use | Keep library data locally and cache provider details/artwork where the selected platform and storage settings allow. Video trailers stream when played and are not copied into the library folder. |
@@ -55,7 +56,7 @@ Navigation adapts to phone, tablet, and desktop widths. On phones it uses the co
 
 ## Data and storage
 
-SavePoint keeps the library on the user's device. In a browser, app state is stored under `splitapp_savepoint_v1` in `localStorage`; metadata responses can also use browser Cache Storage. Android adds native storage and optional folder-based database/artwork backups. Native encrypted records, the browser mirror, and folder JSON are separate storage layers; **folder and exported JSON/TAR backups are plaintext** unless protected separately.
+SavePoint keeps the library on the user's device. Games live in **IndexedDB** (`savepoint_library`, one record per game, written by a data worker) with a device artwork cache; a small startup mirror (preferences and history) stays under `splitapp_savepoint_v1` in `localStorage`; metadata responses can also use browser Cache Storage. Android adds native storage and optional folder-based database/artwork backups. Native encrypted records, the browser mirror, and folder JSON are separate storage layers; **folder and exported JSON/TAR backups are plaintext** unless protected separately.
 
 The core state has three parts:
 
@@ -94,9 +95,9 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For release output, run `./gradlew assembleRelease` and configure signing for distribution. More details: [requirements and build instructions](docs/requirements.md).
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.1` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
 
-The current 0.1.0 release APK is also packaged as `dist/savepoint-0.1.0-release.apk` after a signed release build.
+The current 0.1.1 release APK is packaged as `dist/savepoint-0.1.1-release.apk` after a signed release build.
 
 ## Repository layout
 
@@ -140,7 +141,7 @@ SavePoint/
 | Property | Value |
 |---|---|
 | Package | `savepoint` |
-| Version | `0.1.0` |
+| Version | `0.1.1` |
 | Capacitor / Android application ID | `com.cuemark.savepoint` |
 | Capacitor web directory | `frontend/` |
 | Browser state key | `splitapp_savepoint_v1` |
