@@ -23,6 +23,15 @@
     return data;
   }
 
+  // With IndexedDB healthy, localStorage keeps only the small boot-time mirror
+  // (preferences + history); games live in IndexedDB.
+  let idbHealthy = Boolean(window.SplitAppIDB);
+  function writeMirror(data) {
+    const mirror = idbHealthy ? { ...data, items: [] } : data;
+    try { localStorage.setItem(storageKey, JSON.stringify(mirror)); }
+    catch (error) { console.warn("Could not write the local mirror", error); }
+  }
+
   function readMirror() {
     try { return JSON.parse(localStorage.getItem(storageKey) || "{}"); }
     catch (_) { return {}; }
@@ -602,7 +611,7 @@
           await next.snapshotWrite;
           await syncFolderTree(next.payload, next.uri);
           await writeFolderBackup(next.payload, next.uri, next.plugin);
-          if (activeFolderUri === next.uri) localStorage.setItem(storageKey, JSON.stringify(portableData(next.payload)));
+          if (activeFolderUri === next.uri) writeMirror(portableData(next.payload));
         } catch (error) { console.warn("Could not finish syncing SavePoint data to the selected folder", error); }
       }
     });
@@ -651,6 +660,18 @@
       history: Array.isArray(mirror.history) ? mirror.history : [],
       preferences: mirror.preferences && typeof mirror.preferences === "object" ? mirror.preferences : {}
     };
+    if (idbHealthy) {
+      try {
+        const stored = await window.SplitAppIDB.loadAll();
+        if (!stored.empty) {
+          data = { items: stored.items, history: stored.history.length ? stored.history : data.history, preferences: { ...data.preferences, ...stored.preferences } };
+        } else if (data.items.length) {
+          // First run after upgrade: move the old localStorage library into IndexedDB.
+          await window.SplitAppIDB.save(data);
+          writeMirror(data);
+        }
+      } catch (error) { console.warn("IndexedDB load failed; using localStorage", error); idbHealthy = false; }
+    }
     let folderData = null;
     const encryptedItemIds = new Set();
     let encryptedItems = [];
@@ -745,7 +766,12 @@
   }
 
   async function saveSnapshot(payload) {
-    localStorage.setItem(storageKey, JSON.stringify(activeFolderUri ? portableData(payload) : browserData(payload)));
+    const stored = activeFolderUri ? portableData(payload) : browserData(payload);
+    if (idbHealthy) {
+      try { await window.SplitAppIDB.save(stored); }
+      catch (error) { console.warn("IndexedDB save failed; using localStorage", error); idbHealthy = false; }
+    }
+    writeMirror(stored);
     const folderWrite = queueFolderDatabaseWrite(payload);
     const plugin = window.Capacitor?.Plugins?.EncryptedStore;
     try {

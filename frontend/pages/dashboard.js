@@ -4,7 +4,7 @@
   window.SplitAppPages.dashboard = context => {
     const { config, esc, items, activeCategory, libraryQuery, dashboardStatusFilter = "all", dashboardPlatformFilter = "all", dashboardPageSize = 12, nativeAndroid = false, prefs, labelCategory } = context;
     const matchesPlatform = typeof context.matchesPlatform === "function" ? context.matchesPlatform : () => true;
-    const { dashboardItems, card, listOrEmpty } = window.SplitAppLibrary.create(context);
+    const { dashboardItems, card, listOrEmpty, countItems } = window.SplitAppLibrary.create(context);
     const pageSize = dashboardPageSize;
     const view = prefs.dashboardView || "list";
     const gridViews = new Set(["grid", "detailed-grid", "compact-grid", "large-grid"]);
@@ -57,7 +57,8 @@
     }
     const groups = grouped.map(group => {
       const groupIndex = grouped.indexOf(group);
-      const initialCount = initialCounts[groupIndex];
+      const restored = Math.min(group.games.length, 400, Number(context.dashboardRendered?.[group.key]) || 0);
+      const initialCount = Math.max(initialCounts[groupIndex], restored);
       const visibleGames = group.games.slice(0, initialCount);
       const safeKey = esc(group.key);
       return `<section class="library-group dashboard-status-group" data-dashboard-status-group="${safeKey}"><h2>${esc(group.title)} <span>${group.games.length}</span></h2><div class="${listClass}" data-dashboard-items="${safeKey}" data-total-count="${group.games.length}" data-rendered-count="${visibleGames.length}">${visibleGames.map(card).join("")}</div>${group.games.length > initialCount ? `<button type="button" class="dashboard-load-more" data-dashboard-load-more="${safeKey}" data-offset="${initialCount}" aria-label="Load more ${esc(group.title)} games">Load more · ${group.games.length - initialCount} remaining</button>` : ""}</section>`;
@@ -80,7 +81,7 @@
     const viewLabel = views.find(([key]) => key === view)?.[1] || "List";
     const groupLabel = groupList.find(([key]) => key === (prefs.dashboardGroupBy || "status"))?.[1] || "Status";
     const statusOptions = [["all", "All statuses"], ...statuses.map(status => [status, status])];
-    const filteredStatusCount = status => dashboardItems(status === "all" ? null : status, libraryQuery).filter(item => matchesPlatform(item)).length;
+    const filteredStatusCount = status => countItems(status === "all" ? null : status, libraryQuery, matchesPlatform);
     const sortIcons = { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "rating-desc": "star", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-wide-narrow", "alphabetical-desc": "arrow-up-wide-narrow" };
     const sortPills = `<div class="ios-pills dashboard-sort-grid"><input type="hidden" name="sort" value="${esc(prefs.dashboardSort)}">${sortList.map(([key, label]) => `<button type="button" class="dashboard-sort-option${prefs.dashboardSort === key ? " active" : ""}" data-pill-name="sort" data-pill-value="${esc(key)}" aria-pressed="${prefs.dashboardSort === key}"><i data-lucide="${sortIcons[key]}" aria-hidden="true"></i><span>${esc(label)}</span><i class="dashboard-sort-check" data-lucide="check" aria-hidden="true"></i></button>`).join("")}</div>`;
     const statusColors = { all: "var(--accent)", Playing: "var(--status-color-playing)", Backlog: "var(--status-color-backlog)", Completed: "var(--status-color-completed)", "On Hold": "var(--status-color-on-hold)", Dropped: "var(--status-color-dropped)" };

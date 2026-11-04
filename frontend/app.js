@@ -232,11 +232,24 @@
     if (!document.querySelector("dialog[data-popup-fallback][open]")) delete document.body.dataset.popupFallback;
   }
 
-  function persist() {
+  // Saves clone and diff the whole library, so bursts of changes (background sync,
+  // quick edits) are coalesced into one write ~250ms after the last change.
+  let persistTimer = 0, persistWaiters = [];
+  function persist(immediate = false) {
     localMutationRevision += 1;
+    const promise = new Promise(resolve => persistWaiters.push(resolve));
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(flushPersist, immediate === true ? 0 : 250);
+    return promise;
+  }
+  function flushPersist() {
+    clearTimeout(persistTimer); persistTimer = 0;
+    const waiters = persistWaiters; persistWaiters = [];
+    if (!waiters.length) return;
     const write = window.SplitAppBackend?.save({ items, history, preferences: prefs });
-    if (write?.catch) return write.catch(error => { recordLog("error", `App data save failed: ${error.message || error}`); });
-    return Promise.resolve();
+    const finish = () => waiters.forEach(resolve => resolve());
+    if (write?.catch) write.catch(error => { recordLog("error", `App data save failed: ${error.message || error}`); }).then(finish);
+    else finish();
   }
   function recordLog(level, message) {
     try {
@@ -430,7 +443,7 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
@@ -454,6 +467,14 @@
     node.replaceWith(fresh);
     observeDeferredImages(fresh);
     window.lucide?.createIcons({ root: fresh, attrs: { "aria-hidden": "true" } });
+  }
+  // Remember how many cards each group has loaded so any full render() restores
+  // them instead of collapsing back to the first batch.
+  let dashboardRenderedState = { sig: "", counts: {} };
+  const dashboardSignature = () => [libraryQuery, activeCategory, dashboardPlatformFilter, dashboardStatusFilter, prefs.dashboardSort, prefs.dashboardGroupBy, prefs.dashboardView].join("|");
+  function dashboardRenderedCounts() {
+    if (dashboardRenderedState.sig !== dashboardSignature()) dashboardRenderedState = { sig: dashboardSignature(), counts: {} };
+    return dashboardRenderedState.counts;
   }
   function dashboardGroupItems(groupKey) {
     const groupBy = prefs.dashboardGroupBy || "status";
@@ -489,6 +510,7 @@
     addedCards.forEach(card => observeDeferredImages(card));
     const nextOffset = offset + batch.length;
     target.dataset.renderedCount = String(nextOffset);
+    dashboardRenderedCounts()[status] = nextOffset;
     button.dataset.offset = String(nextOffset);
     const remaining = Math.max(0, games.length - nextOffset);
     if (!remaining) {
@@ -776,7 +798,9 @@
     content.querySelectorAll("[data-timeline-cache-object-url]").forEach(image => URL.revokeObjectURL(image.dataset.timelineCacheObjectUrl));
     const context = pageContext();
     if (page === "dashboard") context.dashboardSortedItems = dashboardSortedItems(context);
+    const keepScrollY = preservePageState && page === "dashboard" ? window.scrollY : null;
     content.innerHTML = window.SplitAppPages[page](context);
+    if (keepScrollY) window.scrollTo({ top: keepScrollY, behavior: "auto" });
     if (topbarActions) window.lucide?.createIcons({ root: topbarActions, attrs: { "aria-hidden": "true" } });
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
     else if (page === "discover" && !discoverQuery) loadDiscoverSuggestions();
@@ -3144,7 +3168,8 @@
   });
   window.addEventListener("hashchange", syncRouteFromHash);
   window.addEventListener("storage", event => { if (event.key === storageKey) toast("Library changed in another tab."); });
-  window.addEventListener("beforeunload", persist);
+  window.addEventListener("beforeunload", flushPersist);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPersist(); });
   window.addEventListener("error", event => recordLog("error", event.message || "Unknown page error"));
   window.addEventListener("unhandledrejection", event => recordLog("error", event.reason?.message || event.reason || "Unhandled promise rejection"));
   async function restoreNativeData() {
@@ -3178,6 +3203,7 @@
         }
         Object.assign(prefs, nativePreferences);
       }
+      dashboardSortedItemsCache = null;
       normalizeDashboardView();
       delete prefs.defaultCategory;
       delete prefs.appLook;
@@ -3214,8 +3240,9 @@
   applyPreferences();
   render();
   if (page === "details" && detailItemId) loadDetails();
-  requestAnimationFrame(() => requestAnimationFrame(() => window.SavePointSplash?.ready?.()));
-  restoreNativeData().then(success => {
+  // Keep the splash until the saved library is loaded (never longer than 1.5s, so a storage-folder prompt stays reachable).
+  setTimeout(() => window.SavePointSplash?.ready?.(), 1500);
+  restoreNativeData().finally(() => requestAnimationFrame(() => window.SavePointSplash?.ready?.())).then(success => {
     if (!success) {
       if (nativeFolderStorage && storageFolderGate) storageFolderGate.hidden = false;
       else {
