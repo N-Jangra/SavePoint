@@ -12,6 +12,20 @@
       : value && typeof value === "object"
         ? Object.values(value).map(detailValue).filter(Boolean).join(" · ")
         : window.SplitAppDates.text(String(value ?? ""));
+    const targetCurrency = prefs?.currencyDisplay === "INR" ? "INR" : "USD";
+    const usdToInrRate = Math.max(0.01, Number(prefs?.usdToInrRate) || 94.8);
+    const convertPriceText = value => {
+      const text = String(value ?? "");
+      if (!text || /free|unavailable/i.test(text)) return text;
+      const source = /₹|\bINR\b|\bRs\.?/i.test(text) ? "INR" : /\$|\bUSD\b/i.test(text) ? "USD" : "";
+      if (!source || source === targetCurrency) return text;
+      const token = text.match(/\d[\d,]*(?:\.\d+)?/);
+      if (!token) return text;
+      let amount = Number(token[0].replace(/,/g, ""));
+      if (!Number.isFinite(amount)) return text;
+      amount = source === "USD" ? amount * usdToInrRate : amount / usdToInrRate;
+      return new Intl.NumberFormat(targetCurrency === "INR" ? "en-IN" : "en-US", { style: "currency", currency: targetCurrency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+    };
 
     const safeUrl = value => {
       try {
@@ -66,7 +80,13 @@
         ? `<div class="empty-state" role="status"><strong>Checking your library…</strong><p>Opening this game if it’s saved on this device.</p></div>`
         : `<div class="empty-state"><strong>That entry is no longer in your library.</strong><a class="button secondary" href="#dashboard">Go to Home</a></div>`;
 
-      const alreadySaved = detailPreview && items.find(row => row.category === item.category && String(row.title || "").trim().toLocaleLowerCase() === String(item.title || "").trim().toLocaleLowerCase());
+      const previewYear = String(item.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
+      const sameTitle = row => row.category === item.category && String(row.title || "").trim().toLocaleLowerCase() === String(item.title || "").trim().toLocaleLowerCase();
+      const sameYear = row => String(row.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
+      const titleMatches = detailPreview ? items.filter(sameTitle) : [];
+      const alreadySaved = detailPreview && (previewYear
+        ? titleMatches.some(row => sameYear(row) === previewYear) || (titleMatches.length === 1 && !sameYear(titleMatches[0]))
+        : titleMatches.length === 1);
       const source = window.SplitAppMetadata.providers.find(row => row.key === (item.metadataSource || item.source));
       const loaded = detailData || {};
       const image = safeImage(item.localImageData?.["cachedDetails.portraitImage"] || loaded.portraitImage || item.cachedDetails?.portraitImage || item.localThumbnailData || item.localImageData?.["image"] || item.localImageData?.["cachedDetails.image"] || loaded.image || item.image);
@@ -81,7 +101,7 @@
         ["Year", loaded.year || item.year],
         ["Rating", loaded.rating || item.rating ? `★ ${loaded.rating || item.rating}` : ""]
       ].filter(([, value]) => value !== "" && value !== undefined && value !== null);
-      const fields = (loaded.fields || []).filter(row => row && row.value !== "" && row.value != null);
+      const fields = (loaded.fields || []).filter(row => row && row.value !== "" && row.value != null).map(row => /^price$/i.test(row.label) ? { ...row, value: convertPriceText(row.value) } : row);
       const links = (loaded.links || []).map(link => ({ ...link, href: safeUrl(link.url) })).filter(link => link.href);
       const sections = (loaded.sections || []).filter(section => section && section.items?.length);
       const canProgress = !detailPreview;
@@ -91,7 +111,7 @@
       const detailImage = popupImageButton(image, `${item.title} cover`, `<img class="detail-image" src="${esc(image)}" alt="${esc(item.title)} cover" onerror="this.hidden=true;this.nextElementSibling.hidden=false;this.closest('.detail-cover-trigger')?.removeAttribute('data-detail-image-src');this.closest('.detail-cover-trigger')?.setAttribute('aria-disabled','true');this.closest('.detail-hero')?.classList.add('no-hero-art')"><span class="detail-cover-placeholder" aria-hidden="true" hidden>${esc(category(item.category)?.icon || "✦")}</span>`, "detail-cover-trigger");
       const buySub = [fields.find(row => /developer/i.test(row.label))?.value, loaded.year || item.year].filter(Boolean).map(detailValue).join(" • ");
       const purchase = loaded.purchase && safeUrl(loaded.purchase.url)
-        ? `<div class="ios-buy"><div class="ios-buy-copy"><p>${loaded.purchase.isFree ? "Play" : "Buy"} ${esc(item.title)} <span>on Steam</span></p>${buySub ? `<small>${esc(buySub)}</small>` : ""}</div><strong>${esc(loaded.purchase.price || "")}</strong><a class="button primary" href="${esc(loaded.purchase.url)}" target="_blank" rel="noopener noreferrer">${loaded.purchase.isFree ? "Play on Steam" : "Buy on Steam"}</a></div>`
+        ? `<div class="ios-buy"><div class="ios-buy-copy"><p>${loaded.purchase.isFree ? "Play" : "Buy"} ${esc(item.title)} <span>on Steam</span></p>${buySub ? `<small>${esc(buySub)}</small>` : ""}</div><strong>${esc(convertPriceText(loaded.purchase.price || ""))}</strong><a class="button primary" href="${esc(loaded.purchase.url)}" target="_blank" rel="noopener noreferrer">${loaded.purchase.isFree ? "Play on Steam" : "Buy on Steam"}</a></div>`
         : "";
       const statuses = category(item.category)?.statuses || [];
       const maxRating = prefs?.ratingFormat === "10-point" ? 10 : 5;

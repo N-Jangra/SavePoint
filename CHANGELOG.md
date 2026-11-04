@@ -2,6 +2,16 @@
 
 Notable SavePoint changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/) (`0.x` while the app is evolving).
 
+## [0.1.1] — 2026-11-04
+
+### Changed
+
+- Changed Dashboard status filters to match Discover source chips, stay in one horizontally scrollable row, and retain readable selected-state text and counts.
+- Made page top bars use square corners for a consistent edge-to-edge layout.
+- Matched Statistics subpage title sizing and placement to Settings headers so titles fit between the back control and right badge.
+- Simplified the Import List preview by removing its repeated section heading while keeping the file summary and confirmation steps.
+- Updated the import preview top bar to match other subpages.
+
 ## [0.1.0] — 2026-11-04
 
 ### Added

@@ -3,25 +3,18 @@
 :root{--ease-out:cubic-bezier(.2,.7,.2,1);--ease-spring:cubic-bezier(.32,.72,0,1)}
 
 /* ---- Page transitions (direction aware) ---- */
-@keyframes sp-in-fwd{from{opacity:0;transform:translate3d(14px,0,0)}to{opacity:1;transform:none}}
-@keyframes sp-in-back{from{opacity:0;transform:translate3d(-14px,0,0)}to{opacity:1;transform:none}}
-@keyframes sp-rise{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+@keyframes sp-in-fwd{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
+@keyframes sp-in-back{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
+@keyframes sp-rise{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
 @keyframes sp-sheet-up{from{transform:translate3d(0,100%,0)}to{transform:none}}
 @keyframes sp-pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
 @keyframes sp-fade{from{opacity:0}to{opacity:1}}
 @keyframes sp-fab{from{opacity:0;transform:scale(.6) translate3d(0,12px,0)}to{opacity:1;transform:none}}
 
-body[data-nav-dir=forward] #page-content.page-route-enter{animation:sp-in-fwd calc(var(--speed,180ms) * 1.4) var(--ease-out) both}
-body[data-nav-dir=back] #page-content.page-route-enter{animation:sp-in-back calc(var(--speed,180ms) * 1.4) var(--ease-out) both}
+body[data-nav-dir] #page-content.page-route-enter{animation:sp-in-fwd calc(var(--speed,180ms) * 1.15) var(--ease-out) both}
 
 /* gentle stagger for the first few cards only */
-#page-content.page-route-enter .item-card:nth-child(-n+6),
-#page-content.page-route-enter .discover-card:nth-child(-n+6),
-#page-content.page-route-enter .settings-section:nth-child(-n+5){animation:sp-rise calc(var(--speed,180ms) * 1.6) var(--ease-out) both}
-#page-content.page-route-enter .item-card:nth-child(2),#page-content.page-route-enter .discover-card:nth-child(2),#page-content.page-route-enter .settings-section:nth-child(2){animation-delay:calc(var(--speed,180ms) * .25)}
-#page-content.page-route-enter .item-card:nth-child(3),#page-content.page-route-enter .discover-card:nth-child(3),#page-content.page-route-enter .settings-section:nth-child(3){animation-delay:calc(var(--speed,180ms) * .5)}
-#page-content.page-route-enter .item-card:nth-child(4),#page-content.page-route-enter .discover-card:nth-child(4),#page-content.page-route-enter .settings-section:nth-child(4){animation-delay:calc(var(--speed,180ms) * .75)}
-#page-content.page-route-enter .item-card:nth-child(n+5),#page-content.page-route-enter .discover-card:nth-child(n+5),#page-content.page-route-enter .settings-section:nth-child(n+5){animation-delay:var(--speed,180ms)}
+#page-content.page-route-enter .item-card,#page-content.page-route-enter .discover-card,#page-content.page-route-enter .settings-section{animation:none}
 
 /* ---- Sheets, dialogs, backdrops ---- */
 .choice-dialog[open]{animation:sp-sheet-up calc(var(--speed,180ms) * 1.9) var(--ease-spring) both}
@@ -35,6 +28,10 @@ dialog::backdrop{animation:sp-fade calc(var(--speed,180ms) * 1.4) ease both}
 .button,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.card-menu-button,.icon-picker-option,.entry-status-option{transition:transform calc(var(--speed,180ms) * .7) var(--ease-out),background-color var(--speed,180ms) ease,color var(--speed,180ms) ease,box-shadow var(--speed,180ms) ease}
 .button:active,.ios-pill:active,.icon-button:active,.nav-button:active,.sidebar-nav-button:active,.floating-add-button:active,.card-menu-button:active,.entry-status-option:active{transform:scale(.95)}
 .item-card{transition:transform calc(var(--speed,180ms) * .7) var(--ease-out)}
+.dashboard-card-enter{animation:sp-dashboard-enter 360ms cubic-bezier(.2,.75,.25,1) both;animation-delay:calc(var(--dashboard-enter-order,0) * 34ms);will-change:opacity,transform}
+@keyframes sp-dashboard-enter{from{opacity:0;transform:translate3d(0,12px,0) scale(.99)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}
+@media(prefers-reduced-motion:reduce){.dashboard-card-enter{animation:none;will-change:auto}}
+body[data-reduce-motion=true] .dashboard-card-enter{animation:none;will-change:auto}
 .item-card:active{transform:scale(.985)}
 .nav-button.active .nav-icon{animation:sp-fab calc(var(--speed,180ms) * 1.6) var(--ease-spring) both}
 .progress-line span,.bar-track span{transition:width calc(var(--speed,180ms) * 2.4) var(--ease-out)}
