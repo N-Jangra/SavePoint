@@ -14,6 +14,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ShareIntentPlugin.class);
         registerPlugin(WidgetPlugin.class);
         registerPlugin(ProviderConsentPlugin.class);
+        registerPlugin(ScrollbarControlPlugin.class);
+        registerPlugin(SyncNotificationPlugin.class);
         super.onCreate(savedInstanceState);
     }
 
