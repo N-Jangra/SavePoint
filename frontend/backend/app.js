@@ -10,9 +10,12 @@
   const folderImageHashKey = `${storageKey}_folder_image_hashes`;
   const folderArchiveHashKey = `${storageKey}_folder_archive_hashes_v2`;
   const itemIds = new Set();
+  const itemSnapshots = new Map();
   let activeFolderUri = "";
   let folderSnapshotQueue = Promise.resolve();
   let folderWriteQueue = Promise.resolve();
+  let pendingFolderSync = null;
+  let folderSyncDrain = null;
 
   function discardRemovedFields(data) {
     delete data.preferences.defaultCategory;
@@ -38,6 +41,8 @@
     const copy = { ...item };
     delete copy.notes;
     delete copy.localThumbnailData;
+    delete copy.localPortraitData;
+    delete copy.localLandscapeData;
     delete copy.localImageData;
     // Image bytes belong in adjacent files in the selected folder. Provider
     // detail payloads can contain data URLs several levels below `image`; strip
@@ -83,7 +88,8 @@
       }
       if (!candidate.paths.some(existing => existing.length === path.length && existing.every((part, index) => part === path[index]))) candidate.paths.push(path);
     };
-    add(["image"], item.localThumbnailData || item.image);
+    add(["image"], item.localPortraitData || item.localThumbnailData || item.image || item.cachedDetails?.portraitImage);
+    add(["backdrop"], item.localLandscapeData || item.backdrop || item.cachedDetails?.landscapeImage || item.cachedDetails?.backgroundImage);
     const imageKey = /(image|thumbnail|backdrop|cover|poster|artwork)/i;
     const visit = (value, path = []) => {
       if (Array.isArray(value)) {
@@ -92,7 +98,7 @@
       }
       if (!value || typeof value !== "object") return;
       Object.entries(value).forEach(([key, child]) => {
-        if (["localThumbnailData", "localImageData", "localImageFiles"].includes(key)) return;
+        if (["localThumbnailData", "localPortraitData", "localLandscapeData", "localImageData", "localImageFiles"].includes(key)) return;
         const childPath = [...path, key];
         if (key === "image" && path.length === 0) return;
         if (typeof child === "string" && imageKey.test(key)) add(childPath, child);
@@ -158,6 +164,8 @@
         const copy = { ...item };
         delete copy.localImageData;
         delete copy.localThumbnailData;
+        delete copy.localPortraitData;
+        delete copy.localLandscapeData;
         return copy;
       }) : [],
       history: Array.isArray(data.history) ? data.history : [],
@@ -182,29 +190,33 @@
     const games = treeFiles.find(file => file.name === "games" && file.uri);
     if (!games) return [];
     const gameFolders = (await plugin.listFiles({ uri: games.uri }))?.files || [];
+    const queue = gameFolders.filter(folder => folder.uri);
     const items = [];
-    for (const folder of gameFolders) {
-      if (!folder.uri) continue;
-      try {
-        const files = (await plugin.listFiles({ uri: folder.uri }))?.files || [];
-        const index = files.find(file => file.name === "index.json" && file.uri);
-        if (!index) continue;
-        const parsed = JSON.parse((await plugin.readFile({ uri: index.uri })).content || "{}");
-        if (!parsed || typeof parsed !== "object" || parsed.id == null) continue;
-        const item = parsed;
-        if (hydrate && item.thumbnailPath) {
-          const thumbnailName = item.thumbnailPath.split("/").pop();
-          const thumbnail = files.find(file => file.name === thumbnailName && file.uri);
-          if (thumbnail && plugin.readBinaryFile) {
-            try {
-              const { base64Content } = await plugin.readBinaryFile({ uri: thumbnail.uri });
-              if (base64Content) item.localThumbnailData = `data:${item.thumbnailMime || "image/webp"};base64,${base64Content}`;
-            } catch (error) { console.warn(`Could not read local artwork for ${item.title || item.id}`, error); }
+    const worker = async () => {
+      while (queue.length) {
+        const folder = queue.shift();
+        try {
+          const files = (await plugin.listFiles({ uri: folder.uri }))?.files || [];
+          const index = files.find(file => file.name === "index.json" && file.uri);
+          if (!index) continue;
+          const parsed = JSON.parse((await plugin.readFile({ uri: index.uri })).content || "{}");
+          if (!parsed || typeof parsed !== "object" || parsed.id == null) continue;
+          const item = parsed;
+          if (hydrate && item.thumbnailPath) {
+            const thumbnailName = item.thumbnailPath.split("/").pop();
+            const thumbnail = files.find(file => file.name === thumbnailName && file.uri);
+            if (thumbnail && plugin.readBinaryFile) {
+              try {
+                const { base64Content } = await plugin.readBinaryFile({ uri: thumbnail.uri });
+                if (base64Content) item.localPortraitData = item.localThumbnailData = `data:${item.thumbnailMime || "image/webp"};base64,${base64Content}`;
+              } catch (error) { console.warn(`Could not read local artwork for ${item.title || item.id}`, error); }
+            }
           }
-        }
-        items.push(item);
-      } catch (error) { console.warn(`Could not read SavePoint item folder ${folder.name}`, error); }
-    }
+          items.push(item);
+        } catch (error) { console.warn(`Could not read SavePoint item folder ${folder.name}`, error); }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(5, queue.length) }, worker));
     return items;
   }
 
@@ -220,7 +232,7 @@
     const titlesDir = treeFiles.find(file => file.name === "games" && file.uri);
     if (!titlesDir) return 0;
     const folders = new Map(((await plugin.listFiles({ uri: titlesDir.uri }))?.files || []).filter(file => file.uri).map(file => [file.name, file]));
-    const queue = items.filter(item => !item.localThumbnailData && (item.thumbnailPath || item.localImageFiles?.length));
+    const queue = items.filter(item => ((!item.localPortraitData && !item.localThumbnailData) || (!item.localLandscapeData && (item.backdrop || item.cachedDetails?.landscapeImage))) && (item.thumbnailPath || item.localImageFiles?.length));
     let done = 0;
     const worker = async () => {
       while (queue.length) {
@@ -231,7 +243,14 @@
           const name = item.thumbnailPath ? String(item.thumbnailPath).split("/").pop() : ".thumbnail";
           const thumbnail = files.find(file => file.name === name && file.uri);
           const { base64Content } = thumbnail ? await plugin.readBinaryFile({ uri: thumbnail.uri }) : {};
-          if (base64Content) { item.localThumbnailData = `data:${item.thumbnailMime || "image/webp"};base64,${base64Content}`; done += 1; if (done % 6 === 0) onBatch?.(done); }
+          if (base64Content) item.localPortraitData = item.localThumbnailData = `data:${item.thumbnailMime || "image/webp"};base64,${base64Content}`;
+          const landscapeRef = item.localImageFiles?.find(image => (image.paths || []).some(path => path.some(part => /backdrop|landscapeImage|backgroundImage/i.test(String(part)))));
+          if (landscapeRef) {
+            const landscapeFile = files.find(file => file.name === landscapeRef.fileName && file.uri);
+            const landscape = landscapeFile ? await plugin.readBinaryFile({ uri: landscapeFile.uri }) : {};
+            if (landscape.base64Content) item.localLandscapeData = `data:${landscapeRef.mimeType || "image/webp"};base64,${landscape.base64Content}`;
+          }
+          if (base64Content || item.localLandscapeData) { done += 1; if (done % 6 === 0) onBatch?.(done); }
         } catch (error) { console.warn(`Could not read saved artwork for ${item.title || item.id}`, error); }
       }
     };
@@ -341,8 +360,15 @@
       } catch (_) {}
     }
 
-    for (const item of payload.items) {
-      if (!item?.id) continue;
+    const pendingItems = payload.items.filter(item => item?.id);
+    const rootFiles = (await plugin.listFiles({ uri }))?.files || [];
+    const tree = rootFiles.find(file => file.name === folderTreeName && file.uri);
+    const oldTreeFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
+    const existingGames = oldTreeFiles.find(file => file.name === "games" && file.uri);
+    const existingGameFolders = new Map(existingGames
+      ? ((await plugin.listFiles({ uri: existingGames.uri }))?.files || []).filter(file => file.uri).map(file => [file.name, file])
+      : []);
+    const syncItem = async item => {
       const dirPath = itemFolderPath(item);
       const thumbnailPath = `${dirPath.join("/")}/.thumbnail`;
       let imageWritten = true;
@@ -350,7 +376,7 @@
         const itemHash = itemFingerprint(item);
         const id = String(item.id), candidates = collectImageCandidates(item), imageHash = imageFingerprint(candidates);
         const cachedImages = imageHashes[id];
-        if (hashes[id] === itemHash && cachedImages?.fingerprint === imageHash) continue;
+        if (hashes[id] === itemHash && cachedImages?.fingerprint === imageHash) return;
         const localImageFiles = [];
         const usedFileNames = new Set();
         if (cachedImages?.fingerprint === imageHash && Array.isArray(cachedImages.files)) {
@@ -380,11 +406,7 @@
         item.thumbnailPath = thumbnail ? thumbnailPath : "";
         item.thumbnailMime = thumbnail?.mimeType || "";
         item.localImageFiles = localImageFiles;
-        const rootFiles = (await plugin.listFiles({ uri }))?.files || [];
-        const tree = rootFiles.find(file => file.name === folderTreeName && file.uri);
-        const oldFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
-        const existingGames = oldFiles.find(file => file.name === "games" && file.uri);
-        const existingItem = existingGames && (await plugin.listFiles({ uri: existingGames.uri }))?.files?.find(file => file.name === itemDirectoryName(item) && file.uri);
+        const existingItem = existingGameFolders.get(itemDirectoryName(item));
         const existingFiles = existingItem ? (await plugin.listFiles({ uri: existingItem.uri }))?.files || [] : [];
         for (const oldFile of existingFiles) {
           if ((oldFile.name.startsWith(".image-") || oldFile.name === ".thumbnail") && !usedFileNames.has(oldFile.name) && oldFile.uri) {
@@ -399,7 +421,12 @@
         delete hashes[String(item.id)];
         console.warn(`Could not sync SavePoint item ${item.title || item.id} to the selected folder`, error);
       }
-    }
+    };
+    const itemQueue = [...pendingItems];
+    const workerCount = Math.max(1, Math.min(6, Number(payload.preferences?.metadataWorkers) || 4, itemQueue.length || 1));
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (itemQueue.length) await syncItem(itemQueue.shift());
+    }));
 
     if (plugin.deleteFile) {
       try {
@@ -516,13 +543,13 @@
         console.warn(`Could not restore SavePoint database from ${file.name}; trying the next recovery copy`, error);
       }
     }
-    const mirroredItems = await listFolderTreeItems(uri);
+    const mirroredItems = await listFolderTreeItems(uri, { hydrate: false });
     return mirroredItems.length ? { items: mirroredItems, history: [], preferences: {}, fromItemTree: true } : null;
   }
 
   async function hydrateFolderData(data, uri) {
     if (!data || !Array.isArray(data.items)) return data;
-    const mirroredItems = await listFolderTreeItems(uri);
+    const mirroredItems = await listFolderTreeItems(uri, { hydrate: false });
     if (!mirroredItems.length) return data;
     const mirroredById = new Map(mirroredItems.map(item => [String(item.id), item]));
     return {
@@ -560,14 +587,30 @@
     // Keep portable snapshots ordered by save revision. Concurrent SAF writes
     // to the same document can otherwise finish out of order and restore stale data.
     folderSnapshotQueue = snapshotWrite.catch(() => {});
-    const syncWrite = folderWriteQueue.catch(() => {}).then(async () => {
-      await snapshotWrite;
-      await syncFolderTree(payload, uri);
-      await writeFolderBackup(payload, uri, plugin);
-      if (activeFolderUri === uri) localStorage.setItem(storageKey, JSON.stringify(portableData(payload)));
-    });
-    folderWriteQueue = syncWrite.catch(error => { console.warn("Could not finish syncing SavePoint data to the selected folder", error); });
+    pendingFolderSync = { payload, uri, plugin, snapshotWrite };
+    scheduleFolderSyncDrain();
     return snapshotWrite;
+  }
+
+  function scheduleFolderSyncDrain() {
+    if (folderSyncDrain || !pendingFolderSync) return;
+    const drain = folderWriteQueue.catch(() => {}).then(async () => {
+      while (pendingFolderSync) {
+        const next = pendingFolderSync;
+        pendingFolderSync = null;
+        try {
+          await next.snapshotWrite;
+          await syncFolderTree(next.payload, next.uri);
+          await writeFolderBackup(next.payload, next.uri, next.plugin);
+          if (activeFolderUri === next.uri) localStorage.setItem(storageKey, JSON.stringify(portableData(next.payload)));
+        } catch (error) { console.warn("Could not finish syncing SavePoint data to the selected folder", error); }
+      }
+    });
+    folderSyncDrain = drain;
+    folderWriteQueue = drain.finally(() => {
+      folderSyncDrain = null;
+      if (pendingFolderSync) scheduleFolderSyncDrain();
+    });
   }
 
   async function writeFolderBackup(payload, uri, plugin) {
@@ -640,7 +683,7 @@
     // a SavePoint database. Otherwise migrate this device's existing data into it.
     if (folderData) {
       const byId = new Map();
-      for (const candidate of [...(data.items || []), ...(folderData.items || []), ...encryptedItems]) {
+      for (const candidate of [...(data.items || []), ...(folderData.items || [])]) {
         if (!candidate || candidate.id == null) continue;
         const id = String(candidate.id), previous = byId.get(id);
         if (!previous) byId.set(id, candidate);
@@ -674,8 +717,14 @@
     if (folderUri) data = await hydrateFolderData(data, folderUri);
     discardRemovedFields(data);
     itemIds.clear();
-    (encryptedItemIds.size ? encryptedItemIds : data.items.map(item => String(item.id))).forEach(id => itemIds.add(id));
-    if (folderUri) await queueFolderDatabaseWrite(data, folderUri);
+    itemSnapshots.clear();
+    encryptedItems.forEach(item => {
+      if (item?.id == null) return;
+      const id = String(item.id);
+      itemIds.add(id);
+      itemSnapshots.set(id, JSON.stringify(portableItem(item)));
+    });
+    if (folderUri) queueFolderDatabaseWrite(data, folderUri).catch(error => console.warn("Could not save the restored database snapshot", error));
     return { ...data, loadedFromFolder: Boolean(folderData) };
   }
 
@@ -684,10 +733,11 @@
   // Capture each revision before waiting in the queue. Encrypted-store writes
   // must finish in the same order as user changes or an older snapshot can win.
   function save(data) {
+    const clone = value => typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
     const payload = {
-      items: Array.isArray(data.items) ? JSON.parse(JSON.stringify(data.items)) : [],
-      history: Array.isArray(data.history) ? JSON.parse(JSON.stringify(data.history)) : [],
-      preferences: data.preferences && typeof data.preferences === "object" ? JSON.parse(JSON.stringify(data.preferences)) : {}
+      items: Array.isArray(data.items) ? clone(data.items) : [],
+      history: Array.isArray(data.history) ? clone(data.history) : [],
+      preferences: data.preferences && typeof data.preferences === "object" ? clone(data.preferences) : {}
     };
     const write = appSaveQueue.then(() => saveSnapshot(payload), () => saveSnapshot(payload));
     appSaveQueue = write.catch(() => {});
@@ -701,16 +751,23 @@
     try {
       if (plugin?.setItem && plugin?.setMeta) {
         const nextIds = new Set(payload.items.map(item => String(item.id)));
-        const writes = payload.items.map(item => plugin.setItem({ id: String(item.id), data: JSON.stringify(portableItem(item)) }));
+        const snapshots = new Map();
+        const writes = [];
+        for (const item of payload.items) {
+          const id = String(item.id);
+          const snapshot = JSON.stringify(portableItem(item));
+          snapshots.set(id, snapshot);
+          if (itemSnapshots.get(id) !== snapshot) writes.push(plugin.setItem({ id, data: snapshot }));
+        }
         for (const id of itemIds) if (!nextIds.has(id)) writes.push(plugin.deleteItem({ id }));
         await Promise.all(writes);
         await plugin.setMeta({ data: JSON.stringify({ history: payload.history, preferences: payload.preferences }) });
         itemIds.clear(); nextIds.forEach(id => itemIds.add(id));
+        itemSnapshots.clear(); snapshots.forEach((snapshot, id) => itemSnapshots.set(id, snapshot));
       }
     } finally {
       await folderWrite;
     }
-    localStorage.setItem(storageKey, JSON.stringify(activeFolderUri ? portableData(payload) : browserData(payload)));
   }
 
   async function chooseFolder(currentData) {
@@ -747,7 +804,13 @@
     const rootHasDatabase = files.some(file => file.name === databaseFileName
       || new RegExp(`^${app.key}_backup_\\d{4}-\\d{2}-\\d{2}\\.tar$`, "i").test(file.name)
       || new RegExp(`^${app.key}-backup-\\d{4}-\\d{2}-\\d{2}\\.json$`, "i").test(file.name));
-    const databaseExists = rootHasDatabase || treeFiles.some(file => file.name === "database.json");
+    let itemTreeHasData = false;
+    const games = treeFiles.find(file => file.name === "games" && file.uri);
+    if (games) {
+      const folders = (await plugin.listFiles({ uri: games.uri }))?.files || [];
+      itemTreeHasData = folders.some(file => file.uri);
+    }
+    const databaseExists = rootHasDatabase || treeFiles.some(file => file.name === "database.json") || itemTreeHasData;
     return { configured: true, valid: true, databaseExists, uri };
   }
 

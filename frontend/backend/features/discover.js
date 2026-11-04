@@ -18,11 +18,14 @@
   const igdbImage = (url, size = "t_cover_big") => url ? `https:${String(url).startsWith("//") ? url : `//${String(url).replace(/^https?:\/\//, "")}`}`.replace(/\/t_[^/]+\//, `/${size}/`) : "";
   const igdbYear = stamp => Number(stamp) > 0 ? String(new Date(Number(stamp) * 1000).getUTCFullYear()) : "";
   const igdbSearchText = value => String(value || "").replace(/[\\"]/g, char => `\\${char}`).replace(/[\r\n]/g, " ").trim();
-  function responseError(status, statusText, data) {
+  function responseError(status, statusText, data, retryAfter = "") {
     let payload = data;
     if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch (_) {} }
     const detail = payload?.detail || payload?.error || payload?.message || statusText || "Metadata request failed";
-    return Object.assign(new Error(`${status} ${detail}`), { status });
+    const retrySeconds = Number(retryAfter);
+    const retryDate = Date.parse(retryAfter);
+    const retryAfterMs = retrySeconds > 0 ? retrySeconds * 1000 : Number.isFinite(retryDate) ? Math.max(0, retryDate - Date.now()) : 0;
+    return Object.assign(new Error(`${status} ${detail}`), { status, retryAfterMs });
   }
   async function wireRequest(url, options = {}, responseType = "json") {
     const method = String(options.method || "GET").toUpperCase();
@@ -41,7 +44,7 @@
       });
       const status = Number(response?.status || 0);
       const data = response?.data;
-      if (status >= 400) throw responseError(status, response.statusText, data);
+      if (status >= 400) throw responseError(status, response.statusText, data, response.headers?.["retry-after"] || response.headers?.["Retry-After"] || "");
       if (responseType === "text") return typeof data === "string" ? data : String(data ?? "");
       if (typeof data === "string") {
         try { return JSON.parse(data); }
@@ -53,9 +56,32 @@
     const response = await fetch(requestUrl, { method, headers, body: options.body });
     if (!response.ok) {
       const data = await response.text().catch(() => "");
-      throw responseError(response.status, response.statusText, data);
+      throw responseError(response.status, response.statusText, data, response.headers.get("retry-after") || "");
     }
     return responseType === "text" ? await response.text() : await response.json();
+  }
+  const hostQueues = new Map();
+  const hostNextRequestAt = new Map();
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  function pacedWireRequest(url, options = {}, responseType = "json") {
+    let host = "unknown";
+    try { host = new URL(url, location?.href).host || host; } catch (_) {}
+    const previous = hostQueues.get(host) || Promise.resolve();
+    const request = previous.catch(() => {}).then(async () => {
+      const wait = Math.max(0, (hostNextRequestAt.get(host) || 0) - Date.now());
+      if (wait) await delay(wait);
+      try {
+        const result = await wireRequest(url, options, responseType);
+        hostNextRequestAt.set(host, Date.now() + 1200);
+        return result;
+      } catch (error) {
+        const cooldown = error?.status === 429 ? Math.max(60_000, Number(error.retryAfterMs) || 0) : 1200;
+        hostNextRequestAt.set(host, Date.now() + cooldown);
+        throw error;
+      }
+    });
+    hostQueues.set(host, request.catch(() => {}));
+    return request;
   }
   // Every request to a known source picks up that source's domain / user agent / cookies from Settings (the user's values win over built-in headers).
   function applySource(url, options = {}) {
@@ -64,8 +90,20 @@
     const resolved = metadata.resolve(provider.key, url, options);
     return { url: resolved.url, options: { ...options, headers: { ...(options.headers || {}), ...resolved.headers } } };
   }
-  async function requestJson(url, options = {}) {
+  const requestFlights = new Map();
+  function requestJson(url, options = {}) {
     ({ url, options } = applySource(url, options));
+    const method = String(options.method || "GET").toUpperCase();
+    if (method !== "GET" || options.noCache) return requestJsonDirect(url, options);
+    const key = JSON.stringify([url, options.headers || {}, Boolean(options.forceRefresh), options.offlineFallback || ""]);
+    const active = requestFlights.get(key);
+    if (active) return active;
+    const request = requestJsonDirect(url, options);
+    requestFlights.set(key, request);
+    request.finally(() => { if (requestFlights.get(key) === request) requestFlights.delete(key); }).catch(() => {});
+    return request;
+  }
+  async function requestJsonDirect(url, options = {}) {
     const method = String(options.method || "GET").toUpperCase();
     const canCache = method === "GET" && !options.noCache && window.caches && !/[?&](?:key|apikey)=/i.test(url);
     let cache = null, stale = null;
@@ -77,7 +115,7 @@
       } catch { cache = null; stale = null; }
     }
     try {
-      const data = await wireRequest(url, options, "json");
+      const data = await pacedWireRequest(url, options, "json");
       if (cache) {
         const headers = new Headers({ "Content-Type": "application/json", "x-splitapp-cached-at": String(Date.now()) });
         await cache.put(url, new Response(JSON.stringify(data), { status: 200, headers }));
@@ -116,7 +154,7 @@
       delete headers.Origin;
       delete headers.Referer;
       try {
-        return await wireRequest(proxyUrl.toString(), { ...resolved.options, noCache: true, headers }, responseType);
+        return await pacedWireRequest(proxyUrl.toString(), { ...resolved.options, noCache: true, headers }, responseType);
       } catch {
         throw directError;
       }
@@ -124,7 +162,7 @@
   }
   const requestHowLongToBeatJson = (url, options = {}) => requestHowLongToBeat(url, options, "json");
   const requestHowLongToBeatText = (url, options = {}) => requestHowLongToBeat(url, options, "text");
-  const requestText = (url, options = {}) => { ({ url, options } = applySource(url, options)); return wireRequest(url, options, "text"); };
+  const requestText = (url, options = {}) => { ({ url, options } = applySource(url, options)); return pacedWireRequest(url, options, "text"); };
   const result = (source, category, providerId, title, fields = {}) => ({
     source, category, providerId: String(providerId || ""), title: String(title || "").trim(),
     year: fields.year || "", image: fields.image || "", description: fields.description || "",
@@ -223,6 +261,7 @@
   }
   const searcherFor = source => searchers[source.key] || (source.custom ? (query, category, settings) => searchCustom(source.config, query, category, settings) : null);
   let howLongToBeatToken = null;
+  let howLongToBeatTokenRequest = null;
   let howLongToBeatBlockedUntil = 0;
   let howLongToBeatBlockedError = null;
   async function runSourceSearch(source, query, category, settings) {
@@ -288,10 +327,15 @@
   }
   async function fetchHowLongToBeatToken(base, refresh = false) {
     if (!refresh && howLongToBeatToken && Date.now() - howLongToBeatToken.fetchedAt < 10 * 60 * 1000) return howLongToBeatToken;
-    const token = await requestHowLongToBeatJson(`${base}/api/search/site/init?t=${Date.now()}`, { noCache:true, headers:{ Accept:"application/json", Referer:`${base}/`, ...(await howLongToBeatSessionHeaders()) } });
-    if (!token?.token) throw new Error("HowLongToBeat session unavailable.");
-    howLongToBeatToken = { ...token, fetchedAt:Date.now() };
-    return howLongToBeatToken;
+    if (howLongToBeatTokenRequest) return howLongToBeatTokenRequest;
+    howLongToBeatTokenRequest = (async () => {
+      const token = await requestHowLongToBeatJson(`${base}/api/search/site/init?t=${Date.now()}`, { noCache:true, headers:{ Accept:"application/json", Referer:`${base}/`, ...(await howLongToBeatSessionHeaders()) } });
+      if (!token?.token) throw new Error("HowLongToBeat session unavailable.");
+      howLongToBeatToken = { ...token, fetchedAt:Date.now() };
+      return howLongToBeatToken;
+    })();
+    try { return await howLongToBeatTokenRequest; }
+    finally { howLongToBeatTokenRequest = null; }
   }
   async function search(query, category, settings = {}) {
     if (!String(query || "").trim()) return [];

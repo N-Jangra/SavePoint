@@ -19,10 +19,13 @@
       const developers = displayValue(item.facts?.developers || item.cachedDetails?.developers || item.cachedDetails?.developer || fieldValue(/^(developer|developers|studio|studios)$/i));
       const genres = displayValue(item.facts?.genres || item.cachedDetails?.genres || item.cachedDetails?.genre || fieldValue(/^(genre|genres)$/i));
       const subtitle = [developers, genres].filter(Boolean).join(" · ");
-    const thumbnail = item.localThumbnailData || item.image;
-    const localPending = !item.localThumbnailData && Boolean(item.thumbnailPath || item.localImageFiles?.length);
+    const useLandscape = ["detailed-grid", "compact-grid"].includes(prefs.dashboardView);
+    const thumbnail = useLandscape
+      ? item.localLandscapeData || item.localImageData?.backdrop || item.localImageData?.["cachedDetails.landscapeImage"] || item.backdrop || item.cachedDetails?.landscapeImage || item.cachedDetails?.backgroundImage || item.localPortraitData || item.localThumbnailData || item.image
+      : item.localPortraitData || item.localThumbnailData || item.localImageData?.image || item.localImageData?.["cachedDetails.portraitImage"] || item.cachedDetails?.portraitImage || item.image;
+    const localPending = Boolean((useLandscape ? !item.localLandscapeData : !item.localPortraitData && !item.localThumbnailData) && (item.thumbnailPath || item.localImageFiles?.length));
     const showArtwork = prefs.showThumbnails && Boolean(thumbnail || localPending);
-    const art = `${showArtwork ? `<img data-deferred-image data-lazy-src="${esc(thumbnail || "")}"${localPending ? ` data-local-item-id="${esc(item.id)}"` : ""} alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="item-art-fallback" aria-hidden="true"${showArtwork ? " hidden" : ""}>${esc(cat?.icon || "✦")}</span>`;
+    const art = `${showArtwork ? `<img data-deferred-image data-lazy-src="${esc(thumbnail || "")}"${localPending ? ` data-local-item-id="${esc(item.id)}" data-local-image-mode="${useLandscape ? "landscape" : "portrait"}"` : ""} alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="item-art-fallback" aria-hidden="true"${showArtwork ? " hidden" : ""}>${esc(cat?.icon || "✦")}</span>`;
     const accent = prefs.categoryColors[item.category] || cat?.color || prefs.mainColor;
     const actions = prefs.dashboardRowActions === "quick"
       ? `<button type="button" class="card-quick-progress-button" data-action="progress" data-id="${esc(item.id)}" aria-label="Add progress to ${esc(item.title)}" title="Add progress to ${esc(item.title)}">＋</button>`

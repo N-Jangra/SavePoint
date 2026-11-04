@@ -5,6 +5,7 @@
   const controller = window.SplitAppDetailController;
   const category = "game";
   const norm = title => String(title || "").toLowerCase().replace(/[™®©]/g, "").replace(/[^a-z0-9]+/g, " ").replace(/^the /, "").trim();
+  const yearOf = value => String(value || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
   const isEmpty = value => value == null || value === "" || value === 0 || (Array.isArray(value) && !value.length);
   const withTimeout = (promise, ms = 25000) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out")), ms))]);
 
@@ -13,7 +14,9 @@
     const results = await discovery.search(query, category, settings);
     const groups = new Map();
     for (const row of results) {
-      const key = norm(row.title); if (!key) continue;
+      const titleKey = norm(row.title); if (!titleKey) continue;
+      const year = yearOf(row.year);
+      const key = `${titleKey}|${year}`;
       if (!groups.has(key)) groups.set(key, { key, title: row.title, year: row.year || "", image: row.image || "", sources: [] });
       const group = groups.get(key);
       if (!group.year && row.year) group.year = row.year;
@@ -23,9 +26,13 @@
     return [...groups.values()].slice(0, 40);
   }
 
-  const bestMatch = (rows, title) => {
+  const bestMatch = (rows, title, year = "") => {
     const target = norm(title);
-    return rows.find(row => norm(row.title) === target) || rows.find(row => { const name = norm(row.title); return name.includes(target) || target.includes(name); }) || null;
+    const targetYear = yearOf(year);
+    const titleMatches = rows.filter(row => norm(row.title) === target);
+    if (targetYear && titleMatches.length) return titleMatches.find(row => yearOf(row.year) === targetYear) || titleMatches.find(row => !yearOf(row.year)) || null;
+    if (titleMatches.length) return titleMatches.length === 1 ? titleMatches[0] : null;
+    return rows.find(row => { const name = norm(row.title); return name.includes(target) || target.includes(name); }) || null;
   };
 
   const LIST_LABELS = /^(genres?|platforms?|developers?|publishers?|tags|also known as|languages)$/i;
@@ -78,17 +85,23 @@
   }
 
   // Fetch details from every enabled source that knows this game, then merge.
-  async function load(item, settings = {}) {
+  async function load(item, settings = {}, onPartial = null) {
     const title = item.title;
     if (!title) throw new Error("This game has no title to look up.");
     const sources = metadata.available(category, settings);
     if (!sources.length) throw new Error("Enable at least one metadata source first.");
+    const completedEntries = [];
     const settled = await Promise.allSettled(sources.map(async source => {
       const rows = await withTimeout(discovery.searchSource(title, category, settings, source.key));
-      const match = bestMatch(rows, title);
+      const match = bestMatch(rows, title, item.year);
       if (!match) throw new Error("No match");
       const data = await withTimeout(controller.load({ ...item, category, metadataSource: source.key, providerId: match.providerId, title: match.title, image: match.image || item.image, url: match.url || item.url, year: match.year || item.year, description: match.description || item.description }, settings));
-      return { key: source.key, name: source.name, data };
+      const entry = { key: source.key, name: source.name, data };
+      completedEntries.push(entry);
+      if (typeof onPartial === "function") {
+        try { onPartial(merge([...completedEntries], title, item), entry); } catch (_) {}
+      }
+      return entry;
     }));
     const entries = settled.filter(result => result.status === "fulfilled").map(result => result.value);
     if (!entries.length) throw new Error(`No enabled source had details for “${title}”.`);

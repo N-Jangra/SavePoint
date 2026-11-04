@@ -2,7 +2,9 @@
   "use strict";
 
   const config = window.APP_CONFIG;
-  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add Game", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
+  const nativeAndroid = Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor?.getPlatform?.() === "android");
+  const dashboardPageSize = nativeAndroid ? 8 : 12;
+  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add Game", "import-preview": "Import List", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
   const navItems = [
     { key: "dashboard", label: "Home", icon: "⌂", locked: true },
     { key: "discover", label: "Discover", icon: "✧" },
@@ -13,12 +15,12 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
+    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "rise", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarCorners: "sharp", bottomBarLabels: "icons-only", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: ["dashboard", "discover", "explore", "settings", "timeline", "statistics"], visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
     metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg", "igdb"], customSources: [],
-    dashboardView: "list", dashboardDefaultCategory: "remember", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
-    automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
+    dashboardView: "list", dashboardDefaultCategory: "remember", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
+    automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1, humanReadableStats: false, currencyDisplay: "USD", usdToInrRate: 94.8,
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30, backupPasswordReminder: true, maximumBackupSize: 1000, validateBackupLocation: true, restorePreview: true,
     metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false, igdb: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
     imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
@@ -112,11 +114,36 @@
   let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, statsRange = "week", statsActivityDate = "";
   let metadataSourceFilter = "all";
   let entryDraftId = null, addReturnPage = "dashboard";
+  let importState = null;
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
   let discoverQuery = "";
   let addMetadataQuery = "";
   let timelineFilter = "all", timelineSearch = "", timelineMonth = "", timelineYear = "";
-  let dashboardStatusFilter = prefs.dashboardStatusFilter || "all";
+  let dashboardStatusFilter = prefs.dashboardDefaultCategory === "remember"
+    ? prefs.dashboardLastStatus || "all"
+    : prefs.dashboardDefaultCategory && prefs.dashboardDefaultCategory !== "all"
+      ? prefs.dashboardDefaultCategory
+      : prefs.dashboardStatusFilter || "all";
+  let dashboardPlatformFilter = prefs.dashboardDefaultPlatform && prefs.dashboardDefaultPlatform !== "all" ? prefs.dashboardDefaultPlatform : prefs.dashboardPlatformFilter || "all";
+  const platformFilters = ["all", "pc", "mac", "mobile", "xbox", "playstation", "nintendo"];
+  if (!platformFilters.includes(dashboardPlatformFilter)) dashboardPlatformFilter = prefs.dashboardPlatformFilter = "all";
+  function itemPlatformText(item) {
+    const savedField = item.cachedDetails?.fields?.find(field => /^platforms?$/i.test(String(field.label || "")))?.value;
+    const raw = item.facts?.platforms || item.cachedDetails?.facts?.platforms || savedField || item.platforms || "";
+    const flatten = value => Array.isArray(value) ? value.map(flatten).join(" ") : value && typeof value === "object" ? Object.values(value).map(flatten).join(" ") : String(value || "");
+    return flatten(raw).toLowerCase();
+  }
+  function matchesPlatform(item, filter = dashboardPlatformFilter) {
+    if (!filter || filter === "all") return true;
+    const value = itemPlatformText(item);
+    if (filter === "pc") return /\bpc\b|windows|linux|steam deck/.test(value);
+    if (filter === "mac") return /macos?|macintosh|os x/.test(value);
+    if (filter === "mobile") return /android|ios|iphone|ipad|mobile|\bphone\b|tablet/.test(value);
+    if (filter === "xbox") return /xbox/.test(value);
+    if (filter === "playstation") return /playstation|\bps[1-5]\b/.test(value);
+    if (filter === "nintendo") return /nintendo|switch|\bwii\b|\bds\b/.test(value);
+    return true;
+  }
   function normalizeDashboardView() {
     const legacyDashboardViews = { cards: "detailed-grid", grid: "detailed-grid", "compact-list": "list", timeline: "list" };
     if (legacyDashboardViews[prefs.dashboardView]) prefs.dashboardView = legacyDashboardViews[prefs.dashboardView];
@@ -128,15 +155,16 @@
   else if (prefs.dashboardSort === "rating") prefs.dashboardSort = "rating-desc";
   if (!["all", ...config.categories[0].statuses].includes(dashboardStatusFilter)) dashboardStatusFilter = prefs.dashboardStatusFilter = "all";
   delete prefs.defaultCategory;
-  let activeCategory = prefs.dashboardDefaultCategory === "remember" ? "all" : prefs.dashboardDefaultCategory || "all";
+  let activeCategory = "all";
   let toastTimer;
   const detailIdFromQuery = query => { const raw = String(query || ""); return raw.startsWith("=") ? decodeURIComponent(raw.slice(1)) : new URLSearchParams(raw).get("id") || ""; };
   let detailTab = "";
   let detailItemId = initialRoute[0] === "details" ? detailIdFromQuery(initialHashQuery) || null : null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "dashboard", detailRequest = 0;
   let detailRestorePending = Boolean(detailItemId);
   let detailImagePosition = 0, detailImageOpener = null;
-  const dashboardPageSize = 24;
   let dashboardLazyObserver = null;
+  let dashboardLoadPending = false;
+  let dashboardSortedItemsCache = null;
   let deferredImageObserver = null, deferredImageFlushTimer = 0, deferredImageDrain = null;
   const deferredLocalImageQueue = [], deferredLocalImageRequests = new Map();
   let searchRenderTimer = null;
@@ -218,6 +246,13 @@
       localStorage.setItem(key, JSON.stringify(entries.slice(0, 200)));
     } catch (_) {}
   }
+  async function runWithConcurrency(values, requestedWorkers, task) {
+    const queue = [...values];
+    const workers = Math.max(1, Math.min(10, Number(requestedWorkers) || 4, queue.length || 1));
+    await Promise.all(Array.from({ length: workers }, async () => {
+      while (queue.length) await task(queue.shift());
+    }));
+  }
   function toast(message) {
     const node = $("#toast"); node.textContent = message; node.classList.add("show");
     clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("show"), 2300);
@@ -258,8 +293,9 @@
     document.body.style.setProperty("--muted", palette.muted);
     document.body.style.setProperty("--accent-soft", `color-mix(in srgb, ${prefs.mainColor || "#6355f8"} ${palette.mode === "light" ? "12%" : "20%"}, ${palette.surface})`);
     document.body.dataset.reducedMotion = String(Boolean(prefs.reduceMotion));
-    const lowEnd = Boolean(navigator.connection?.saveData) || (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+    const lowEnd = nativeAndroid || Boolean(navigator.connection?.saveData) || (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
     root.dataset.lowend = String(lowEnd);
+    root.dataset.nativeAndroid = String(nativeAndroid);
     document.body.dataset.corners = prefs.cardCorners;
     document.body.dataset.density = prefs.dashboardDensity;
     document.body.dataset.dashboardView = prefs.dashboardView;
@@ -270,6 +306,7 @@
     document.body.dataset.barLabels = prefs.bottomBarLabels;
     document.body.dataset.sidebar = prefs.showSidebar ? "shown" : "hidden";
     document.documentElement.dataset.showScrollbars = prefs.showScrollbars === true ? "true" : "false";
+    window.Capacitor?.Plugins?.ScrollbarControl?.setEnabled?.({ enabled: prefs.showScrollbars === true }).catch(() => {});
     document.body.dataset.barLayout = prefs.bottomBarLayout;
     document.body.dataset.iconStyle = prefs.iconStyle === "inline" ? "inline" : "tiles";
     window.SplitAppDates?.setFormat(prefs.dateFormat); window.SplitAppBackend?.setImageStorage?.(prefs.imageStorage);
@@ -393,14 +430,22 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
+  function dashboardSortedItems(context = pageContext()) {
+    const cacheKey = [localMutationRevision, libraryQuery, activeCategory, dashboardPlatformFilter, prefs.dashboardSort].join("|");
+    if (dashboardSortedItemsCache?.key !== cacheKey) {
+      const library = window.SplitAppLibrary.create(context);
+      dashboardSortedItemsCache = { key: cacheKey, items: library.dashboardItems(null, libraryQuery).filter(item => matchesPlatform(item)) };
+    }
+    return dashboardSortedItemsCache.items;
+  }
   function dashboardGroupItems(groupKey) {
-    const library = window.SplitAppLibrary.create(pageContext());
     const groupBy = prefs.dashboardGroupBy || "status";
-    if (groupBy === "status") return library.dashboardItems(groupKey, libraryQuery);
-    let games = library.dashboardItems(null, libraryQuery);
+    const sortedItems = dashboardSortedItems();
+    if (groupBy === "status") return sortedItems.filter(item => item.status === groupKey);
+    let games = sortedItems;
     if (dashboardStatusFilter !== "all") games = games.filter(item => item.status === dashboardStatusFilter);
     if (groupBy === "category") return games.filter(item => String(item.category || "other") === groupKey);
     if (groupBy === "release") return games.filter(item => String(item.year || "Unknown release date") === groupKey);
@@ -415,7 +460,19 @@
     if (!target || !batch.length) { button.remove(); return; }
     const library = window.SplitAppLibrary.create(pageContext());
     target.insertAdjacentHTML("beforeend", batch.map(library.card).join(""));
-    observeDeferredImages(target);
+    const addedCards = [...target.children].slice(-batch.length);
+    addedCards.forEach((card, index) => {
+      if (prefs.reduceMotion || nativeAndroid) return;
+      card.classList.add("dashboard-card-enter");
+      card.style.setProperty("--dashboard-enter-order", String(Math.min(index, 7)));
+      const clearEntrance = () => {
+        card.classList.remove("dashboard-card-enter");
+        card.style.removeProperty("--dashboard-enter-order");
+      };
+      card.addEventListener("animationend", clearEntrance, { once: true });
+      setTimeout(clearEntrance, 900);
+    });
+    addedCards.forEach(card => observeDeferredImages(card));
     const nextOffset = offset + batch.length;
     target.dataset.renderedCount = String(nextOffset);
     button.dataset.offset = String(nextOffset);
@@ -439,10 +496,15 @@
     dashboardLazyObserver = new IntersectionObserver(entries => entries.forEach(entry => {
       if (!entry.isIntersecting) return;
       const button = entry.target;
+      if (dashboardLoadPending) return;
       dashboardLazyObserver.unobserve(button);
-      loadDashboardMore(button);
-      if (button.isConnected && button.dataset.offset < button._dashboardItems.length) dashboardLazyObserver.observe(button);
-    }), { rootMargin: "640px 0px" });
+      dashboardLoadPending = true;
+      requestAnimationFrame(() => {
+        loadDashboardMore(button);
+        dashboardLoadPending = false;
+        if (button.isConnected && button.dataset.offset < button._dashboardItems.length) dashboardLazyObserver.observe(button);
+      });
+    }), { rootMargin: "0px" });
     loaders.forEach(button => dashboardLazyObserver.observe(button));
   }
   function deferredImageSource(image) {
@@ -450,6 +512,7 @@
   }
   function setDeferredImageSource(image, source) {
     if (!image?.isConnected) return;
+    if (nativeAndroid && image.closest(".dashboard-card") && source) image.dataset.dashboardCacheSrc = source;
     delete image.dataset.localItemId;
     delete image.dataset.lazySrc;
     if (source) image.src = source;
@@ -466,8 +529,12 @@
         catch (error) { recordLog("warning", `Could not load saved artwork: ${error?.message || error}`); }
         for (const record of batch) {
           timelineLocalThumbnailChecked.add(record.id);
-          const source = record.item.localThumbnailData || record.fallback;
-          record.images.forEach(image => setDeferredImageSource(image, source));
+          record.images.forEach(image => {
+            const source = image.dataset.localImageMode === "landscape"
+              ? record.item.localLandscapeData || record.item.backdrop || record.item.cachedDetails?.landscapeImage || record.item.cachedDetails?.backgroundImage || record.item.localPortraitData || record.item.localThumbnailData || record.fallback
+              : record.item.localPortraitData || record.item.localThumbnailData || record.fallback;
+            setDeferredImageSource(image, source);
+          });
           deferredLocalImageRequests.delete(record.id);
         }
       }
@@ -481,10 +548,12 @@
     if (!item) { setDeferredImageSource(image, deferredImageSource(image)); return; }
     const existing = deferredLocalImageRequests.get(id);
     if (existing) { existing.images.add(image); return; }
+    const landscape = image.dataset.localImageMode === "landscape";
     const hasLocalFile = Boolean(item.thumbnailPath || item.localImageFiles?.length);
-    if (!hasLocalFile || item.localThumbnailData || timelineLocalThumbnailChecked.has(id)) {
+    const localImage = landscape ? item.localLandscapeData : item.localPortraitData || item.localThumbnailData;
+    if (!hasLocalFile || localImage || timelineLocalThumbnailChecked.has(id)) {
       timelineLocalThumbnailChecked.add(id);
-      setDeferredImageSource(image, item.localThumbnailData || deferredImageSource(image));
+      setDeferredImageSource(image, localImage || deferredImageSource(image));
       return;
     }
     const record = { id, item, fallback: deferredImageSource(image), images: new Set([image]) };
@@ -502,10 +571,17 @@
     if (!window.IntersectionObserver) { images.forEach(activateDeferredImage); return; }
     if (!deferredImageObserver) {
       deferredImageObserver = new IntersectionObserver(entries => entries.forEach(entry => {
-        if (!entry.isIntersecting) return;
-        deferredImageObserver.unobserve(entry.target);
-        activateDeferredImage(entry.target);
-      }), { rootMargin: "700px 0px" });
+        const image = entry.target;
+        if (!entry.isIntersecting) {
+          if (nativeAndroid && image.closest(".dashboard-card") && image.hasAttribute("src") && image.dataset.dashboardCacheSrc) {
+            image.dataset.lazySrc = image.dataset.dashboardCacheSrc;
+            image.removeAttribute("src");
+          }
+          return;
+        }
+        if (!nativeAndroid) deferredImageObserver.unobserve(image);
+        activateDeferredImage(image);
+      }), { rootMargin: nativeAndroid ? "180px 0px" : "700px 0px" });
     }
     images.forEach(image => deferredImageObserver.observe(image));
   }
@@ -643,13 +719,14 @@
   }
   function render() {
     document.body.dataset.page = page;
+    { const fab = document.getElementById("sync-fab"); if (fab) fab.hidden = !syncJob || page === "sync"; }
     $("#page-title").textContent = titles[page];
     const topbarActions = $("#topbar-actions");
     if (topbarActions) topbarActions.hidden = page !== "dashboard";
     if (page === "dashboard") {
       const filterButton = topbarActions?.querySelector("[data-open-collection-filter]");
       const filterBadge = $("#collection-filter-badge");
-      const hasActiveFilter = dashboardStatusFilter !== "all" || Boolean(libraryQuery)
+      const hasActiveFilter = dashboardStatusFilter !== "all" || dashboardPlatformFilter !== "all" || Boolean(libraryQuery)
         || prefs.dashboardSort !== "alphabetical-asc"
         || prefs.dashboardView !== "list"
         || (prefs.dashboardGroupBy || "status") !== "status";
@@ -683,7 +760,9 @@
       renderedRoute = route;
     }
     content.querySelectorAll("[data-timeline-cache-object-url]").forEach(image => URL.revokeObjectURL(image.dataset.timelineCacheObjectUrl));
-    content.innerHTML = window.SplitAppPages[page](pageContext());
+    const context = pageContext();
+    if (page === "dashboard") context.dashboardSortedItems = dashboardSortedItems(context);
+    content.innerHTML = window.SplitAppPages[page](context);
     if (topbarActions) window.lucide?.createIcons({ root: topbarActions, attrs: { "aria-hidden": "true" } });
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
     else if (page === "discover" && !discoverQuery) loadDiscoverSuggestions();
@@ -894,6 +973,9 @@
       if (!dashboardFilterForm) return;
       dashboardStatusFilter = dashboardFilterForm?.elements.status.value || "all";
       prefs.dashboardStatusFilter = dashboardStatusFilter;
+      prefs.dashboardLastStatus = dashboardStatusFilter;
+      dashboardPlatformFilter = dashboardFilterForm?.elements.platform.value || "all";
+      prefs.dashboardPlatformFilter = dashboardPlatformFilter;
       prefs.dashboardView = dashboardFilterForm?.elements.view?.value || prefs.dashboardView;
       prefs.dashboardSort = dashboardFilterForm.elements.sort?.value || prefs.dashboardSort;
       prefs.theme = dashboardFilterForm.elements.theme?.value || prefs.theme;
@@ -1036,15 +1118,32 @@
   async function refreshBackupFolderStatus() {
     const status = $("#backup-folder-status");
     if (!status || !window.SplitAppBackend?.inspectFolder) return;
+    const checkButton = $("[data-backup-folder-action=check]");
+    const chooseButton = $("[data-backup-folder-action=choose]");
+    const folderAvailable = Boolean(window.SplitAppBackend.isNativeFolderStorageAvailable?.());
+    if (checkButton) checkButton.disabled = true;
+    if (chooseButton) chooseButton.disabled = true;
+    status.dataset.state = "checking";
+    const show = (message, state) => {
+      if (!status.isConnected) return;
+      status.dataset.state = state;
+      const label = status.querySelector(".backup-folder-location") || status;
+      label.textContent = message;
+    };
+    show("Checking folder access and database…", "checking");
     try {
       const result = await window.SplitAppBackend.inspectFolder();
       if (!status.isConnected) return;
-      if (result.unsupported) status.textContent = "Folder storage is available in the Android app.";
-      else if (!result.configured) status.textContent = "No database folder selected";
-      else if (!result.valid) status.textContent = "Folder access is unavailable. Choose a folder again.";
-      else status.textContent = result.databaseExists ? "Database found in the selected folder." : "Folder is available. A database will be created there.";
+      if (result.unsupported) show("Folder storage is available in the Android app.", "unsupported");
+      else if (!result.configured) show("No database folder selected. Choose a folder to enable shared storage.", "empty");
+      else if (!result.valid) show("Folder access is unavailable. Choose the folder again.", "invalid");
+      else if (result.databaseExists) show("Database found. This folder is ready and synced.", "ready");
+      else show("Folder is available. SavePoint will create its database here.", "empty");
     } catch (error) {
-      if (status.isConnected) status.textContent = `Could not check folder: ${error.message || error}`;
+      show(`Could not check folder: ${error.message || error}`, "error");
+    } finally {
+      if (checkButton?.isConnected) checkButton.disabled = !folderAvailable;
+      if (chooseButton?.isConnected) chooseButton.disabled = !folderAvailable;
     }
   }
   function applySelectedFolderData(selected) {
@@ -1061,7 +1160,18 @@
   }
   async function chooseBackupDatabaseFolder() {
     const button = $("[data-backup-folder-action=choose]");
+    const checkButton = $("[data-backup-folder-action=check]");
+    const folderAvailable = Boolean(window.SplitAppBackend?.isNativeFolderStorageAvailable?.());
+    const status = $("#backup-folder-status");
     if (button) button.disabled = true;
+    if (checkButton) checkButton.disabled = true;
+    const buttonLabel = button?.querySelector("span");
+    if (buttonLabel) buttonLabel.textContent = "Opening picker…";
+    if (status) {
+      status.dataset.state = "checking";
+      const label = status.querySelector(".backup-folder-location") || status;
+      label.textContent = "Choose a folder in the Android picker…";
+    }
     try {
       const selected = await window.SplitAppBackend.chooseFolder({ items, history, preferences: prefs });
       applySelectedFolderData(selected);
@@ -1070,9 +1180,18 @@
       applyPreferences(); render();
       toast(selected.loadedFromFolder ? "Database loaded from the selected folder." : "Database folder selected and current data saved.");
     } catch (error) {
+      if (status?.isConnected) {
+        status.dataset.state = "error";
+        const label = status.querySelector(".backup-folder-location") || status;
+        label.textContent = error.message || "Could not select a database folder.";
+      }
       toast(error.message || "Could not select a database folder.");
     } finally {
-      if (button?.isConnected) button.disabled = false;
+      if (button?.isConnected) {
+        button.disabled = !folderAvailable;
+        if (buttonLabel?.isConnected) buttonLabel.textContent = "Choose folder";
+      }
+      if (checkButton?.isConnected) checkButton.disabled = !folderAvailable;
     }
   }
   async function clearAppCaches(kind) {
@@ -1312,8 +1431,12 @@
   function findLibraryMatch(result) {
     if (!result?.title) return null;
     const normalize = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const yearOf = value => String(value || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
     const title = normalize(result.title);
-    return items.find(item => item.category === result.category && normalize(item.title) === title) || null;
+    const matches = items.filter(item => item.category === result.category && normalize(item.title) === title);
+    const year = yearOf(result.year);
+    if (year) return matches.find(item => yearOf(item.year) === year) || (matches.length === 1 && !yearOf(matches[0].year) ? matches[0] : null);
+    return matches.length === 1 ? matches[0] : null;
   }
   function discoverAddButton(result, index) {
     const saved = Boolean(findLibraryMatch(result));
@@ -1420,6 +1543,7 @@
     box.innerHTML = html || ""; box._results = flat;
     updateDiscoverLibraryActions();
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
+    observeDeferredImages(box);
     if (empty) empty.hidden = flat.length > 0;
     if (!flat.length) setDiscoverEmptyState("No suggestions available", "Search for a game above or check your enabled sources.");
     if (message && flat.length) message.textContent = !navigator.onLine || prefs.metadataMode === "offline"
@@ -1558,63 +1682,63 @@
     }
     return merged;
   }
-  function enrichLibraryEntryWithMix(item, sourceResult = {}, origin = "Library") {
+  function applyEnrichedDetails(current, loaded, mixed) {
+    if (!current || !loaded) return;
+    if (mixed) {
+      applyMixIdentity(current, loaded);
+      current.mixSourceKeys = [...new Set(loaded.facts?.sources || [])];
+      current.mixSources = [...new Set(loaded.mixSources || current.mixSourceKeys.map(key => window.SplitAppSources.list().find(source => source.key === key)?.name || key))];
+    }
+    current.cachedDetails = loaded;
+    current.facts = mergeFacts(current.facts, loaded.facts);
+    current.description = loaded.description || current.description;
+    current.year = loaded.year || current.year;
+    current.url = loaded.url || current.url;
+    current.image = current.localThumbnailData || loaded.portraitImage || loaded.image || current.image;
+    current.backdrop = loaded.landscapeImage || loaded.backgroundImage || current.backdrop;
+    current.updatedAt = Date.now();
+  }
+  function enrichLibraryEntryWithMix(item, sourceResult = {}, origin = "Library", options = {}) {
     if (!item?.id || item.category !== "game" || !window.SplitAppMix?.load) return Promise.resolve(null);
     if (mixEnrichmentByItem.has(String(item.id))) return mixEnrichmentByItem.get(String(item.id));
     const itemId = String(item.id);
     const task = (async () => {
-      await persist();
       const saved = items.find(row => String(row.id) === itemId);
       if (!saved) return null;
       let loaded = null, mixed = false;
       try {
-        loaded = await window.SplitAppMix.load({ ...saved, ...sourceResult, title: saved.title, category: saved.category }, detailSettings());
+        loaded = await window.SplitAppMix.load({ ...saved, ...sourceResult, title: saved.title, category: saved.category }, detailSettings(), partial => {
+          const current = items.find(row => String(row.id) === itemId);
+          if (!current) return;
+          applyEnrichedDetails(current, partial, true);
+          if (page === "details" && String(detailItemId) === itemId) { detailData = partial; render(); }
+        });
         mixed = true;
       } catch (mixError) {
-        recordLog("warning", `Mix fetch could not load ${saved.title}: ${mixError?.message || mixError}`);
+        if (!options.quiet) recordLog("warning", `Mix fetch could not load ${saved.title}: ${mixError?.message || mixError}`);
         const sourceKey = sourceResult.metadataSource || sourceResult.source || saved.metadataSource;
         const providerId = sourceResult.providerId || saved.providerId;
         if (sourceKey && sourceKey !== "mix" && providerId && window.SplitAppDetailController?.load) {
           try { loaded = await window.SplitAppDetailController.load({ ...saved, ...sourceResult, metadataSource: sourceKey, providerId, title: saved.title, category: saved.category }, detailSettings()); }
-          catch (error) { recordLog("warning", `Could not load source details for ${saved.title}: ${error?.message || error}`); }
+          catch (error) { if (!options.quiet) recordLog("warning", `Could not load source details for ${saved.title}: ${error?.message || error}`); }
         }
       }
       const current = items.find(row => String(row.id) === itemId);
       if (!current || !loaded) return null;
-      const tracking = {
-        status: current.status,
-        goal: current.goal,
-        progress: current.progress,
-        completionTarget: current.completionTarget,
-        completionTargetHours: current.completionTargetHours
-      };
-      if (mixed) {
-        applyMixIdentity(current, loaded);
-        current.mixSourceKeys = [...new Set(loaded.facts?.sources || [])];
-        current.mixSources = [...new Set(loaded.mixSources || current.mixSourceKeys.map(key => window.SplitAppSources.list().find(source => source.key === key)?.name || key))];
+      applyEnrichedDetails(current, loaded, mixed);
+      if (options.persist !== false) await persist();
+      if (options.loadImages !== false) {
+        try {
+          const localImages = await window.SplitAppBackend?.loadItemImages?.(current);
+          if (localImages && Object.keys(localImages).length) current.localImageData = localImages;
+        } catch (error) { if (!options.quiet) recordLog("warning", `Could not load local images for ${current.title}: ${error?.message || error}`); }
       }
-      current.cachedDetails = loaded;
-      current.facts = mergeFacts(current.facts, loaded.facts);
-      current.description = loaded.description || current.description;
-      current.year = loaded.year || current.year;
-      current.url = loaded.url || current.url;
-      current.image = current.localThumbnailData || loaded.portraitImage || loaded.image || current.image;
-      current.backdrop = loaded.landscapeImage || loaded.backgroundImage || current.backdrop;
-      Object.assign(current, tracking);
-      current.updatedAt = Date.now();
-      await persist();
-      await window.SplitAppBackend?.flushFolderWrites?.();
-      try {
-        const localImages = await window.SplitAppBackend?.loadItemImages?.(current);
-        if (localImages && Object.keys(localImages).length) current.localImageData = localImages;
-      } catch (error) { recordLog("warning", `Could not load local images for ${current.title}: ${error?.message || error}`); }
       if (page === "details" && String(detailItemId) === itemId) { detailData = loaded; detailLoading = false; render(); }
       updateDiscoverLibraryActions();
       if (page === "dashboard" || page === "discover" || page === "mix") render();
-      toast(mixed ? `Saved merged details from ${current.mixSources?.length || 0} sources.` : "Saved source details to your library.");
       return loaded;
     })().catch(error => {
-      recordLog("error", `Could not save fetched details for ${item.title}: ${error?.message || error}`);
+      if (!options.quiet) recordLog("error", `Could not save fetched details for ${item.title}: ${error?.message || error}`);
       return null;
     }).finally(() => mixEnrichmentByItem.delete(itemId));
     mixEnrichmentByItem.set(itemId, task);
@@ -1656,15 +1780,16 @@
     if (factsRunning) return; factsRunning = true; button.disabled = true;
     const hasHours = item => Number(item.facts?.mainHours) || Number(item.facts?.averageHours);
     const pending = items.filter(item => !hasHours(item));
-    let found = 0;
-    for (const [index, item] of pending.entries()) {
-      button.textContent = `Looking up ${index + 1} of ${pending.length}…`;
+    let found = 0, completed = 0;
+    await runWithConcurrency(pending, prefs.metadataWorkers, async item => {
+      button.textContent = `Looking up ${Math.min(pending.length, completed + 1)} of ${pending.length}…`;
       try {
         const hours = await window.SplitAppMix.hours(item.title, detailSettings());
-        if (hours) { item.facts = mergeFacts(item.facts, hours); item.updatedAt = Date.now(); found += 1; persist(); }
+        if (hours) { item.facts = mergeFacts(item.facts, hours); item.updatedAt = Date.now(); found += 1; }
       } catch (error) { recordLog("warning", `Play-time lookup failed for ${item.title}: ${error?.message || error}`); }
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
+      completed += 1;
+    });
+    if (found) await persist();
     factsRunning = false; render(); toast(found ? `Found play times for ${found} of ${pending.length} games.` : "No play times found. Enable HowLongToBeat (Android) or add a RAWG key.");
   }
   // Saves provider details (play time, price, team, requirements, images) for games that never opened their details page.
@@ -1672,18 +1797,21 @@
   async function fetchMissingFacts(button) {
     if (factsRunning) return; factsRunning = true; button.disabled = true;
     const pending = items.filter(item => item.metadataSource && item.providerId && !item.facts?.fetchedAt);
-    let done = 0;
-    for (const item of pending) {
-      button.textContent = `Fetching ${done + 1} of ${pending.length}…`;
+    let done = 0, completed = 0;
+    await runWithConcurrency(pending, prefs.metadataWorkers, async item => {
+      button.textContent = `Fetching ${Math.min(pending.length, completed + 1)} of ${pending.length}…`;
       try {
         const loaded = await window.SplitAppDetails.load(item, detailSettings());
         item.cachedDetails = loaded; item.facts = mergeFacts(item.facts, loaded.facts);
         item.description = loaded.description || item.description; item.year = loaded.year || item.year;
         item.image = loaded.portraitImage || loaded.image || item.image;
-        done += 1; persist();
+        item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
+        item.updatedAt = Date.now();
+        done += 1;
       } catch (error) { recordLog("warning", `Could not fetch details for ${item.title}: ${error?.message || error}`); }
-      await new Promise(resolve => setTimeout(resolve, 350));
-    }
+      completed += 1;
+    });
+    if (done) await persist();
     factsRunning = false; render(); toast(`Saved details for ${done} of ${pending.length} games.`);
   }
   function readCustomSourceForm() {
@@ -2076,9 +2204,21 @@
     persist(); applyPreferences();
     if (key === "backgroundBackups" || key === "backupSchedule") syncBackupSchedule();
     if (key === "ratingFormat") updateRatingOptions();
-    if (key === "dashboardStatusFilter") dashboardStatusFilter = value || "all";
-    if (key === "dashboardDefaultCategory") activeCategory = value === "remember" || value === "all" ? "all" : value;
-    if (["dashboardGroupBy", "dashboardSort", "showRatings", "showProgress", "showThumbnails", "dashboardDensity", "dashboardView", "dashboardStatusFilter", "dashboardDefaultCategory", "dashboardRowActions", "cardCorners", "oneHandedMode", "tabletTwoColumn", "theme", "ratingFormat"].includes(key)) render();
+    if (key === "dashboardStatusFilter") {
+      dashboardStatusFilter = value || "all";
+      if (prefs.dashboardDefaultCategory === "remember") prefs.dashboardLastStatus = dashboardStatusFilter;
+    }
+    if (key === "dashboardDefaultCategory") {
+      dashboardStatusFilter = value === "remember" ? prefs.dashboardLastStatus || "all" : value || "all";
+      prefs.dashboardStatusFilter = dashboardStatusFilter;
+      persist();
+    }
+    if (key === "dashboardDefaultPlatform") {
+      dashboardPlatformFilter = value || "all";
+      prefs.dashboardPlatformFilter = dashboardPlatformFilter;
+      persist();
+    }
+    if (["dashboardGroupBy", "dashboardSort", "showRatings", "showProgress", "showThumbnails", "dashboardDensity", "dashboardView", "dashboardStatusFilter", "dashboardDefaultCategory", "dashboardDefaultPlatform", "dashboardRowActions", "cardCorners", "oneHandedMode", "tabletTwoColumn", "theme", "ratingFormat", "humanReadableStats", "currencyDisplay", "usdToInrRate"].includes(key)) render();
   }
   function openSettingPicker(trigger) {
     let options = [];
@@ -2108,7 +2248,8 @@
       bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid" },
       bottomBarLayout: { spread: "align-horizontal-space-between", center: "align-horizontal-justify-center", left: "align-horizontal-justify-start" },
       dashboardView: { list: "list", "detailed-grid": "layout-dashboard", "compact-grid": "grid-3x3", "large-grid": "square" },
-      dashboardDefaultCategory: { remember: "history", all: "layers", game: "gamepad-2" },
+      dashboardDefaultPlatform: { all: "layers-3", pc: "monitor", mac: "laptop", mobile: "smartphone", xbox: "tv", playstation: "gamepad-2", nintendo: "joystick" },
+      dashboardDefaultCategory: { remember: "history", all: "layers", Playing: "gamepad-2", Completed: "circle-check", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus" },
       defaultStatus: { Backlog: "bookmark", Playing: "play", "On Hold": "pause", Dropped: "circle-x", Completed: "circle-check" },
       dateFormat: { auto: "globe", dmy: "calendar", mdy: "calendar", iso: "calendar-days", long: "calendar-check" },
       iconStyle: { tiles: "layout-grid", inline: "list" },
@@ -2213,22 +2354,174 @@
     const blob = new Blob([JSON.stringify({ app: config.name, version: 1, exportedAt: new Date().toISOString(), items, history, preferences: prefs }, null, 2)], { type: "application/json" });
     const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); toast("Export ready.");
   }
+  function importIdentity(item) {
+    const title = String(item?.title || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const year = String(item?.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
+    return `${item?.category || "game"}:${title}:${year}`;
+  }
   async function importList(file) {
     if (!file) return;
+    importState = { phase: "reading", fileName: file.name || "Library backup", fileSize: Number(file.size) || 0, incoming: [], fresh: [], skipped: 0, completed: 0, synced: 0, failed: 0, error: "" };
+    goto("import-preview");
     try {
       const data = JSON.parse(await file.text()); const incoming = Array.isArray(data) ? data : data.items;
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
-      const normalized = incoming.filter(item => item && item.title).map(item => ({ ...item, id: crypto.randomUUID(), category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: Date.now(), updatedAt: Date.now() }));
-      const known = new Set(items.map(item => `${item.category}:${item.title.toLowerCase()}`));
-      const fresh = normalized.filter(item => !known.has(`${item.category}:${item.title.toLowerCase()}`)); items = [...fresh, ...items]; persist(); render(); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}.`);
-    } catch (error) { toast(error.message || "Could not import this file."); }
+      const now = Date.now();
+      const normalized = incoming.filter(item => item && String(item.title || "").trim()).map(item => ({ ...item, id: crypto.randomUUID(), category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: now, updatedAt: now }));
+      const known = new Set(items.map(importIdentity));
+      const seen = new Set();
+      const fresh = normalized.filter(item => {
+        const identity = importIdentity(item);
+        if (known.has(identity) || seen.has(identity)) return false;
+        seen.add(identity);
+        return true;
+      });
+      importState = { ...importState, phase: "preview", incoming: normalized, fresh, skipped: normalized.length - fresh.length };
+      render();
+    } catch (error) {
+      importState = { ...importState, phase: "error", error: error.message || "Could not import this file." };
+      render();
+    }
+  }
+  function updateImportProgress(message = "") {
+    if (!importState) return;
+    const counter = $("#import-progress-count"), label = $("#import-progress-label"), bar = $("#import-progress-bar"), synced = $("#import-progress-synced");
+    const total = importState.total || 0, completed = importState.completed || 0;
+    const percent = total ? Math.min(100, Math.round(completed / total * 100)) : importState.phase === "complete" ? 100 : 0;
+    if (counter) counter.textContent = `${Math.min(completed, total)} / ${total}`;
+    const percentLabel = $("#import-progress-percent"); if (percentLabel) percentLabel.textContent = `${percent}%`;
+    if (label) label.textContent = message || `Checking ${importState.currentTitle || "next game"}…`;
+    if (synced) synced.textContent = `${importState.synced || 0} updated · ${importState.failed || 0} unavailable`;
+    if (bar) bar.style.width = `${total ? Math.min(100, completed / total * 100) : importState.phase === "complete" ? 100 : 0}%`;
+    const progress = $(".import-progress-track");
+    if (progress) {
+      progress.setAttribute("aria-valuemax", String(total));
+      progress.setAttribute("aria-valuenow", String(Math.min(completed, total)));
+      progress.setAttribute("aria-valuetext", `${percent}%`);
+    }
+  }
+  async function continueImport() {
+    if (!importState || importState.phase !== "preview") return;
+    const fresh = importState.fresh;
+    importState = { ...importState, phase: "saving", total: fresh.length, completed: 0, synced: 0, failed: 0, currentTitle: "" };
+    render();
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    items = [...fresh, ...items];
+    await persist();
+    const count = fresh.length;
+    importState = { ...importState, phase: "complete", completed: count, total: count };
+    render();
+    await new Promise(resolve => setTimeout(resolve, 600));
+    importState = null;
+    goto("dashboard");
+    const started = startSyncJob(fresh);
+    toast(started ? `Added ${count} ${count === 1 ? "game" : "games"}. Syncing metadata in the background.` : `Added ${count} ${count === 1 ? "game" : "games"}.`);
+  }
+  // ---- Background metadata sync -------------------------------------------
+  let syncJob = null, syncHideTimer = 0, syncPersistCount = 0;
+  const syncNotifier = () => window.Capacitor?.Plugins?.SyncNotification;
+  function syncCounts() {
+    const e = syncJob?.entries || [];
+    const done = e.filter(x => x.status === "done").length, failed = e.filter(x => x.status === "failed").length;
+    const total = e.length, completed = done + failed;
+    return { total, done, failed, completed, syncing: e.filter(x => x.status === "syncing").length, percent: total ? Math.round(completed / total * 100) : 0 };
+  }
+  function startSyncJob(list) {
+    const sources = window.SplitAppSources?.available("game", prefs) || [];
+    const canSync = prefs.metadataMode !== "offline" && navigator.onLine && sources.length > 0 && Boolean(window.SplitAppMix?.load);
+    const games = list.filter(item => item.category === "game");
+    if (!canSync || !games.length) return false;
+    if (syncJob && !syncJob.finished) {
+      syncJob.entries.push(...games.map(i => ({ id: i.id, title: i.title, status: "queued", error: "" })));
+      syncJob.queue.push(...games);
+      return true;
+    }
+    clearTimeout(syncHideTimer);
+    syncJob = { finished: false, queue: [...games], entries: games.map(i => ({ id: i.id, title: i.title, status: "queued", error: "" })) };
+    syncPersistCount = 0;
+    syncNotifier()?.requestPermission?.().catch(() => {});
+    updateSyncUI();
+    runSyncJob(syncJob);
+    return true;
+  }
+  async function runSyncJob(job) {
+    // Two lookups at a time; the shared per-host queue spaces provider calls.
+    await Promise.all([0, 1].map(async () => {
+      while (job.queue.length) {
+        const item = job.queue.shift();
+        const entry = job.entries.find(x => x.id === item.id);
+        if (!entry) continue;
+        entry.status = "syncing"; updateSyncUI();
+        try {
+          const current = items.find(row => row.id === item.id) || item;
+          const loaded = await enrichLibraryEntryWithMix(current, { ...current, source: current.metadataSource }, "Background sync", { persist: false, loadImages: false, quiet: true });
+          entry.status = loaded ? "done" : "failed";
+          if (!loaded) entry.error = "No metadata found";
+        } catch (error) { entry.status = "failed"; entry.error = error?.message || "Request failed"; }
+        mixEnrichmentByItem.delete(String(item.id));
+        if (++syncPersistCount % 10 === 0) persist();
+        updateSyncUI();
+      }
+    }));
+    job.finished = true;
+    await persist();
+    updateSyncUI();
+    const c = syncCounts();
+    toast(c.failed ? `Sync finished · ${c.done} updated, ${c.failed} failed.` : `Metadata sync finished · ${c.done} updated.`);
+    if (!c.failed) syncHideTimer = setTimeout(() => { if (syncJob === job) { syncJob = null; updateSyncUI(); if (page === "sync") render(); } }, 6000);
+  }
+  function retrySyncFailures() {
+    if (!syncJob || !syncJob.finished) return;
+    const failed = syncJob.entries.filter(x => x.status === "failed");
+    const games = failed.map(x => items.find(i => i.id === x.id)).filter(Boolean);
+    if (!games.length) return;
+    failed.forEach(x => { x.status = "queued"; x.error = ""; });
+    syncJob.finished = false; syncJob.queue = games; syncPersistCount = 0;
+    runSyncJob(syncJob); render();
+  }
+  function updateSyncUI() {
+    let fab = $("#sync-fab");
+    const c = syncCounts();
+    const show = Boolean(syncJob) && page !== "sync";
+    if (!fab && syncJob) {
+      fab = document.createElement("a"); fab.id = "sync-fab"; fab.className = "sync-fab"; fab.href = "#sync";
+      fab.innerHTML = '<span class="sync-fab-pie"><b></b></span>';
+      document.body.appendChild(fab);
+    }
+    if (fab) {
+      fab.hidden = !show;
+      fab.style.setProperty("--p", c.percent + "%");
+      fab.classList.toggle("is-done", Boolean(syncJob?.finished));
+      fab.classList.toggle("has-failed", c.failed > 0);
+      fab.querySelector("b").textContent = syncJob?.finished && !c.failed ? "✓" : c.percent + "%";
+      fab.setAttribute("aria-label", `Metadata sync ${c.percent}% — ${c.completed} of ${c.total} done. Open details.`);
+    }
+    if (page === "sync") livePatchSyncPage(c);
+    const n = syncNotifier();
+    if (n && syncJob) {
+      const text = syncJob.finished ? `${c.done} updated${c.failed ? ` · ${c.failed} failed` : ""}` : `${c.completed} / ${c.total} games · ${c.percent}%`;
+      n.update({ title: syncJob.finished ? "Metadata sync finished" : "Syncing game metadata", text, progress: c.completed, max: c.total, done: Boolean(syncJob.finished) }).catch(() => {});
+    } else if (n && !syncJob) n.cancel?.().catch(() => {});
+  }
+  function livePatchSyncPage(c) {
+    const root = $("#sync-page"); if (!root) return;
+    const set = (sel, v) => { const el = root.querySelector(sel); if (el) el.textContent = v; };
+    root.style.setProperty("--p", c.percent + "%");
+    set("[data-sync-percent]", c.percent + "%"); set("[data-sync-completed]", `${c.completed} / ${c.total}`);
+    set("[data-sync-done]", c.done); set("[data-sync-failed]", c.failed); set("[data-sync-active]", c.total - c.completed);
+    (syncJob?.entries || []).forEach(entry => {
+      const row = root.querySelector(`[data-sync-row="${CSS.escape(entry.id)}"]`);
+      if (row && row.dataset.status !== entry.status) { render(); }
+    });
   }
   function resetDashboard() {
-    Object.assign(prefs, { dashboardView: "list", dashboardDefaultCategory: "remember", dashboardStatusFilter: "all", dashboardSort: "alphabetical-asc", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardRowActions: "menu", showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars", oneHandedMode: "off", tabletTwoColumn: true });
-    dashboardStatusFilter = "all"; activeCategory = "all"; persist(); applyPreferences(); render(); toast("Dashboard preferences restored.");
+    Object.assign(prefs, { dashboardView: "list", dashboardDefaultCategory: "remember", dashboardStatusFilter: "all", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", dashboardSort: "alphabetical-asc", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardRowActions: "menu", showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars", oneHandedMode: "off", tabletTwoColumn: true });
+    dashboardStatusFilter = "all"; dashboardPlatformFilter = "all"; activeCategory = "all"; persist(); applyPreferences(); render(); toast("Dashboard preferences restored.");
   }
   function clearDashboardFilters() {
     dashboardStatusFilter = prefs.dashboardStatusFilter = "all";
+    prefs.dashboardLastStatus = "all";
+    dashboardPlatformFilter = prefs.dashboardPlatformFilter = "all";
     prefs.dashboardView = "list";
     prefs.dashboardSort = "alphabetical-asc";
     prefs.dashboardGroupBy = "status";
@@ -2300,6 +2593,7 @@
         || pill.textContent.replace(/\s+\d+\s*$/, "").trim();
       if (selection && name === "sort") selection.textContent = label;
       if (selection && name === "status") selection.textContent = label;
+      if (selection && name === "platform") selection.textContent = label;
       if (selection && name === "view") {
         const grouping = card.querySelector('[data-pill-name="groupBy"].active')?.textContent.trim() || "Status";
         selection.textContent = `${label} · ${grouping}`;
@@ -2317,6 +2611,7 @@
     }
     const quickStatus = event.target.closest("[data-quick-status]");
     if (quickStatus) { setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
+    if (event.target.closest("[data-clear-dashboard-filters-home]")) { clearDashboardFilters(); return; }
     if (event.target.closest("[data-open-collection-filter]")) { showPopup($("#dashboard-filter-dialog")); return; }
     if (event.target.closest("[data-reveal-playing]")) { document.querySelector(".library-section")?.scrollIntoView({ behavior: prefs.reduceMotion ? "auto" : "smooth", block: "start" }); return; }
     const detailStatus = event.target.closest("[data-detail-status-btn]");
@@ -2487,6 +2782,10 @@
       }
       return;
     }
+    if (event.target.closest("[data-sync-retry]")) { retrySyncFailures(); return; }
+    if (event.target.closest("[data-sync-dismiss]")) { if (syncJob?.finished) { syncJob = null; updateSyncUI(); goto("dashboard"); } return; }
+    if (event.target.closest("[data-continue-import]")) { continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not restore this library."; render(); } }); return; }
+    if (event.target.closest("[data-cancel-import]")) { importState = null; settingsGroup = "backups"; goto("settings"); return; }
     const sourceDetails = event.target.closest("[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
     const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { await addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); return; }
   });
@@ -2672,6 +2971,9 @@
     event.preventDefault();
     dashboardStatusFilter = event.target.elements.status.value || "all";
     prefs.dashboardStatusFilter = dashboardStatusFilter;
+    prefs.dashboardLastStatus = dashboardStatusFilter;
+    dashboardPlatformFilter = event.target.elements.platform.value || "all";
+    prefs.dashboardPlatformFilter = dashboardPlatformFilter;
     prefs.dashboardView = event.target.elements.view?.value || prefs.dashboardView;
     persist();
     applyPreferences();
@@ -2714,7 +3016,16 @@
       return;
     }
     if (page === "settings" && ["metadata-sources", "source-options", "custom-source"].includes(settingsGroup)) refreshSourceRegistry();
+    if (page === "dashboard") syncUnsyncedGames();
     render();
+  }
+  // Pull-to-refresh on the library: queue every game that has no saved metadata yet.
+  function syncUnsyncedGames() {
+    const active = new Set(syncJob && !syncJob.finished ? syncJob.entries.filter(e => e.status === "queued" || e.status === "syncing").map(e => e.id) : []);
+    const pending = items.filter(item => item.category === "game" && !item.cachedDetails && !active.has(item.id));
+    if (!pending.length) { toast(active.size ? "Sync is already running." : "All games are already synced."); return; }
+    if (!startSyncJob(pending)) { toast(prefs.metadataMode === "offline" || !navigator.onLine ? "Go online to sync metadata." : "No metadata sources are enabled."); return; }
+    toast(`Syncing ${pending.length} ${pending.length === 1 ? "game" : "games"} in the background.`);
   }
   // Pull to refresh on the requested library, activity, discovery, statistics, and source pages.
   (() => {
