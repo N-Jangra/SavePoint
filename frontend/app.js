@@ -441,6 +441,20 @@
     }
     return dashboardSortedItemsCache.items;
   }
+  // Update one rendered card in place. A full render() would reset every lazy-loaded
+  // group to its first batch and jump the scroll position while metadata syncs.
+  function patchDashboardCard(itemId) {
+    const node = document.querySelector(`#page-content [data-item="${CSS.escape(String(itemId))}"]`);
+    const item = items.find(row => String(row.id) === String(itemId));
+    if (!node || !item) return;
+    const template = document.createElement("template");
+    template.innerHTML = window.SplitAppLibrary.create(pageContext()).card(item).trim();
+    const fresh = template.content.firstElementChild;
+    if (!fresh) return;
+    node.replaceWith(fresh);
+    observeDeferredImages(fresh);
+    window.lucide?.createIcons({ root: fresh, attrs: { "aria-hidden": "true" } });
+  }
   function dashboardGroupItems(groupKey) {
     const groupBy = prefs.dashboardGroupBy || "status";
     const sortedItems = dashboardSortedItems();
@@ -1735,7 +1749,8 @@
       }
       if (page === "details" && String(detailItemId) === itemId) { detailData = loaded; detailLoading = false; render(); }
       updateDiscoverLibraryActions();
-      if (page === "dashboard" || page === "discover" || page === "mix") render();
+      if (page === "dashboard") patchDashboardCard(itemId);
+      else if (page === "discover" || page === "mix") render();
       return loaded;
     })().catch(error => {
       if (!options.quiet) recordLog("error", `Could not save fetched details for ${item.title}: ${error?.message || error}`);
