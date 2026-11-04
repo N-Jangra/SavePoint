@@ -15,6 +15,11 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Data worker: library diffing, IndexedDB writes and (during background sync) merging of multi-source metadata run off the UI thread, with an automatic in-thread fallback where workers are unavailable.
 - Adaptive sync concurrency based on CPU cores, device memory, network type, data saver and tab visibility, never above the existing Metadata workers setting.
 - Priority network queue: your own requests (opening a game, searching) go ahead of background sync requests on the same source.
+- Export List now opens Android's Save as screen and streams the file in small chunks, so large libraries export without crashing; Backup Before Destructive Actions saves quietly into the backup folder.
+- Device artwork cache in IndexedDB: covers load from the device first, then online straight away, and the saved folder only fills the cache in the background.
+- Currency display now offers 32 currencies, each with its symbol, and an editable exchange rate for the selected currency; prices in Statistics and game details convert between any pair.
+- Redesigned App Info page (hero, stat tiles, grouped lists) that follows the Icon style setting.
+- Redesigned Home filter sheet with flat sections and wrapping chips.
 
 ### Changed
 
@@ -38,12 +43,31 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Matched Statistics subpage title sizing and placement to Settings headers so titles fit between the back control and right badge.
 - Simplified the Import List preview by removing its repeated section heading while keeping the file summary and confirmation steps.
 - Updated the import preview top bar to match other subpages.
+- Startup shows the library straight from IndexedDB; the folder and encrypted-store sync runs in the background, and launches no longer re-parse the encrypted copy, rewrite the folder snapshot or re-save every game when nothing changed.
+- Folder mirroring, cover caching and the Storage page's cache measurement yield to taps and scrolling, pause while the app is hidden, and stop when you leave the page.
+- Storage and Settings pages use a sampled size estimate instead of serialising the whole library; cache sizes are remembered and re-measured only when a cache changes.
+- Database folder check no longer lists every game folder when a database file already exists.
+- Background metadata sync waits longer for slower sources so imports merge Steam, HowLongToBeat and other enabled sources.
+- Edit entry from the three-dot menu opens the game's details page in edit mode.
+- Settings → Backups: Folder Sync Delay and Restore Preview now take effect.
+- Removed Settings → Tracking's USD-only exchange row in favour of the per-currency rate.
 
 ### Fixed
 
 - Home list no longer jumps back to the first batch of cards, or loses your scroll position, when metadata finishes loading, when you pull to refresh, or when the page re-renders. Loaded batches are remembered per group.
 - Import progress card is vertically centered on mobile.
 - Metadata Sync page layout on small screens, including clipped status labels.
+- Home platform filter no longer hides games without platform data or leaves the selected platform unhighlighted; Steam games count as PC.
+- Edit entry and View Details from the three-dot menu no longer fail intermittently.
+- Add Game no longer opens pre-filled from the last edited game, and its search results collapse once a match is used.
+- Discover and Metadata Sync headers sit flush under the status bar.
+- Export no longer force-closes the app on large libraries.
+- Platform pills in the filter sheet no longer show a pill inside a pill.
+
+### Removed
+
+- Settings that did nothing: Backup Password Reminder, Maximum Backup Size, Validate Backup Location, Metadata Retry Limit, Metadata Sync Frequency, Automatic Thumbnail Cleanup, Thumbnail Quality, Storage Warning Limit and Backup Storage Limit.
+- Intro lines on the App Info, Logcat and Storage pages.
 
 ## [0.1.0] — 2026-11-04
 
