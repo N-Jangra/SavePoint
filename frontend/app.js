@@ -15,7 +15,7 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "rise", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
+    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "rise", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarCorners: "sharp", bottomBarLabels: "icons-only", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: ["dashboard", "discover", "explore", "settings", "timeline", "statistics"], visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
     metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg", "igdb"], customSources: [],
@@ -111,6 +111,7 @@
   let statsSubpage = page === "statistics" && statsSections.includes(initialRoute[1]) ? normalizeStatsSection(initialRoute[1]) : "";
   let settingsGroup = page === "settings" ? (initialRoute[1] === "manage-backups" ? "backups" : initialRoute[1] || null) : null;
   let settingsParam = initialRoute[0] === "settings" ? new URLSearchParams(initialHashQuery).get("id") || "" : "", settingsFrom = "", renderedSettingsGroup;
+  let statsLimits = { rated: 10, quick: 8 };
   let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, statsRange = "week", statsActivityDate = "";
   let metadataSourceFilter = "all";
   let entryDraftId = null, addReturnPage = "dashboard";
@@ -500,11 +501,11 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
-    const cacheKey = [localMutationRevision, libraryQuery, activeCategory, dashboardPlatformFilter, prefs.dashboardSort].join("|");
+    const cacheKey = [localMutationRevision, libraryQuery, activeCategory, dashboardPlatformFilter, prefs.dashboardSort, prefs.favoritesOnly].join("|");
     if (dashboardSortedItemsCache?.key !== cacheKey) {
       const library = window.SplitAppLibrary.create(context);
       dashboardSortedItemsCache = { key: cacheKey, items: library.dashboardItems(null, libraryQuery).filter(item => matchesPlatform(item)) };
@@ -528,7 +529,7 @@
   // Remember how many cards each group has loaded so any full render() restores
   // them instead of collapsing back to the first batch.
   let dashboardRenderedState = { sig: "", counts: {} };
-  const dashboardSignature = () => [libraryQuery, activeCategory, dashboardPlatformFilter, dashboardStatusFilter, prefs.dashboardSort, prefs.dashboardGroupBy, prefs.dashboardView].join("|");
+  const dashboardSignature = () => [prefs.favoritesOnly, libraryQuery, activeCategory, dashboardPlatformFilter, dashboardStatusFilter, prefs.dashboardSort, prefs.dashboardGroupBy, prefs.dashboardView].join("|");
   function dashboardRenderedCounts() {
     if (dashboardRenderedState.sig !== dashboardSignature()) dashboardRenderedState = { sig: dashboardSignature(), counts: {} };
     return dashboardRenderedState.counts;
@@ -726,8 +727,9 @@
           const landscape = modeOf(record);
           const hit = !landscape && cached.get(thumbKeyOf(record.item, false));
           if (hit) { record.images.forEach(image => setDeferredImageSource(image, hit)); }
-          else if (/^https?:/i.test(record.fallback || "") && !landscape) {
-            // Not cached yet: show the online cover straight away instead of waiting on the slow folder.
+          else if (/^https?:/i.test(record.fallback || "")) {
+            // Not cached yet (always the case for the wide artwork of the grid views): show the online image
+            // straight away instead of waiting on the slow folder.
             record.images.forEach(image => setDeferredImageSource(image, record.fallback));
           } else { slow.push(record); continue; }
           timelineLocalThumbnailChecked.add(record.id);
@@ -2258,6 +2260,12 @@
     await persist({ ids: [item.id] });
     return true;
   }
+  function toggleFavorite(id) {
+    const item = itemById(String(id)); if (!item) return;
+    item.favorite = !item.favorite; item.updatedAt = Date.now();
+    persist({ ids: [item.id] }); render();
+    toast(item.favorite ? "Added to favorites." : "Removed from favorites.");
+  }
   function openItemActions(id) {
     const item = itemById(String(id)); if (!item) return;
     const statusIcons = { Playing: "gamepad-2", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus", Completed: "check-circle" };
@@ -2283,6 +2291,7 @@
         // Editing navigates to another page; keep the sheet's history entry so closing it cannot undo that navigation.
         closePopup(dialog, { preserveHistory: action === "edit" });
         if (action === "edit") openEdit(target.id);
+        else if (action === "favorite") toggleFavorite(target.id);
         else if (action === "remove") {
           if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
           if (prefs.backupBeforeDestructive) exportList({ silent: true });
@@ -2291,7 +2300,7 @@
       });
     }
     dialog.dataset.itemId = id;
-    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p>${statusActions}<button type="button" data-sheet-action="edit"><i data-lucide="pencil"></i>Edit entry</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
+    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p>${statusActions}<button type="button" data-sheet-action="favorite"><i data-lucide="heart"></i>${item.favorite ? "Remove from favorites" : "Add to favorites"}</button><button type="button" data-sheet-action="edit"><i data-lucide="pencil"></i>Edit entry</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
   }
@@ -2649,7 +2658,14 @@
       const data = JSON.parse(await file.text()); const incoming = Array.isArray(data) ? data : data.items;
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
       const now = Date.now();
-      const normalized = incoming.filter(item => item && String(item.title || "").trim()).map(item => ({ ...item, id: crypto.randomUUID(), category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: now, updatedAt: now }));
+      const idMap = new Map();
+      const stamp = value => { const n = Number(value) || Date.parse(value) || 0; return n > 0 && n <= now ? n : now; };
+      const normalized = incoming.filter(item => item && String(item.title || "").trim()).map(item => {
+        const id = crypto.randomUUID();
+        if (item.id != null) idMap.set(String(item.id), id);
+        // Keep the backup's own dates so Timeline and Activity show when things really happened.
+        return { ...item, id, category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
+      });
       const known = new Set(items.map(importIdentity));
       const seen = new Set();
       const fresh = normalized.filter(item => {
@@ -2658,7 +2674,12 @@
         seen.add(identity);
         return true;
       });
-      importState = { ...importState, phase: "preview", incoming: normalized, fresh, skipped: normalized.length - fresh.length };
+      // Timeline/Activity read from history: use the backup's history (re-pointed at the new ids), or build it from statuses.
+      const freshIds = new Set(fresh.map(item => item.id));
+      const fileHistory = Array.isArray(data.history) ? data.history : [];
+      let importedHistory = fileHistory.filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
+      if (!importedHistory.length) importedHistory = fresh.filter(item => ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
+      importState = { ...importState, phase: "preview", incoming: normalized, fresh, importedHistory, skipped: normalized.length - fresh.length };
       render();
       if (prefs.restorePreview === false && fresh.length) continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not finish the restore."; render(); } });
     } catch (error) {
@@ -2690,6 +2711,7 @@
     render();
     await new Promise(resolve => requestAnimationFrame(resolve));
     items = [...fresh, ...items];
+    history = [...(importState.importedHistory || []), ...history].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0));
     await persist({ ids: fresh.map(item => item.id) });
     const count = fresh.length;
     importState = { ...importState, phase: "complete", completed: count, total: count };
@@ -2869,6 +2891,7 @@
     dashboardStatusFilter = prefs.dashboardStatusFilter = "all";
     prefs.dashboardLastStatus = "all";
     dashboardPlatformFilter = prefs.dashboardPlatformFilter = "all";
+    prefs.favoritesOnly = false;
     prefs.dashboardView = "list";
     prefs.dashboardSort = "alphabetical-asc";
     prefs.dashboardGroupBy = "status";
@@ -2956,6 +2979,9 @@
       }
       return;
     }
+    if (event.target.closest("[data-favorites-filter]")) { setPreference("favoritesOnly", !prefs.favoritesOnly); render(); return; }
+    const favoriteToggle = event.target.closest("[data-action=toggle-favorite]");
+    if (favoriteToggle) { toggleFavorite(favoriteToggle.dataset.id); return; }
     const quickStatus = event.target.closest("[data-quick-status]");
     if (quickStatus) { setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
     if (event.target.closest("[data-clear-dashboard-filters-home]")) { clearDashboardFilters(); return; }
@@ -3005,6 +3031,10 @@
     if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; statsActivityDate = ""; render(); return; }
     const activityDay = event.target.closest("[data-stats-activity-date]");
     if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; render(); return; }
+    const statsGroup = event.target.closest("[data-stats-group]");
+    if (statsGroup) { const score = statsGroup.dataset.statsGroup; const wasOpen = statsGroup.getAttribute("aria-expanded") === "true"; statsLimits = { ...statsLimits, open: { ...(statsLimits.open || {}), [score]: !wasOpen } }; render(); return; }
+    const statsMore = event.target.closest("[data-stats-more]");
+    if (statsMore) { const kind = statsMore.dataset.statsMore === "rated" ? "rated" : "quick"; statsLimits = { ...statsLimits, [kind]: statsLimits[kind] + (kind === "rated" ? 15 : 10) }; render(); return; }
     const statsRating = event.target.closest("[data-stats-rating]");
     if (statsRating) {
       const item = itemById(String(statsRating.dataset.statsRating));
@@ -3467,6 +3497,12 @@
   });
   window.addEventListener("popstate", syncRouteFromHash);
   // Android hardware back: close an open sheet, then step back through pages, then leave the app from Home.
+  // Show the version that is actually installed (from the APK), not the one baked into app-config.js.
+  window.Capacitor?.Plugins?.App?.getInfo?.().then(info => {
+    if (!info?.version) return;
+    window.APP_INSTALLED_VERSION = info.version;
+    if (page === "settings" && settingsGroup === "app-info") render();
+  }).catch(() => {});
   window.Capacitor?.Plugins?.App?.addListener?.("backButton", () => {
     const openDialog = document.querySelector("dialog[open]");
     if (openDialog) { closePopup(openDialog); return; }
