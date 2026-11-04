@@ -8,6 +8,9 @@
   const norm = title => String(title || "").toLowerCase().replace(/[™®©]/g, "").replace(/[^a-z0-9]+/g, " ").replace(/^the /, "").trim();
   const yearOf = value => String(value || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
   const SOURCE_GRACE_MS = 4000;
+  // Background sync (e.g. after Import List) has no one waiting, so give slower sources such as
+  // HowLongToBeat time to answer; a short grace dropped them and left only the first (Steam) data.
+  const BACKGROUND_GRACE_MS = 14000;
   const withTimeout = (promise, ms = 15000) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out")), ms))]);
 
   // Session memo with in-flight sharing. Mix fetch asks every source about the same title,
@@ -76,7 +79,7 @@
     const entries = await new Promise(resolve => {
       const ok = []; let pending = tasks.length, timer = 0, finished = false;
       const finish = () => { if (finished) return; finished = true; clearTimeout(timer); resolve(ok.slice().sort((a, b) => a.order - b.order)); };
-      tasks.forEach(task => task.then(entry => { ok.push(entry); if (!timer && !finished) timer = setTimeout(finish, SOURCE_GRACE_MS); }, () => {}).finally(() => { if (--pending === 0) finish(); }));
+      tasks.forEach(task => task.then(entry => { ok.push(entry); if (!timer && !finished) timer = setTimeout(finish, settings.background ? BACKGROUND_GRACE_MS : SOURCE_GRACE_MS); }, () => {}).finally(() => { if (--pending === 0) finish(); }));
     });
     if (!entries.length) throw new Error(`No enabled source had details for “${title}”.`);
     // Background sync merges in the data worker so the page stays responsive.
