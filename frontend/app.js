@@ -21,7 +21,7 @@
     metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg", "igdb"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1, humanReadableStats: false, currencyDisplay: "USD", usdToInrRate: 94.8,
-    backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30, backupPasswordReminder: true, maximumBackupSize: 1000, validateBackupLocation: true, restorePreview: true,
+    backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30, restorePreview: true,
     metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false, igdb: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
     imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
@@ -133,16 +133,33 @@
     const flatten = value => Array.isArray(value) ? value.map(flatten).join(" ") : value && typeof value === "object" ? Object.values(value).map(flatten).join(" ") : String(value || "");
     return flatten(raw).toLowerCase();
   }
+  // Platform buckets are computed once per item (cached by the identity of the data they derive from),
+  // so filtering/counting 1500+ games does not re-run regexes on every render.
+  const platformMaskCache = new WeakMap();
+  const PLATFORM_BITS = { pc: 1, mac: 2, mobile: 4, xbox: 8, playstation: 16, nintendo: 32 };
+  function itemPlatformMask(item) {
+    const cached = platformMaskCache.get(item);
+    if (cached && cached.facts === item.facts && cached.details === item.cachedDetails) return cached.mask;
+    const value = itemPlatformText(item);
+    let mask = 0;
+    if (value) {
+      if (/\bpc\b|windows|linux|steam deck/.test(value)) mask |= PLATFORM_BITS.pc;
+      if (/macos?|macintosh|os x/.test(value)) mask |= PLATFORM_BITS.mac;
+      if (/android|ios|iphone|ipad|mobile|\bphone\b|tablet/.test(value)) mask |= PLATFORM_BITS.mobile;
+      if (/xbox/.test(value)) mask |= PLATFORM_BITS.xbox;
+      if (/playstation|\bps[1-5]\b/.test(value)) mask |= PLATFORM_BITS.playstation;
+      if (/nintendo|switch|\bwii\b|\bds\b/.test(value)) mask |= PLATFORM_BITS.nintendo;
+    } else if (/steam/i.test(`${item.metadataSource || ""} ${item.facts?.source || ""} ${(item.mixSourceKeys || []).join(" ")} ${item.url || ""}`) || item.steamAppId || item.appId) {
+      // Steam-library games often carry no platform field; they are PC games.
+      mask = PLATFORM_BITS.pc;
+    }
+    platformMaskCache.set(item, { facts: item.facts, details: item.cachedDetails, mask });
+    return mask;
+  }
   function matchesPlatform(item, filter = dashboardPlatformFilter) {
     if (!filter || filter === "all") return true;
-    const value = itemPlatformText(item);
-    if (filter === "pc") return /\bpc\b|windows|linux|steam deck/.test(value);
-    if (filter === "mac") return /macos?|macintosh|os x/.test(value);
-    if (filter === "mobile") return /android|ios|iphone|ipad|mobile|\bphone\b|tablet/.test(value);
-    if (filter === "xbox") return /xbox/.test(value);
-    if (filter === "playstation") return /playstation|\bps[1-5]\b/.test(value);
-    if (filter === "nintendo") return /nintendo|switch|\bwii\b|\bds\b/.test(value);
-    return true;
+    const bit = PLATFORM_BITS[filter];
+    return bit ? Boolean(itemPlatformMask(item) & bit) : true;
   }
   function normalizeDashboardView() {
     const legacyDashboardViews = { cards: "detailed-grid", grid: "detailed-grid", "compact-list": "list", timeline: "list" };
@@ -421,7 +438,7 @@
     page = nextPage in titles ? nextPage : "dashboard";
     statsSubpage = page === "statistics" && statsSections.includes(nextSection) ? normalizeStatsSection(nextSection) : "";
     if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverRequestId++; discoverCache = null; }
-    if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; }
+    if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
     if (page !== "settings") settingsGroup = null;
     if (updateHistory) historyPush();
     document.body.dataset.navDir = "forward";
@@ -468,10 +485,22 @@
     return new URL(control.getAttribute("href") || "#dashboard", location.href).hash;
   }
 
+  // Cheap size estimate (sampled) instead of serialising the whole library on every Settings render.
+  let libraryBytesCache = { key: "", value: 0 };
+  function estimateLibraryBytes() {
+    const key = `${localMutationRevision}|${items.length}`;
+    if (libraryBytesCache.key === key) return libraryBytesCache.value;
+    const step = Math.max(1, Math.floor(items.length / 40));
+    let sampled = 0, bytes = 0;
+    for (let index = 0; index < items.length; index += step) { bytes += JSON.stringify(items[index]).length; sampled++; }
+    const value = Math.round((sampled ? bytes / sampled * items.length : 0) + JSON.stringify(history).length + JSON.stringify(prefs).length);
+    libraryBytesCache = { key, value };
+    return value;
+  }
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
@@ -626,15 +655,88 @@
     else if (image.matches("[data-timeline-art]")) showTimelineArtworkPlaceholder(image);
     else { image.hidden = true; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
   }
+  // Device artwork cache (IndexedDB blobs). Order for every cover: cache -> online (instant, HTTP-cached)
+  // -> saved-folder files. The slow Android folder (SAF) is only used to fill the cache in the
+  // background, never in front of what the user is looking at.
+  const thumbUrlCache = new Map(); // key -> blob: URL
+  const thumbKeyOf = (item, landscape) => `${item.id}:${landscape ? "l" : "p"}`;
+  const thumbSigOf = item => String(item.localImageFingerprint || item.thumbnailPath || "");
+  async function cachedThumbUrls(entries) {
+    const found = new Map();
+    const need = [];
+    entries.forEach(([key, sig]) => { const url = thumbUrlCache.get(`${key}|${sig}`); if (url) found.set(key, url); else need.push([key, sig]); });
+    if (need.length && window.SplitAppIDB?.getThumbs) {
+      try {
+        const sigByKey = new Map(need);
+        (await window.SplitAppIDB.getThumbs(need)).forEach(([key, blob]) => {
+          const url = URL.createObjectURL(blob);
+          thumbUrlCache.set(`${key}|${sigByKey.get(key)}`, url);
+          found.set(key, url);
+        });
+      } catch (_) {}
+    }
+    return found;
+  }
+  // fetch() decodes data: URLs natively (off the JS thread); the old atob loop blocked the UI for every cover.
+  async function dataUrlToBlob(dataUrl) {
+    if (!/^data:[^;,]+;base64,/i.test(dataUrl || "")) return null;
+    try { return await (await fetch(dataUrl)).blob(); } catch (_) { return null; }
+  }
+  async function cacheThumbFromItem(item, source) {
+    const blob = await dataUrlToBlob(source);
+    if (blob && window.SplitAppIDB?.putThumbs) { try { await window.SplitAppIDB.putThumbs([[thumbKeyOf(item, false), thumbSigOf(item), blob]]); } catch (_) {} }
+  }
+  // Background: copy covers from the saved folder into the cache a few at a time (portrait only).
+  let thumbFillRunning = false;
+  async function fillThumbCache() {
+    if (thumbFillRunning || !nativeAndroid || !window.SplitAppIDB?.listThumbKeys) return;
+    const hydrate = window.SplitAppBackend?.hydrateThumbnails;
+    if (typeof hydrate !== "function") return;
+    thumbFillRunning = true;
+    try {
+      const have = new Map(await window.SplitAppIDB.listThumbKeys());
+      const missing = items.filter(item => item.thumbnailPath && have.get(thumbKeyOf(item, false)) !== thumbSigOf(item));
+      for (let offset = 0; offset < missing.length; offset += 12) {
+        // Background work: wait while the app is hidden and for idle moments, so taps and scrolling always win.
+        while (document.hidden) await new Promise(resolve => setTimeout(resolve, 3000));
+        await yieldToUser();
+        const clones = missing.slice(offset, offset + 12).map(item => ({ ...item, localPortraitData: "", localThumbnailData: "", localLandscapeData: "", backdrop: "", cachedDetails: undefined, localImageFiles: undefined }));
+        try { await hydrate(clones); } catch (_) {}
+        const entries = [];
+        for (let index = 0; index < clones.length; index++) {
+          const blob = await dataUrlToBlob(clones[index].localPortraitData || clones[index].localThumbnailData);
+          const original = missing[offset + index];
+          if (blob) entries.push([thumbKeyOf(original, false), thumbSigOf(original), blob]);
+        }
+        if (entries.length) { try { await window.SplitAppIDB.putThumbs(entries); } catch (_) {} }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    } finally { thumbFillRunning = false; }
+  }
   async function drainDeferredLocalImages() {
     if (deferredImageDrain) return deferredImageDrain;
     deferredImageDrain = (async () => {
       const hydrate = window.SplitAppBackend?.hydrateThumbnails;
       while (deferredLocalImageQueue.length) {
-        const batch = deferredLocalImageQueue.splice(0, 8);
-        try { if (typeof hydrate === "function") await hydrate(batch.map(record => record.item)); }
-        catch (error) { recordLog("warning", `Could not load saved artwork: ${error?.message || error}`); }
+        const batch = deferredLocalImageQueue.splice(0, 24);
+        const modeOf = record => record.images.values().next().value?.dataset.localImageMode === "landscape";
+        const cached = await cachedThumbUrls(batch.filter(record => !modeOf(record)).map(record => [thumbKeyOf(record.item, false), thumbSigOf(record.item)]));
+        const slow = [];
         for (const record of batch) {
+          const landscape = modeOf(record);
+          const hit = !landscape && cached.get(thumbKeyOf(record.item, false));
+          if (hit) { record.images.forEach(image => setDeferredImageSource(image, hit)); }
+          else if (/^https?:/i.test(record.fallback || "") && !landscape) {
+            // Not cached yet: show the online cover straight away instead of waiting on the slow folder.
+            record.images.forEach(image => setDeferredImageSource(image, record.fallback));
+          } else { slow.push(record); continue; }
+          timelineLocalThumbnailChecked.add(record.id);
+          deferredLocalImageRequests.delete(record.id);
+        }
+        if (!slow.length) continue;
+        try { if (typeof hydrate === "function") await hydrate(slow.map(record => record.item)); }
+        catch (error) { recordLog("warning", `Could not load saved artwork: ${error?.message || error}`); }
+        for (const record of slow) {
           timelineLocalThumbnailChecked.add(record.id);
           record.images.forEach(image => {
             const source = image.dataset.localImageMode === "landscape"
@@ -642,6 +744,8 @@
               : record.item.localPortraitData || record.item.localThumbnailData || record.fallback;
             setDeferredImageSource(image, source);
           });
+          const portrait = record.item.localPortraitData || record.item.localThumbnailData;
+          if (portrait) cacheThumbFromItem(record.item, portrait);
           deferredLocalImageRequests.delete(record.id);
         }
       }
@@ -662,6 +766,10 @@
       timelineLocalThumbnailChecked.add(id);
       setDeferredImageSource(image, localImage || deferredImageSource(image));
       return;
+    }
+    if (!landscape) {
+      const warm = thumbUrlCache.get(`${thumbKeyOf(item, false)}|${thumbSigOf(item)}`);
+      if (warm) { setDeferredImageSource(image, warm); return; }
     }
     const record = { id, item, fallback: deferredImageSource(image), images: new Set([image]) };
     deferredLocalImageRequests.set(id, record);
@@ -1204,22 +1312,45 @@
     const target = $("#storage-cache-breakdown");
     if (!target) return;
     const prefix = `splitapp_${config.key}`;
+    const snapshotKey = `${prefix}_storage_snapshot_v1`;
+    try { const snap = JSON.parse(localStorage.getItem(snapshotKey) || "null"); if (snap?.html) { target.innerHTML = snap.html; const node = $("#storage-total"); if (node && snap.total) node.textContent = snap.total; } } catch (_) {}
     try {
       const names = (await window.caches?.keys?.() || []).filter(name => name.startsWith(prefix));
       const totals = { metadata: 0, images: 0, other: 0 };
+      // Per-cache sizes are remembered with a cheap signature (entry count + first/last URL), so an unchanged
+      // cache costs one keys() call. Changed caches are measured in small slices that yield to the UI and stop
+      // as soon as the page is left, so this never competes with scrolling or navigation.
+      const sizesKey = `${prefix}_cache_sizes_v1`;
+      let known = {}; try { known = JSON.parse(localStorage.getItem(sizesKey) || "{}") || {}; } catch (_) {}
+      const next = {};
+      const alive = () => Boolean($("#storage-cache-breakdown")?.isConnected) && page === "settings";
       for (const name of names) {
+        if (!alive()) return;
         const bucket = name.includes("image") ? "images" : name.includes("metadata") ? "metadata" : "other";
         const cache = await window.caches.open(name);
-        for (const request of await cache.keys()) {
-          try { const response = await cache.match(request); if (response) totals[bucket] += (await response.clone().blob()).size; } catch (_) {}
+        const requests = await cache.keys();
+        const sig = `${requests.length}|${requests[0]?.url || ""}|${requests[requests.length - 1]?.url || ""}`;
+        if (known[name]?.sig === sig) { next[name] = known[name]; totals[bucket] += known[name].bytes; continue; }
+        let bytes = 0;
+        for (let offset = 0; offset < requests.length; offset += 16) {
+          if (!alive()) return;
+          const sizes = await Promise.all(requests.slice(offset, offset + 16).map(async request => {
+            const response = await cache.match(request);
+            return Number(response?.headers.get("content-length")) || (response ? (await response.blob()).size : 0);
+          }));
+          bytes += sizes.reduce((sum, size) => sum + size, 0);
+          await yieldToUser();
         }
+        next[name] = { sig, bytes }; totals[bucket] += bytes;
       }
+      try { localStorage.setItem(sizesKey, JSON.stringify(next)); } catch (_) {}
       if (!$("#storage-cache-breakdown")) return;
       const format = bytes => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-      const libraryBytes = new Blob([JSON.stringify({ items, history, preferences: prefs })]).size;
+      const libraryBytes = estimateLibraryBytes();
       const total = libraryBytes + totals.metadata + totals.images + totals.other;
       const totalNode = $("#storage-total"); if (totalNode) totalNode.textContent = format(total);
       target.innerHTML = `<div class="storage-breakdown-row"><span>Metadata responses</span><strong>${format(totals.metadata)}</strong></div><div class="storage-breakdown-row"><span>Images and artwork</span><strong>${format(totals.images)}</strong></div>${totals.other ? `<div class="storage-breakdown-row"><span>Other app cache</span><strong>${format(totals.other)}</strong></div>` : ""}`;
+      try { localStorage.setItem(snapshotKey, JSON.stringify({ html: target.innerHTML, total: format(total) })); } catch (_) {}
     } catch (_) {
       if (target.isConnected) target.innerHTML = '<div class="storage-breakdown-row"><span>Cache usage</span><strong>Not available in this browser</strong></div>';
     }
@@ -1239,7 +1370,12 @@
       const label = status.querySelector(".backup-folder-location") || status;
       label.textContent = message;
     };
-    show("Checking folder access and database…", "checking");
+    // Show the last known result straight away; the (slow, queued) storage check only refreshes it.
+    const statusCacheKey = `${config.key}_folder_status_v1`;
+    let cachedStatus = null;
+    try { cachedStatus = JSON.parse(localStorage.getItem(statusCacheKey) || "null"); } catch (_) {}
+    if (cachedStatus?.message) { show(cachedStatus.message, cachedStatus.state); if (checkButton) checkButton.disabled = !folderAvailable; if (chooseButton) chooseButton.disabled = !folderAvailable; }
+    else show("Checking folder access and database…", "checking");
     try {
       const result = await window.SplitAppBackend.inspectFolder();
       if (!status.isConnected) return;
@@ -1248,6 +1384,7 @@
       else if (!result.valid) show("Folder access is unavailable. Choose the folder again.", "invalid");
       else if (result.databaseExists) show("Database found. This folder is ready and synced.", "ready");
       else show("Folder is available. SavePoint will create its database here.", "empty");
+      try { if (result.configured && result.valid) localStorage.setItem(statusCacheKey, JSON.stringify({ message: status.querySelector(".backup-folder-location")?.textContent || status.textContent, state: status.dataset.state })); else localStorage.removeItem(statusCacheKey); } catch (_) {}
     } catch (error) {
       show(`Could not check folder: ${error.message || error}`, "error");
     } finally {
@@ -1374,7 +1511,7 @@
     const message = $("#add-metadata-message"), box = $("#add-metadata-results");
     if (!query) { message.textContent = "Enter a game title to search."; return; }
     if (prefs.metadataMode === "offline" || !navigator.onLine) { message.textContent = prefs.metadataMode === "offline" ? "Online metadata is disabled in Settings." : "Reconnect to search metadata sources."; return; }
-    message.textContent = "Searching enabled sources…"; box.innerHTML = "";
+    message.textContent = "Searching enabled sources…"; box.innerHTML = ""; box.hidden = false;
     try {
       const results = await discoverSearch(query, config.categories[0].key);
       if (requestId !== addMetadataRequestId || page !== "add") return;
@@ -1407,6 +1544,9 @@
     const preview = $("[data-add-image-preview]");
     if (preview && result.image && !hasLocalImage) { preview.src = result.image; preview.hidden = false; const placeholder = $("[data-add-image-placeholder]"); if (placeholder) placeholder.hidden = true; }
     const message = $("#add-metadata-message");
+    // The match is applied: collapse the result list (searching again reopens it).
+    box.innerHTML = ""; box._results = null; box.hidden = true;
+    const queryInput = $("#add-metadata-query"); if (queryInput) queryInput.value = result.title || queryInput.value;
     message.textContent = `Selected ${result.source} · ${result.title}. Loading available details…`;
     if (!result.providerId || !window.SplitAppDetails?.load) { message.textContent = `Selected ${result.source} · ${result.title}`; return; }
     try {
@@ -1480,7 +1620,7 @@
   }
   function finishDeletingItem(id, returnPage) {
     const exists = id != null && items.some(entry => String(entry.id) === String(id));
-    if (exists && prefs.backupBeforeDestructive) exportList();
+    if (exists && prefs.backupBeforeDestructive) exportList({ silent: true });
     if (exists) items = items.filter(entry => String(entry.id) !== String(id));
     const requestedPage = returnPage === "details" ? detailReturnPage : returnPage;
     const destination = requestedPage && requestedPage !== "details" && requestedPage in titles ? requestedPage : "dashboard";
@@ -1501,7 +1641,8 @@
     if (!(await appConfirm(`Delete “${item.title}” from your library?`, { title: "Delete title", confirmLabel: "Delete", danger: true }))) return;
     finishDeletingItem(id, addReturnPage);
   }
-  function openEdit(id) { const item = itemById(id); if (item) openItem(item); }
+  // ⋮ → Edit entry opens the game's details page in edit mode (same as its Edit button).
+  function openEdit(id) { if (itemById(id)) openDetails(id, true); }
   async function saveDetailEdit(event) {
     event.preventDefault();
     const item = itemById(detailItemId);
@@ -2139,11 +2280,12 @@
           openDetails(target.id);
           return;
         }
-        closePopup(dialog);
+        // Editing navigates to another page; keep the sheet's history entry so closing it cannot undo that navigation.
+        closePopup(dialog, { preserveHistory: action === "edit" });
         if (action === "edit") openEdit(target.id);
         else if (action === "remove") {
           if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
-          if (prefs.backupBeforeDestructive) exportList();
+          if (prefs.backupBeforeDestructive) exportList({ silent: true });
           items = items.filter(entry => entry.id !== target.id); persist({ removed: [target.id] }); render(); toast("Entry removed.");
         } else if (action !== "cancel") { if (await setItemStatus(target, action)) { render(); toast(`Marked as ${action}.`); } }
       });
@@ -2153,7 +2295,7 @@
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
   }
-  function openDetails(id) { detailTab = ""; detailReturnPage = page === "details" ? detailReturnPage : page; detailPreview = null; detailEditMode = false; detailItemId = id; detailData = null; detailError = ""; goto("details"); loadDetails(); }
+  function openDetails(id, edit = false) { detailTab = ""; detailReturnPage = page === "details" ? detailReturnPage : page; detailPreview = null; detailEditMode = edit; detailItemId = id; detailData = null; detailError = ""; goto("details"); loadDetails(); }
   function openDiscoverDetails(result) { if (!result) return; detailTab = ""; detailReturnPage = "discover"; detailPreview = { ...result, metadataSource: result.source }; detailEditMode = false; detailItemId = null; detailData = null; detailError = ""; goto("details"); loadDetails(); }
   function showDetailImage(position) {
     const dialog = $("#detail-image-modal");
@@ -2309,6 +2451,12 @@
 
 
   function setPreference(key, value) {
+    if (key === "currencyRate") {
+      const code = window.SplitAppCurrency?.target(prefs) || "USD", rate = Number(value);
+      if (code !== "USD" && rate > 0) { prefs.currencyRates = { ...(prefs.currencyRates || {}), [code]: rate }; if (code === "INR") prefs.usdToInrRate = rate; }
+      persist({ meta: true }); render();
+      return;
+    }
     prefs[key] = value;
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
     persist({ meta: true }); applyPreferences();
@@ -2419,7 +2567,8 @@
       } else {
         preview = document.createElement("span"); preview.className = "setting-option-preview";
         const icon = settingPreviewIcons[key]?.[option.value];
-        if (icon) preview.innerHTML = `<i data-lucide="${icon}" aria-hidden="true"></i>`;
+        if (key === "currencyDisplay") { preview.classList.add("setting-currency-preview"); preview.textContent = window.SplitAppCurrency?.symbol(option.value) || option.value; }
+        else if (icon) preview.innerHTML = `<i data-lucide="${icon}" aria-hidden="true"></i>`;
         else preview.textContent = "•";
       }
       const copy = document.createElement("span"); copy.className = "setting-picker-copy";
@@ -2460,9 +2609,32 @@
     list.appendChild(save);
     showPopup(dialog);
   }
-  function exportList() {
-    const blob = new Blob([JSON.stringify({ app: config.name, version: 1, exportedAt: new Date().toISOString(), items, history, preferences: prefs }, null, 2)], { type: "application/json" });
-    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); toast("Export ready.");
+  // Native: stream the library in small chunks to a file the user picks with Android's "Save as" screen
+  // (silent: straight into the backup folder, used before destructive actions). Browsers get a normal download.
+  let exportRunning = false;
+  async function exportList({ silent = false } = {}) {
+    if (exportRunning) { toast("An export is already running."); return; }
+    const backend = window.SplitAppBackend;
+    if (nativeAndroid && backend?.exportLibrary) {
+      exportRunning = true;
+      let lastToast = 0;
+      try {
+        if (!silent) toast("Choose where to save your library…");
+        const result = await backend.exportLibrary({ items, history, preferences: prefs }, { mode: silent ? "folder" : "ask", onProgress: (done, total) => {
+          if (Date.now() - lastToast > 700 && done < total) { lastToast = Date.now(); toast(`Exporting… ${Math.round(done / total * 100)}%`); }
+        } });
+        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} games.`);
+      } catch (error) {
+        const message = String(error?.message || error);
+        if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Export failed: ${message}`); }
+      } finally { exportRunning = false; }
+      return;
+    }
+    const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const parts = [`{"app":${JSON.stringify(config.name)},"version":1,"exportedAt":${JSON.stringify(new Date().toISOString())},"items":[`];
+    items.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(item)));
+    parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
+    const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(parts, { type: "application/json" })); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); toast("Export ready.");
   }
   function importIdentity(item) {
     const title = String(item?.title || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -2488,6 +2660,7 @@
       });
       importState = { ...importState, phase: "preview", incoming: normalized, fresh, skipped: normalized.length - fresh.length };
       render();
+      if (prefs.restorePreview === false && fresh.length) continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not finish the restore."; render(); } });
     } catch (error) {
       importState = { ...importState, phase: "error", error: error.message || "Could not import this file." };
       render();
@@ -3261,7 +3434,8 @@
     const previousPage = page;
     if (previousPage === "details" && next !== "details") { detailRequest++; detailLoading = false; }
     if (next !== "discover") { discoverQuery = ""; discoverRequestId++; }
-    if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; }
+    if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
+    else if (previousPage !== "add") { entryDraftId = null; addMetadataQuery = ""; } // opening Add from a link/back is a new entry
     const previousDiscoverSource = discoverSource;
     discoverSource = next === "discover" ? new URLSearchParams(hashQuery).get("source") || "" : "";
     page = next; settingsGroup = next === "settings" ? (route[1] === "manage-backups" ? "backups" : route[1] || null) : null;
@@ -3308,13 +3482,20 @@
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPersist(); });
   window.addEventListener("error", event => recordLog("error", event.message || "Unknown page error"));
   window.addEventListener("unhandledrejection", event => recordLog("error", event.reason?.message || event.reason || "Unhandled promise rejection"));
-  async function restoreNativeData() {
+  async function restoreNativeData({ fast = false } = {}) {
     if (!window.SplitAppBackend?.load) return;
     const initialRevision = localMutationRevision;
     const initialItems = new Map(items.map(item => [String(item.id), JSON.stringify(item)]));
     const initialPreferences = JSON.parse(JSON.stringify(prefs));
     try {
-      const restored = await window.SplitAppBackend.load();
+      const restored = await window.SplitAppBackend.load({ fast });
+      if (!restored) return null; // nothing stored locally: caller runs the full restore
+      // Runtime-only artwork already loaded for the visible list survives the library swap.
+      const runtimeArt = new Map(items.filter(item => item.localPortraitData || item.localThumbnailData || item.localLandscapeData).map(item => [String(item.id), item]));
+      if (runtimeArt.size && Array.isArray(restored.items)) restored.items.forEach(item => {
+        const old = runtimeArt.get(String(item.id));
+        if (old) { item.localPortraitData = old.localPortraitData; item.localThumbnailData = old.localThumbnailData; item.localLandscapeData = old.localLandscapeData; }
+      });
       const nativeItems = Array.isArray(restored.items) ? restored.items.filter(item => config.categories.some(category => category.key === item.category)) : items;
       const nativeHistory = Array.isArray(restored.history) ? restored.history : history;
       const nativePreferences = restored.preferences && typeof restored.preferences === "object" ? restored.preferences : {};
@@ -3346,7 +3527,7 @@
       delete prefs.appDisplayName;
       refreshSourceRegistry();
       normalizeNavigationPrefs();
-      await window.SplitAppBackend.save({ items, history, preferences: prefs });
+      if (!restored.fast) await window.SplitAppBackend.save({ items, history, preferences: prefs });
       return true;
     } catch (error) {
       recordLog("error", `App data restore failed: ${error.message || error}`);
@@ -3378,7 +3559,7 @@
   if (page === "details" && detailItemId) loadDetails();
   // Keep the splash until the saved library is loaded (never longer than 1.5s, so a storage-folder prompt stays reachable).
   setTimeout(() => window.SavePointSplash?.ready?.(), 1500);
-  restoreNativeData().finally(() => requestAnimationFrame(() => window.SavePointSplash?.ready?.())).then(success => {
+  const finishStartup = success => {
     if (!success) {
       if (nativeFolderStorage && storageFolderGate) storageFolderGate.hidden = false;
       else {
@@ -3392,5 +3573,25 @@
     const redirectedFromMissingDetail = redirectHomeIfDetailMissing();
     applyPreferences(); render(); syncBackupSchedule();
     if (!redirectedFromMissingDetail && page === "details" && detailItemId && !detailPreview) loadDetails();
+  };
+  // Phase 1: paint the library straight from IndexedDB (instant). Phase 2: reconcile with the
+  // saved folder / encrypted store in the background and fill the artwork cache.
+  restoreNativeData({ fast: true }).then(async fastResult => {
+    if (fastResult === true) {
+      requestAnimationFrame(() => window.SavePointSplash?.ready?.());
+      finishStartup(true);
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      const libraryStamp = () => `${items.length}:${items.reduce((sum, item) => sum + (Number(item.updatedAt) || 0), 0)}`;
+      const before = libraryStamp();
+      const full = await restoreNativeData();
+      if (full === false) finishStartup(false);
+      else if (full && libraryStamp() !== before) { applyPreferences(); render(); } // keep scroll position when nothing changed
+      setTimeout(fillThumbCache, 1500);
+      return;
+    }
+    const full = await restoreNativeData();
+    requestAnimationFrame(() => window.SavePointSplash?.ready?.());
+    finishStartup(full);
+    setTimeout(fillThumbCache, 3000);
   });
 })();
