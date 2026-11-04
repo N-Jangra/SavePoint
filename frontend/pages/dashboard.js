@@ -2,22 +2,31 @@
 (() => {
   window.SplitAppPages = window.SplitAppPages || {};
   window.SplitAppPages.dashboard = context => {
-    const { config, esc, items, libraryQuery, dashboardStatusFilter = "all", prefs, labelCategory } = context;
-    const { dashboardItems, card, listOrEmpty } = window.SplitAppLibrary.create(context);
-    const pageSize = 24;
+    const { config, esc, items, activeCategory, libraryQuery, dashboardStatusFilter = "all", dashboardPlatformFilter = "all", dashboardPageSize = 12, nativeAndroid = false, prefs, labelCategory } = context;
+    const matchesPlatform = typeof context.matchesPlatform === "function" ? context.matchesPlatform : () => true;
+    const { dashboardItems, card, listOrEmpty, countItems } = window.SplitAppLibrary.create(context);
+    const pageSize = dashboardPageSize;
     const view = prefs.dashboardView || "list";
     const gridViews = new Set(["grid", "detailed-grid", "compact-grid", "large-grid"]);
     const listClass = gridViews.has(view) ? "item-grid" : "item-list";
     const statusOrder = ["Playing", "Backlog", "Completed", "On Hold", "Dropped"];
     const statuses = [...statusOrder.filter(status => config.categories[0]?.statuses?.includes(status)), ...(config.categories[0]?.statuses || []).filter(status => !statusOrder.includes(status))];
+    const collectionItems = items.filter(item => (activeCategory === "all" || item.category === activeCategory) && matchesPlatform(item));
+    const statusCounts = collectionItems.reduce((counts, item) => {
+      counts[item.status] = (counts[item.status] || 0) + 1;
+      return counts;
+    }, Object.create(null));
+    const allCount = collectionItems.length;
+    const statusCount = status => statusCounts[status] || 0;
+    const visibleGames = (context.dashboardSortedItems || dashboardItems(null, libraryQuery)).filter(item => matchesPlatform(item));
     const grouped = [];
     if ((prefs.dashboardGroupBy || "status") === "status") {
       statuses.filter(status => dashboardStatusFilter === "all" || status === dashboardStatusFilter).forEach(status => {
-        const games = dashboardItems(status, libraryQuery);
+        const games = visibleGames.filter(item => item.status === status);
         if (games.length) grouped.push({ key: status, title: status, games });
       });
     } else {
-      let games = dashboardItems(null, libraryQuery);
+      let games = visibleGames;
       if (dashboardStatusFilter !== "all") games = games.filter(item => item.status === dashboardStatusFilter);
       if (prefs.dashboardGroupBy === "none") {
         if (games.length) grouped.push({ key: "all-games", title: "All games", games });
@@ -33,12 +42,26 @@
         entries.forEach(([key, entries]) => grouped.push({ key, title: prefs.dashboardGroupBy === "category" ? labelCategory(key) : key, games: entries }));
       }
     }
-    const allCount = dashboardItems(null, "").length;
     const total = grouped.reduce((sum, group) => sum + group.games.length, 0);
+    const initialCounts = grouped.map(() => 0);
+    let initialBudget = Math.min(nativeAndroid ? 16 : 24, total);
+    while (initialBudget > 0) {
+      let advanced = false;
+      for (let index = 0; index < grouped.length && initialBudget > 0; index++) {
+        if (initialCounts[index] >= Math.min(pageSize, grouped[index].games.length)) continue;
+        initialCounts[index]++;
+        initialBudget--;
+        advanced = true;
+      }
+      if (!advanced) break;
+    }
     const groups = grouped.map(group => {
-      const visibleGames = group.games.slice(0, pageSize);
+      const groupIndex = grouped.indexOf(group);
+      const restored = Math.min(group.games.length, 400, Number(context.dashboardRendered?.[group.key]) || 0);
+      const initialCount = Math.max(initialCounts[groupIndex], restored);
+      const visibleGames = group.games.slice(0, initialCount);
       const safeKey = esc(group.key);
-      return `<section class="library-group dashboard-status-group" data-dashboard-status-group="${safeKey}"><h2>${esc(group.title)} <span>${group.games.length}</span></h2><div class="${listClass}" data-dashboard-items="${safeKey}" data-total-count="${group.games.length}" data-rendered-count="${visibleGames.length}">${visibleGames.map(card).join("")}</div>${group.games.length > pageSize ? `<button type="button" class="dashboard-load-more" data-dashboard-load-more="${safeKey}" data-offset="${pageSize}" aria-label="Load more ${esc(group.title)} games">Load more · ${group.games.length - pageSize} remaining</button>` : ""}</section>`;
+      return `<section class="library-group dashboard-status-group" data-dashboard-status-group="${safeKey}"><h2>${esc(group.title)} <span>${group.games.length}</span></h2><div class="${listClass}" data-dashboard-items="${safeKey}" data-total-count="${group.games.length}" data-rendered-count="${visibleGames.length}">${visibleGames.map(card).join("")}</div>${group.games.length > initialCount ? `<button type="button" class="dashboard-load-more" data-dashboard-load-more="${safeKey}" data-offset="${initialCount}" aria-label="Load more ${esc(group.title)} games">Load more · ${group.games.length - initialCount} remaining</button>` : ""}</section>`;
     }).join("");
     const views = [["list", "List"], ["detailed-grid", "Detailed grid"], ["compact-grid", "Compact grid"], ["large-grid", "Large poster grid"]];
     
@@ -50,17 +73,15 @@
     const emptyResults = libraryQuery
       ? listOrEmpty([], "No matching games found.", "Try another title or clear your search.")
       : dashboardStatusFilter !== "all"
-        ? `<div class="dashboard-filter-empty"><strong>No ${esc(dashboardStatusFilter.toLowerCase())} games yet</strong><p>Choose another status or show your full collection.</p><button type="button" class="button secondary small" data-quick-status="all">Show all games</button></div>`
+        ? `<div class="dashboard-filter-empty"><strong>No ${esc(dashboardStatusFilter.toLowerCase())} games yet</strong><p>Choose another status or adjust your filters.</p></div>`
         : items.length
           ? listOrEmpty([], "No games to show.", "Try a different category or adjust your filters.")
           : `<div class="dashboard-empty-state"><span class="dashboard-empty-icon"><i data-lucide="gamepad-2" aria-hidden="true"></i></span><h2>Start your game collection</h2><p>Add a game you own, or explore connected sources to find something new.</p><div class="dashboard-empty-actions"><a class="button primary" href="#add"><i data-lucide="plus" aria-hidden="true"></i> Add a game</a><a class="button secondary" href="#discover"><i data-lucide="compass" aria-hidden="true"></i> Discover games</a></div></div>`;
-    const statusCount = status => dashboardItems(status, "").length;
     const sortLabel = sortList.find(([key]) => key === prefs.dashboardSort)?.[1] || "Recently updated";
     const viewLabel = views.find(([key]) => key === view)?.[1] || "List";
-    const homeViewLabel = gridViews.has(view) ? "Grid" : "List";
     const groupLabel = groupList.find(([key]) => key === (prefs.dashboardGroupBy || "status"))?.[1] || "Status";
     const statusOptions = [["all", "All statuses"], ...statuses.map(status => [status, status])];
-    const filteredStatusCount = status => dashboardItems(status === "all" ? null : status, libraryQuery).length;
+    const filteredStatusCount = status => countItems(status === "all" ? null : status, libraryQuery, matchesPlatform);
     const sortIcons = { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "rating-desc": "star", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-wide-narrow", "alphabetical-desc": "arrow-up-wide-narrow" };
     const sortPills = `<div class="ios-pills dashboard-sort-grid"><input type="hidden" name="sort" value="${esc(prefs.dashboardSort)}">${sortList.map(([key, label]) => `<button type="button" class="dashboard-sort-option${prefs.dashboardSort === key ? " active" : ""}" data-pill-name="sort" data-pill-value="${esc(key)}" aria-pressed="${prefs.dashboardSort === key}"><i data-lucide="${sortIcons[key]}" aria-hidden="true"></i><span>${esc(label)}</span><i class="dashboard-sort-check" data-lucide="check" aria-hidden="true"></i></button>`).join("")}</div>`;
     const statusColors = { all: "var(--accent)", Playing: "var(--status-color-playing)", Backlog: "var(--status-color-backlog)", Completed: "var(--status-color-completed)", "On Hold": "var(--status-color-on-hold)", Dropped: "var(--status-color-dropped)" };
@@ -75,7 +96,10 @@
       "large-grid": `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="2.5" width="8" height="13" rx="1.5"/><rect x="13" y="2.5" width="8" height="13" rx="1.5"/><path d="M4 19h6M14 19h6"/></svg>`
     };
     const viewPills = `<div class="ios-pills dashboard-view-grid"><input type="hidden" name="view" value="${esc(view)}">${views.map(([key, label]) => `<button type="button" class="dashboard-view-option${view === key ? " active" : ""}" data-pill-name="view" data-pill-value="${esc(key)}" aria-pressed="${view === key}"><span class="dashboard-view-icon">${viewMarks[key]}</span><span class="dashboard-view-label">${esc(label)}</span><i class="dashboard-view-check" data-lucide="check" aria-hidden="true"></i></button>`).join("")}</div>`;
-    const progressBar = (count, denominator) => `<i class="collection-overview-progress" aria-hidden="true"><b style="width:${denominator ? Math.min(100, Math.round(count / denominator * 100)) : 0}%"></b></i>`;
-    return `<section class="search-page home-collection-page"><div class="collection-search-row"><div class="search-box collection-search" role="search"><i data-lucide="search" aria-hidden="true"></i><input id="global-search" type="search" placeholder="Search your collection" value="${esc(libraryQuery)}" autocomplete="off" aria-label="Search your collection"><button type="button" data-clear-collection-search aria-label="Clear search" ${libraryQuery ? "" : "hidden"}>×</button></div></div><div class="collection-overview" aria-label="Collection overview"><button type="button" data-quick-status="all" aria-pressed="${dashboardStatusFilter === "all"}"><strong>${allCount}<i class="collection-overview-dot dot-all" aria-hidden="true"></i></strong><span>In collection</span>${progressBar(allCount, allCount)}</button><button type="button" data-quick-status="Playing" aria-pressed="${dashboardStatusFilter === "Playing"}"><strong>${statusCount("Playing")}<i class="collection-overview-dot dot-playing" aria-hidden="true"></i></strong><span>Playing now</span>${progressBar(statusCount("Playing"), allCount)}</button><button type="button" data-quick-status="Completed" aria-pressed="${dashboardStatusFilter === "Completed"}"><strong>${statusCount("Completed")}<i class="collection-overview-dot dot-completed" aria-hidden="true"></i></strong><span>Completed</span>${progressBar(statusCount("Completed"), allCount)}</button></div><div class="collection-active-filter"><button type="button" class="collection-active-filter-summary" data-open-dashboard-filter aria-label="Open collection filters"><span class="collection-active-chip">${esc(dashboardStatusFilter === "all" ? "All statuses" : dashboardStatusFilter)}</span><span class="collection-active-meta">Sort: ${esc(sortLabel)} · ${esc(homeViewLabel)} view</span></button><div class="collection-quick-views" role="group" aria-label="Collection view"><button type="button" data-dashboard-view="list" aria-label="List view" aria-pressed="${!gridViews.has(view)}" class="${!gridViews.has(view) ? "active" : ""}">List</button><button type="button" data-dashboard-view="detailed-grid" aria-label="Detailed grid view" aria-pressed="${gridViews.has(view)}" class="${gridViews.has(view) ? "active" : ""}">Grid</button></div>${dashboardStatusFilter !== "all" ? `<button type="button" data-quick-status="all">Show all <span aria-hidden="true">×</span></button>` : ""}</div><section class="library-section"><div id="collection-results" class="dashboard-view-${esc(view)}">${groups || emptyResults}</div></section><dialog class="choice-dialog dashboard-filter-dialog" id="dashboard-filter-dialog" aria-labelledby="dashboard-filter-title"><form id="dashboard-filter-form"><div class="choice-dialog-grabber" aria-hidden="true"></div><header class="choice-dialog-header"><div><p class="settings-overline">HOME</p><h2 id="dashboard-filter-title">Filter games</h2></div><button type="button" class="choice-dialog-close" data-close-dashboard-filter aria-label="Close filter options">×</button></header><div class="ios-sheet-body">${sheetCard("Sort By", sortPills, sortLabel)}${sheetCard("Category Status", statusPills, dashboardStatusFilter === "all" ? "All statuses" : dashboardStatusFilter)}${sheetCard("View &amp; Layout", `${row("Layout", "")}${viewPills}<div class="dashboard-group-by"><span>Group by</span>${pillList("groupBy", groupList, prefs.dashboardGroupBy || "status", "segmented")}</div>`, `${viewLabel} · ${groupLabel}`)}</div><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-reset-dashboard-filter>Clear filter</button><button type="submit" class="button primary">Apply filter (${total})</button></footer></form></dialog></section>`;
+    const collectionStatuses = [["all", "All", allCount], ...["Playing", "Completed", "Backlog", "On Hold", "Dropped"].map(status => [status, status, statusCount(status)])];
+    const platformOptions = [["all", "All", "layers-3"], ["pc", "PC", "monitor"], ["mac", "Mac", "laptop"], ["mobile", "Mobile", "smartphone"], ["xbox", "Xbox", "tv"], ["playstation", "PlayStation", "gamepad-2"], ["nintendo", "Nintendo", "joystick"]];
+    const platformLabels = Object.fromEntries(platformOptions);
+    const platformPills = `<div class="ios-pills dashboard-platform-pills"><input type="hidden" name="platform" value="${esc(dashboardPlatformFilter)}">${platformOptions.map(([key, label, icon]) => `<button type="button" class="ios-pill" data-pill-name="platform" data-pill-value="${key}" aria-pressed="${dashboardPlatformFilter === key}"><i data-lucide="${icon}" aria-hidden="true"></i><span>${label}</span></button>`).join("")}</div>`;
+    return `<section class="search-page home-collection-page"><div class="collection-search-row"><div class="search-box collection-search" role="search"><i data-lucide="search" aria-hidden="true"></i><input id="global-search" type="search" placeholder="Search your collection" value="${esc(libraryQuery)}" autocomplete="off" aria-label="Search your collection"><button type="button" data-clear-collection-search aria-label="Clear search" ${libraryQuery ? "" : "hidden"}>×</button></div></div><div class="collection-overview collection-status-pills" role="group" aria-label="Filter collection by status">${collectionStatuses.map(([key, label, count]) => `<button type="button" data-quick-status="${esc(key)}" aria-pressed="${dashboardStatusFilter === key}" class="${dashboardStatusFilter === key ? "active" : ""}"><span class="collection-status-pill-label">${esc(label)}</span><span class="collection-status-pill-count">${count}</span></button>`).join("")}</div><section class="library-section"><div id="collection-results" class="dashboard-view-${esc(view)}">${groups || emptyResults}</div></section><dialog class="choice-dialog dashboard-filter-dialog" id="dashboard-filter-dialog" aria-labelledby="dashboard-filter-title"><form id="dashboard-filter-form"><div class="choice-dialog-grabber" aria-hidden="true"></div><header class="choice-dialog-header"><div><p class="settings-overline">HOME</p><h2 id="dashboard-filter-title">Filter games</h2></div><button type="button" class="choice-dialog-close" data-close-dashboard-filter aria-label="Close filter options">×</button></header><div class="ios-sheet-body">${sheetCard("Sort By", sortPills, sortLabel)}${sheetCard("Category Status", statusPills, dashboardStatusFilter === "all" ? "All statuses" : dashboardStatusFilter)}${sheetCard("Platform", platformPills, platformLabels[dashboardPlatformFilter] || "All platforms")}${sheetCard("View &amp; Layout", `${row("Layout", "")}${viewPills}<div class="dashboard-group-by"><span>Group by</span>${pillList("groupBy", groupList, prefs.dashboardGroupBy || "status", "segmented")}</div>`, `${viewLabel} · ${groupLabel}`)}</div><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-reset-dashboard-filter>Clear filter</button><button type="submit" class="button primary">Apply filter (${total})</button></footer></form></dialog></section>`;
   };
 })();

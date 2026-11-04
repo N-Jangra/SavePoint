@@ -1,7 +1,7 @@
 // Collection health and activity summaries for the current SavePoint library.
 (() => {
   window.SplitAppPages = window.SplitAppPages || {};
-  window.SplitAppPages.statistics = context => {
+  const renderStatistics = context => {
     const { items, history, config, prefs = {}, esc, statsRange = "week", statsSubpage = "", statsActivityDate = "" } = context;
     const statisticsInBottomBar = prefs.navBar?.visible?.statistics !== false;
     const statisticsBack = statisticsInBottomBar
@@ -32,7 +32,33 @@
     // Older saves may have a Completed status but no progress value. Count a
     // known target as finished so the totals stay useful after a cache reset.
     const loggedOf = item => Number(item.progress) || (String(item.status).toLowerCase() === "completed" ? lengthOf(item) : 0);
-    const hoursText = value => `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10} h`;
+    const humanReadable = prefs.humanReadableStats === true;
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    const rawHours = value => `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10} h`;
+    const formatHours = value => {
+      if (!humanReadable) return rawHours(value);
+      let hours = Math.max(0, Math.round(Number(value) || 0));
+      const months = Math.floor(hours / 720); hours %= 720;
+      const days = Math.floor(hours / 24); hours %= 24;
+      const parts = [];
+      if (months) parts.push(plural(months, "month"));
+      if (days) parts.push(plural(days, "day"));
+      if (hours || !parts.length) parts.push(plural(hours, "hour"));
+      return parts.join(" ");
+    };
+    const hoursText = formatHours;
+    const targetCurrency = prefs.currencyDisplay === "INR" ? "INR" : "USD";
+    const usdToInrRate = Math.max(0.01, Number(prefs.usdToInrRate) || 94.8);
+    const formatMoney = value => {
+      if (!value) return "—";
+      const symbol = targetCurrency === "INR" ? "₹" : "$";
+      if (!humanReadable) return `${symbol}${new Intl.NumberFormat(targetCurrency === "INR" ? "en-IN" : "en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
+      const amount = Math.abs(value);
+      if (targetCurrency === "INR" && amount >= 100_000) return `${symbol}${(value / 100_000).toFixed(1).replace(/\.0$/, "")}L`;
+      if (amount >= 1_000_000) return `${symbol}${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+      if (amount >= 1_000) return `${symbol}${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+      return `${symbol}${value.toFixed(2)}`;
+    };
     const finished = item => ["completed", "dropped"].includes(String(item.status).toLowerCase());
     const known = items.filter(item => lengthOf(item) > 0);
     const unknownOpen = items.filter(item => lengthOf(item) === 0 && !finished(item));
@@ -40,48 +66,64 @@
     const knownHours = known.reduce((sum, item) => sum + lengthOf(item), 0);
     const knownPlayed = known.reduce((sum, item) => sum + Math.min(loggedOf(item), lengthOf(item)), 0);
     const remainingHours = known.filter(item => !finished(item)).reduce((sum, item) => sum + Math.max(0, lengthOf(item) - loggedOf(item)), 0);
-    const libraryValue = items.reduce((sum, item) => sum + (Number(item.facts?.priceValue) || 0), 0);
+    const priceCurrency = item => item.facts?.priceCurrency || (/₹|\bINR\b|\bRs\.?/i.test(item.facts?.price || "") ? "INR" : /€|\bEUR\b/.test(item.facts?.price || "") ? "EUR" : /£|\bGBP\b/.test(item.facts?.price || "") ? "GBP" : /\b[A-Z]{3}\b/.test(item.facts?.price || "") ? (item.facts.price.match(/\b[A-Z]{3}\b/) || [""])[0] : "USD");
+    const displayPrice = item => {
+      const value = Number(item.facts?.priceValue) || 0, source = priceCurrency(item);
+      if (source === "USD" && targetCurrency === "INR") return value * usdToInrRate;
+      if (source === "INR" && targetCurrency === "USD") return value / usdToInrRate;
+      return value;
+    };
+    const libraryValue = items.reduce((sum, item) => sum + displayPrice(item), 0);
     const missingFacts = items.filter(item => item.metadataSource && item.providerId && !item.facts?.fetchedAt).length;
     const missingHours = items.filter(item => lengthOf(item) === 0 && (item.metadataSource || item.title)).length;
-    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
     const gameRow = (item, categoryLabel = "Game", loggedHours = 0) => `<button type="button" class="stats-game-row" data-open-details data-id="${esc(item.id)}">${gameArtwork(item)}<span class="stats-game-copy"><strong>${esc(item.title)}</strong><span class="stats-game-meta"><small class="stats-game-category">${esc(categoryLabel)}</small>${loggedHours > 0 ? `<small class="stats-game-logged"><i data-lucide="clock-3" aria-hidden="true"></i>${hoursText(loggedHours)} logged</small>` : ""}</span></span><i class="stats-game-chevron" data-lucide="chevron-right" aria-hidden="true"></i></button>`;
     const timeGameRows = [...known].sort((a, b) => lengthOf(b) - lengthOf(a)).map(item => {
       const length = lengthOf(item), logged = Math.min(loggedOf(item), length), percent = Math.min(100, Math.round(logged / length * 100));
       return `<button type="button" class="stats-playtime-row" data-open-details data-id="${esc(item.id)}">${gameArtwork(item)}<span class="stats-playtime-copy"><span class="stats-playtime-line"><strong>${esc(item.title)}</strong><b>${hoursText(length)}</b></span><span class="stats-playtime-track"><i style="width:${percent}%"></i></span><small>${esc(item.status || "In library")} · ${hoursText(logged)} logged</small></span></button>`;
     }).join("");
-    const hoursValue = value => `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10}`;
+    const hoursValue = value => humanReadable ? formatHours(value) : `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10}`;
     const pace = remainingHours <= 0 ? "" : remainingHours <= 14 ? `About ${plural(Math.ceil(remainingHours), "day")} left at 1 hour a day.` : `About ${plural(Math.round(remainingHours / 7), "week")} left at 1 hour a day.`;
     const note = !items.length ? "Add games to see play time and totals here." : !known.length ? "No game has play-time data yet. Use the button below to look it up." : [remainingHours <= 0 && !unknownOpen.length ? "Nothing left to play. 🎉" : pace, unknownOpen.length ? `${plural(unknownOpen.length, "unfinished game")} ${unknownOpen.length === 1 ? "has" : "have"} no play-time data, so ${unknownOpen.length === 1 ? "it isn't" : "they aren't"} counted in “Left to play”.` : ""].filter(Boolean).join(" ");
     const timePanel = `<article class="stats-panel stats-time-panel">
       <header class="stats-panel-heading"><div><span class="stats-eyebrow">PLAY TIME</span><h3>Time to beat</h3></div><span class="stats-time-coverage"><strong>${known.length}/${items.length}</strong><span>games with data</span></span></header>
       <div class="stats-time-grid">
-        <div class="stats-time-stat stats-time-stat-primary"><span class="stats-time-label">Logged time</span><strong>${hoursValue(loggedHours)}<small>h</small></strong><span class="stats-time-caption">Across all games</span></div>
-        <div class="stats-time-stat"><span class="stats-time-label">Estimated length</span><strong>${hoursValue(knownHours)}<small>h</small></strong><span class="stats-time-caption">${plural(known.length, "game")}</span></div>
-        <div class="stats-time-stat"><span class="stats-time-label">Time remaining</span><strong>${hoursValue(remainingHours)}<small>h</small></strong><span class="stats-time-caption">Unfinished games</span></div>
-        <div class="stats-time-stat"><span class="stats-time-label">Library value</span><strong>${libraryValue ? `$${libraryValue.toFixed(2)}` : "—"}</strong><span class="stats-time-caption">Based on saved prices</span></div>
+        <div class="stats-time-stat stats-time-stat-primary"><span class="stats-time-label">Logged time</span><strong>${hoursValue(loggedHours)}${humanReadable ? "" : "<small>h</small>"}</strong><span class="stats-time-caption">Across all games</span></div>
+        <div class="stats-time-stat"><span class="stats-time-label">Estimated length</span><strong>${hoursValue(knownHours)}${humanReadable ? "" : "<small>h</small>"}</strong><span class="stats-time-caption">${plural(known.length, "game")}</span></div>
+        <div class="stats-time-stat"><span class="stats-time-label">Time remaining</span><strong>${hoursValue(remainingHours)}${humanReadable ? "" : "<small>h</small>"}</strong><span class="stats-time-caption">Unfinished games</span></div>
+        <div class="stats-time-stat"><span class="stats-time-label">Library value</span><strong>${formatMoney(libraryValue)}</strong><span class="stats-time-caption">Based on saved prices</span></div>
       </div>
       ${knownHours ? `<div class="stats-time-progress" role="img" aria-label="${Math.round(knownPlayed / knownHours * 100)}% of the known length played"><span style="width:${Math.min(100, knownPlayed / knownHours * 100)}%"></span></div><p class="stats-time-note">${hoursText(knownPlayed)} of ${hoursText(knownHours)} played in games with data.</p>` : ""}
       <p class="stats-time-note">${esc(note)}</p>
       <div class="stats-time-actions">${missingFacts ? `<button type="button" class="button secondary small" data-stats-fetch-facts>Fetch details for ${plural(missingFacts, "game")}</button>` : ""}${missingHours ? `<button type="button" class="button secondary small" data-stats-find-hours>Find play times for ${plural(missingHours, "game")}</button>` : ""}</div>
     </article>`;
     const perHour = loggedHours > 0 && libraryValue > 0 ? libraryValue / loggedHours : 0;
-    const timeDetails = `<article class="stats-panel stats-playtime-games"><header class="stats-panel-heading"><div><span class="stats-eyebrow">GAME BY GAME</span><h3>Playtime breakdown</h3></div><span class="stats-total-chip">${known.length} tracked</span></header>${timeGameRows || `<p class="stats-empty-copy">Playtime breakdowns appear when a game has a known length. You can fetch playtime data below.</p>`}</article>${perHour ? `<article class="stats-panel stats-efficiency-panel"><span class="stats-eyebrow">VALUE EFFICIENCY</span><strong>$${perHour.toFixed(2)} per logged hour</strong><p>Based on $${libraryValue.toFixed(2)} in saved game prices and ${hoursText(loggedHours)} logged.</p></article>` : ""}`;
+    const timeDetails = `<article class="stats-panel stats-playtime-games"><header class="stats-panel-heading"><div><span class="stats-eyebrow">GAME BY GAME</span><h3>Playtime breakdown</h3></div><span class="stats-total-chip">${known.length} tracked</span></header>${timeGameRows || `<p class="stats-empty-copy">Playtime breakdowns appear when a game has a known length. You can fetch playtime data below.</p>`}</article>${perHour ? `<article class="stats-panel stats-efficiency-panel"><span class="stats-eyebrow">VALUE EFFICIENCY</span><strong>${formatMoney(perHour)} per logged hour</strong><p>Based on ${formatMoney(libraryValue)} in saved game prices and ${hoursText(loggedHours)} logged.</p></article>` : ""}`;
     const month = statsRange === "month", rangeDays = month ? 30 : 7;
     const dayKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     const historyTime = entry => Number(entry.at) || Date.parse(entry.at) || 0;
-    const activityDays = Array.from({ length: rangeDays }, (_, offset) => {
+    // One pass over history: parse every timestamp once, then count per day with a lookup
+    // (previously: one full scan of the history for each of the 7 or 30 days).
+    const stamps = new Map(history.map(entry => [entry, historyTime(entry)]));
+    const timeOf = entry => stamps.get(entry) ?? historyTime(entry);
+    const dayStarts = Array.from({ length: rangeDays }, (_, offset) => {
       const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - (rangeDays - 1 - offset));
-      const nextDay = new Date(date); nextDay.setDate(nextDay.getDate() + 1);
-      const count = history.filter(entry => { const at = historyTime(entry); return at >= date.getTime() && at < nextDay.getTime(); }).length;
-      return { date, key: dayKey(date), count };
+      return date;
     });
+    const dayCounts = dayStarts.map(() => 0);
+    const firstDay = dayStarts[0].getTime(), lastEnd = new Date(dayStarts[rangeDays - 1].getTime() + 36 * 3600000);
+    lastEnd.setHours(0, 0, 0, 0);
+    stamps.forEach(at => {
+      if (at < firstDay || at >= lastEnd.getTime()) return;
+      for (let index = rangeDays - 1; index >= 0; index -= 1) { if (at >= dayStarts[index].getTime()) { dayCounts[index] += 1; break; } }
+    });
+    const activityDays = dayStarts.map((date, index) => ({ date, key: dayKey(date), count: dayCounts[index] }));
     const maxActivity = Math.max(1, ...activityDays.map(day => day.count));
     const activityTotal = activityDays.reduce((sum, day) => sum + day.count, 0);
     const selectedActivityDay = activityDays.find(day => day.key === statsActivityDate) || [...activityDays].reverse().find(day => day.count) || activityDays.at(-1);
     const selectedDayEvents = selectedActivityDay ? history.filter(entry => {
-      const at = historyTime(entry), start = selectedActivityDay.date.getTime(), end = start + 86400000;
+      const at = timeOf(entry), start = selectedActivityDay.date.getTime(), end = start + 86400000;
       return at >= start && at < end;
-    }).sort((a, b) => historyTime(b) - historyTime(a)) : [];
+    }).sort((a, b) => timeOf(b) - timeOf(a)) : [];
     const activityBars = activityDays.map((day, index) => {
       const label = month ? `${day.date.getDate()}` : day.date.toLocaleDateString(undefined, { weekday: "short" });
       const sub = month && (index === 0 || day.date.getDate() === 1) ? `<em>${esc(day.date.toLocaleDateString(undefined, { month: "short" }))}</em>` : "";
@@ -112,8 +154,9 @@
     const genreRows = [...genreCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 6).map(([genre, count]) => `<div class="stats-genre-row"><span><strong>${esc(genre)}</strong><small>${count} ${count === 1 ? "game" : "games"} · ${total ? Math.round(count / total * 100) : 0}%</small></span><i><b style="width:${total ? count / total * 100 : 0}%"></b></i></div>`).join("");
     const genresPanel = `<article class="stats-panel"><header class="stats-panel-heading"><div><span class="stats-eyebrow">GENRE MIX</span><h3>Genres in your library</h3></div></header>${genreRows ? `<div class="stats-genre-list">${genreRows}</div>` : `<p class="stats-empty-copy">Genre data isn’t available yet. Fetch details for games in your library to build this view.</p>`}</article>`;
     const detailedLibraryPanel = `${statusPanel}${genresPanel}`;
+    const itemsById = new Map(items.map(row => [String(row.id), row]));
     const activityEntryRows = selectedDayEvents.map(entry => {
-      const item = items.find(row => String(row.id) === String(entry.itemId));
+      const item = itemsById.get(String(entry.itemId));
       const stamp = historyTime(entry) ? new Date(historyTime(entry)).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
       const content = `<span class="stats-activity-entry-icon"><i data-lucide="${String(entry.status || entry.action).toLowerCase() === "completed" ? "circle-check" : "activity"}" aria-hidden="true"></i></span><span class="stats-activity-entry-copy"><strong>${esc(entry.title || item?.title || "Library update")}</strong><small>${esc(entry.action || entry.status || "Updated")}${stamp ? ` · ${esc(stamp)}` : ""}</small></span><span class="stats-activity-entry-status">${esc(entry.status || "Updated")}</span>`;
       return item ? `<button type="button" class="stats-activity-entry" data-open-details data-id="${esc(item.id)}">${content}</button>` : `<div class="stats-activity-entry">${content}</div>`;
@@ -128,7 +171,7 @@
     const averageStars = ratingMax === 5 ? "★".repeat(Math.min(5, Math.max(0, Math.round(Number(avgRating) || 0)))).padEnd(5, "☆") : `out of ${ratingMax}`;
     const ratingsPanel = `<article class="stats-panel stats-ratings-summary"><div class="stats-rating-overview"><div class="stats-rating-average"><strong>${avgRating}</strong><span>${averageStars}</span><small>${rated.length} of ${total} rated</small></div><div class="stats-rating-histogram">${ratingHistogram}</div></div></article>${rated.length ? `<article class="stats-panel"><header class="stats-panel-heading"><div><span class="stats-eyebrow">YOUR SCORES</span><h3>Rated games</h3></div><span class="stats-total-chip">${rated.length}</span></header><div class="stats-rating-list">${allRatingRows}</div></article>` : `<article class="stats-panel stats-empty-ratings"><span class="stats-empty-icon"><i data-lucide="star" aria-hidden="true"></i></span><strong>No ratings yet</strong><p>Choose a score below to start building your ratings overview.</p></article>`}<article class="stats-panel stats-quick-rate-panel"><header class="stats-panel-heading"><div><span class="stats-eyebrow">QUICK RATE</span><h3>Games without a score</h3></div><span class="stats-total-chip">${unrated.length}</span></header><p class="stats-empty-copy">Tap a star to save a rating. You can change it later from game details.</p>${quickRateRows || `<p class="stats-empty-copy">Every game in your library has a rating.</p>`}</article>`;
     const destinations = [
-      ["playtime", "clock-3", "Play time", "Logged hours, game lengths, and what’s left to play.", `${hoursText(loggedHours)} logged${libraryValue ? ` · $${libraryValue.toFixed(2)} value` : ""}`],
+      ["playtime", "clock-3", "Play time", "Logged hours, game lengths, and what’s left to play.", `${hoursText(loggedHours)} logged${libraryValue ? ` · ${formatMoney(libraryValue)} value` : ""}`],
       ["library", "library", "Library breakdown", "See how your games are spread across statuses.", `${completed} completed · ${queued} backlog`],
       ["activity", "activity", "Activity", "Review recent changes and your tracking rhythm.", `${activityTotal} in the last ${month ? "30 days" : "7 days"}`],
       ["ratings", "star", "Ratings", "See your average score and highest rated games.", rated.length ? `${avgRating} avg · ${rated.length}/${total} rated` : "No ratings yet"]
@@ -152,5 +195,15 @@
     const subpage = selected ? `<section class="stats-subpage stats-subpage-${esc(statsSubpage)}"><header class="detail-page-heading analytics-page-heading"><button type="button" class="detail-back" data-go="statistics"><span aria-hidden="true">‹</span> All statistics</button><strong>${selected.title}</strong><span class="stats-subpage-badge">${selected.badge}</span></header><div class="stats-subpage-intro"><span class="stats-eyebrow">STATISTICS</span><h1>${selected.title}</h1><p>${selected.subtitle}</p></div>${selected.body}</section>` : "";
     const empty = total === 0 && !statsSubpage ? `<div class="stats-empty-state"><span aria-hidden="true">▥</span><strong>Your stats will appear here.</strong><p>Add games to your library to get started.</p><a href="#dashboard">Go to your library <span aria-hidden="true">→</span></a></div>` : "";
     return `<section class="stats-page">${statsSubpage ? subpage : overview}${empty}</section>`;
+  };
+
+  // The page is a pure function of the library, history, a few preferences and the selected
+  // range/day, so identical inputs reuse the previous HTML instead of recomputing every panel.
+  let cache = { key: "", html: "" };
+  window.SplitAppPages.statistics = context => {
+    if (context.dataRevision === undefined) return renderStatistics(context);
+    const key = [context.dataRevision, context.items.length, context.history.length, context.statsRange, context.statsSubpage, context.statsActivityDate, new Date().toDateString(), JSON.stringify(context.prefs)].join("|");
+    if (cache.key !== key) cache = { key, html: renderStatistics(context) };
+    return cache.html;
   };
 })();

@@ -28,6 +28,7 @@ android/app/src/main/assets/capacitor.plugins.json
 .vscode/
 *.swp
 *.tmp
+test/
 
 # Release signing (never commit)
 android/keystore.properties

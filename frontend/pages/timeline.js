@@ -14,22 +14,26 @@
     const visibleStatuses = new Set(configuredStatuses.length ? configuredStatuses : ["Backlog", "Playing", "Completed", "On Hold", "Dropped"]);
     const historyEntryIndex = new Map(history.map((entry, index) => [entry, index]));
     const yearOptions = [...new Set(history.map(entry => new Date(entry.at || 0).getFullYear()).filter(year => year > 1970))].sort((a, b) => b - a);
+    const stamp = new Map();
+    const timeOf = entry => { let v = stamp.get(entry); if (v === undefined) { v = Number(entry.at) || Date.parse(entry.at) || 0; stamp.set(entry, v); } return v; };
+    const searchNeedle = timelineSearch.toLowerCase();
     const entries = history.filter(entry => {
       const status = entry.status || entry.action;
       if (!visibleStatuses.has(status)) return false;
-      const at = Number(entry.at) || Date.parse(entry.at) || 0;
+      const at = timeOf(entry);
       const date = new Date(at);
       if (timelineFilter === "week" && at < weekStart) return false;
       if (timelineFilter === "month" && at < monthStart) return false;
-      if (timelineSearch && !String(entry.title || "").toLowerCase().includes(timelineSearch.toLowerCase())) return false;
+      if (timelineSearch && !String(entry.title || "").toLowerCase().includes(searchNeedle)) return false;
       if (timelineMonth !== "" && date.getMonth() !== Number(timelineMonth)) return false;
       if (timelineYear && date.getFullYear() !== Number(timelineYear)) return false;
       return true;
-    }).sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0)).slice(0, 120);
+    }).sort((a, b) => timeOf(b) - timeOf(a)).slice(0, 120);
+    const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
     const groups = new Map();
     entries.forEach(entry => {
       const date = new Date(Number(entry.at) || Date.parse(entry.at) || Date.now());
-      const month = date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      const month = monthFormat.format(date);
       const dayKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
       if (!groups.has(month)) groups.set(month, new Map());
       const days = groups.get(month);
@@ -37,7 +41,10 @@
       days.get(dayKey).push({ entry, date });
     });
     const statusIcons = { Backlog: "▤", Dropped: "↓", Completed: "✓", "On Hold": "Ⅱ", Playing: "▶" };
-    const findGame = entry => items.find(row => String(row.id) === String(entry.itemId)) || items.find(row => String(row.title).toLowerCase() === String(entry.title || "").toLowerCase());
+    // Two O(1) indexes instead of scanning every game for every history row.
+    const gameById = new Map(), gameByTitle = new Map();
+    items.forEach(row => { gameById.set(String(row.id), row); const key = String(row.title).toLowerCase(); if (!gameByTitle.has(key)) gameByTitle.set(key, row); });
+    const findGame = entry => gameById.get(String(entry.itemId)) || gameByTitle.get(String(entry.title || "").toLowerCase());
     const cards = [...groups].map(([month, days]) => {
       const monthCount = [...days.values()].reduce((sum, records) => sum + records.length, 0);
       const dayCards = [...days.values()].map(records => {

@@ -1,9 +1,11 @@
 // Shared library card and category components used by Dashboard and Search.
 (() => {
+  // One shared collator: String.localeCompare with options builds a new one per call, which dominates sorting 1000+ titles.
+  const titleCollator = new Intl.Collator(undefined, { sensitivity: "base" });
   window.SplitAppLibrary = Object.freeze({
     create(context) {
       const { prefs, items, activeCategory, category, labelCategory, esc } = context;
-      return { card, filteredItems, listOrEmpty, dashboardItems };
+      return { card, filteredItems, listOrEmpty, dashboardItems, countItems };
   function card(item) {
     const cat = category(item.category), progress = Math.max(0, Number(item.progress) || 0), goal = Math.max(0, Number(item.goal) || 0, Number(item.completionTargetHours) || 0);
     const percent = goal ? Math.min(100, Math.round(progress / goal * 100)) : 0;
@@ -19,10 +21,13 @@
       const developers = displayValue(item.facts?.developers || item.cachedDetails?.developers || item.cachedDetails?.developer || fieldValue(/^(developer|developers|studio|studios)$/i));
       const genres = displayValue(item.facts?.genres || item.cachedDetails?.genres || item.cachedDetails?.genre || fieldValue(/^(genre|genres)$/i));
       const subtitle = [developers, genres].filter(Boolean).join(" · ");
-    const thumbnail = item.localThumbnailData || item.image;
-    const localPending = !item.localThumbnailData && Boolean(item.thumbnailPath || item.localImageFiles?.length);
+    const useLandscape = ["detailed-grid", "compact-grid"].includes(prefs.dashboardView);
+    const thumbnail = useLandscape
+      ? item.localLandscapeData || item.localImageData?.backdrop || item.localImageData?.["cachedDetails.landscapeImage"] || item.backdrop || item.cachedDetails?.landscapeImage || item.cachedDetails?.backgroundImage || item.localPortraitData || item.localThumbnailData || item.image
+      : item.localPortraitData || item.localThumbnailData || item.localImageData?.image || item.localImageData?.["cachedDetails.portraitImage"] || item.cachedDetails?.portraitImage || item.image;
+    const localPending = Boolean((useLandscape ? !item.localLandscapeData : !item.localPortraitData && !item.localThumbnailData) && (item.thumbnailPath || item.localImageFiles?.length));
     const showArtwork = prefs.showThumbnails && Boolean(thumbnail || localPending);
-    const art = `${showArtwork ? `<img data-deferred-image data-lazy-src="${esc(thumbnail || "")}"${localPending ? ` data-local-item-id="${esc(item.id)}"` : ""} alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="item-art-fallback" aria-hidden="true"${showArtwork ? " hidden" : ""}>${esc(cat?.icon || "✦")}</span>`;
+    const art = `${showArtwork ? `<img data-deferred-image data-lazy-src="${esc(thumbnail || "")}"${localPending ? ` data-local-item-id="${esc(item.id)}" data-local-image-mode="${useLandscape ? "landscape" : "portrait"}"` : ""} alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="item-art-fallback" aria-hidden="true"${showArtwork ? " hidden" : ""}>${esc(cat?.icon || "✦")}</span>`;
     const accent = prefs.categoryColors[item.category] || cat?.color || prefs.mainColor;
     const actions = prefs.dashboardRowActions === "quick"
       ? `<button type="button" class="card-quick-progress-button" data-action="progress" data-id="${esc(item.id)}" aria-label="Add progress to ${esc(item.title)}" title="Add progress to ${esc(item.title)}">＋</button>`
@@ -34,7 +39,7 @@
     return items.filter(item => (activeCategory === "all" || item.category === activeCategory) && (!normalized || `${item.title} ${item.status}`.toLocaleLowerCase().includes(normalized)));
   }
   function dashboardItems(status, query = "") {
-    const compareTitle = (left, right) => String(left.title || "").localeCompare(String(right.title || ""), undefined, { sensitivity: "base" });
+    const compareTitle = (left, right) => titleCollator.compare(String(left.title || ""), String(right.title || ""));
     return filteredItems(query).filter(item => !status || item.status === status).sort((left, right) => {
       switch (prefs.dashboardSort) {
         case "recent": case "recently-added": case "created-desc": return (Number(right.createdAt) || 0) - (Number(left.createdAt) || 0) || compareTitle(left, right);
@@ -48,6 +53,10 @@
         default: return compareTitle(left, right);
       }
     });
+  }
+  // Count without sorting (status pills only need numbers).
+  function countItems(status, query = "", accept = () => true) {
+    return filteredItems(query).filter(item => (!status || item.status === status) && accept(item)).length;
   }
   function listOrEmpty(list, message = "Nothing here yet.", hint = "Add something to get started.") {
     return list.length ? `<div class="item-list">${list.map(card).join("")}</div>` : `<div class="empty-state"><strong>${esc(message)}</strong><span>${esc(hint)}</span></div>`;

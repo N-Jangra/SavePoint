@@ -2,7 +2,9 @@
   "use strict";
 
   const config = window.APP_CONFIG;
-  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add Game", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
+  const nativeAndroid = Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor?.getPlatform?.() === "android");
+  const dashboardPageSize = nativeAndroid ? 8 : 12;
+  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add Game", "import-preview": "Import List", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
   const navItems = [
     { key: "dashboard", label: "Home", icon: "⌂", locked: true },
     { key: "discover", label: "Discover", icon: "✧" },
@@ -13,12 +15,12 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
+    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "rise", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarCorners: "sharp", bottomBarLabels: "icons-only", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: ["dashboard", "discover", "explore", "settings", "timeline", "statistics"], visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
     metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg", "igdb"], customSources: [],
-    dashboardView: "list", dashboardDefaultCategory: "remember", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
-    automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
+    dashboardView: "list", dashboardDefaultCategory: "remember", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
+    automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1, humanReadableStats: false, currencyDisplay: "USD", usdToInrRate: 94.8,
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30, backupPasswordReminder: true, maximumBackupSize: 1000, validateBackupLocation: true, restorePreview: true,
     metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false, igdb: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
     imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
@@ -112,11 +114,36 @@
   let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, statsRange = "week", statsActivityDate = "";
   let metadataSourceFilter = "all";
   let entryDraftId = null, addReturnPage = "dashboard";
+  let importState = null;
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
   let discoverQuery = "";
   let addMetadataQuery = "";
   let timelineFilter = "all", timelineSearch = "", timelineMonth = "", timelineYear = "";
-  let dashboardStatusFilter = prefs.dashboardStatusFilter || "all";
+  let dashboardStatusFilter = prefs.dashboardDefaultCategory === "remember"
+    ? prefs.dashboardLastStatus || "all"
+    : prefs.dashboardDefaultCategory && prefs.dashboardDefaultCategory !== "all"
+      ? prefs.dashboardDefaultCategory
+      : prefs.dashboardStatusFilter || "all";
+  let dashboardPlatformFilter = prefs.dashboardDefaultPlatform && prefs.dashboardDefaultPlatform !== "all" ? prefs.dashboardDefaultPlatform : prefs.dashboardPlatformFilter || "all";
+  const platformFilters = ["all", "pc", "mac", "mobile", "xbox", "playstation", "nintendo"];
+  if (!platformFilters.includes(dashboardPlatformFilter)) dashboardPlatformFilter = prefs.dashboardPlatformFilter = "all";
+  function itemPlatformText(item) {
+    const savedField = item.cachedDetails?.fields?.find(field => /^platforms?$/i.test(String(field.label || "")))?.value;
+    const raw = item.facts?.platforms || item.cachedDetails?.facts?.platforms || savedField || item.platforms || "";
+    const flatten = value => Array.isArray(value) ? value.map(flatten).join(" ") : value && typeof value === "object" ? Object.values(value).map(flatten).join(" ") : String(value || "");
+    return flatten(raw).toLowerCase();
+  }
+  function matchesPlatform(item, filter = dashboardPlatformFilter) {
+    if (!filter || filter === "all") return true;
+    const value = itemPlatformText(item);
+    if (filter === "pc") return /\bpc\b|windows|linux|steam deck/.test(value);
+    if (filter === "mac") return /macos?|macintosh|os x/.test(value);
+    if (filter === "mobile") return /android|ios|iphone|ipad|mobile|\bphone\b|tablet/.test(value);
+    if (filter === "xbox") return /xbox/.test(value);
+    if (filter === "playstation") return /playstation|\bps[1-5]\b/.test(value);
+    if (filter === "nintendo") return /nintendo|switch|\bwii\b|\bds\b/.test(value);
+    return true;
+  }
   function normalizeDashboardView() {
     const legacyDashboardViews = { cards: "detailed-grid", grid: "detailed-grid", "compact-list": "list", timeline: "list" };
     if (legacyDashboardViews[prefs.dashboardView]) prefs.dashboardView = legacyDashboardViews[prefs.dashboardView];
@@ -128,15 +155,16 @@
   else if (prefs.dashboardSort === "rating") prefs.dashboardSort = "rating-desc";
   if (!["all", ...config.categories[0].statuses].includes(dashboardStatusFilter)) dashboardStatusFilter = prefs.dashboardStatusFilter = "all";
   delete prefs.defaultCategory;
-  let activeCategory = prefs.dashboardDefaultCategory === "remember" ? "all" : prefs.dashboardDefaultCategory || "all";
+  let activeCategory = "all";
   let toastTimer;
   const detailIdFromQuery = query => { const raw = String(query || ""); return raw.startsWith("=") ? decodeURIComponent(raw.slice(1)) : new URLSearchParams(raw).get("id") || ""; };
   let detailTab = "";
   let detailItemId = initialRoute[0] === "details" ? detailIdFromQuery(initialHashQuery) || null : null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "dashboard", detailRequest = 0;
   let detailRestorePending = Boolean(detailItemId);
   let detailImagePosition = 0, detailImageOpener = null;
-  const dashboardPageSize = 24;
   let dashboardLazyObserver = null;
+  let dashboardLoadPending = false;
+  let dashboardSortedItemsCache = null;
   let deferredImageObserver = null, deferredImageFlushTimer = 0, deferredImageDrain = null;
   const deferredLocalImageQueue = [], deferredLocalImageRequests = new Map();
   let searchRenderTimer = null;
@@ -204,11 +232,46 @@
     if (!document.querySelector("dialog[data-popup-fallback][open]")) delete document.body.dataset.popupFallback;
   }
 
-  function persist() {
+  // O(1) game lookup. The index stores each id's position and re-checks it on every hit,
+  // so it can never return a replaced or moved entry; a miss rebuilds it once.
+  let itemIndex = new Map();
+  function itemById(id) {
+    const key = String(id);
+    let at = itemIndex.get(key);
+    if (at !== undefined && String(items[at]?.id) === key) return items[at];
+    itemIndex = new Map(items.map((row, index) => [String(row.id), index]));
+    at = itemIndex.get(key);
+    return at === undefined ? undefined : items[at];
+  }
+  // Saving is scoped so a change only touches what changed:
+  //   persist()                    whole library (imports, resets, anything unspecified)
+  //   persist({ ids: [id, ...] })  only those games (add / edit / status / progress / rating / sync)
+  //   persist({ removed: [id] })   delete those games
+  //   persist({ meta: true })      preferences and history only
+  // Bursts are coalesced into one write ~250ms after the last change.
+  let persistTimer = 0, persistWaiters = [], persistFull = false;
+  const persistIds = new Set(), persistRemoved = new Set();
+  function persist(scope) {
     localMutationRevision += 1;
-    const write = window.SplitAppBackend?.save({ items, history, preferences: prefs });
-    if (write?.catch) return write.catch(error => { recordLog("error", `App data save failed: ${error.message || error}`); });
-    return Promise.resolve();
+    if (scope && typeof scope === "object") {
+      (scope.ids || []).forEach(id => persistIds.add(String(id)));
+      (scope.removed || []).forEach(id => persistRemoved.add(String(id)));
+    } else persistFull = true;
+    const promise = new Promise(resolve => persistWaiters.push(resolve));
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(flushPersist, 250);
+    return promise;
+  }
+  function flushPersist() {
+    clearTimeout(persistTimer); persistTimer = 0;
+    const waiters = persistWaiters; persistWaiters = [];
+    if (!waiters.length) return;
+    const scope = persistFull ? { full: true } : { ids: [...persistIds], removed: [...persistRemoved] };
+    persistFull = false; persistIds.clear(); persistRemoved.clear();
+    const write = window.SplitAppBackend?.save({ items, history, preferences: prefs }, scope);
+    const finish = () => waiters.forEach(resolve => resolve());
+    if (write?.catch) write.catch(error => { recordLog("error", `App data save failed: ${error.message || error}`); }).then(finish);
+    else finish();
   }
   function recordLog(level, message) {
     try {
@@ -217,6 +280,13 @@
       entries.unshift({ level, message: String(message), at: new Date().toISOString() });
       localStorage.setItem(key, JSON.stringify(entries.slice(0, 200)));
     } catch (_) {}
+  }
+  async function runWithConcurrency(values, requestedWorkers, task) {
+    const queue = [...values];
+    const workers = Math.max(1, Math.min(10, Number(requestedWorkers) || 4, queue.length || 1));
+    await Promise.all(Array.from({ length: workers }, async () => {
+      while (queue.length) await task(queue.shift());
+    }));
   }
   function toast(message) {
     const node = $("#toast"); node.textContent = message; node.classList.add("show");
@@ -258,8 +328,15 @@
     document.body.style.setProperty("--muted", palette.muted);
     document.body.style.setProperty("--accent-soft", `color-mix(in srgb, ${prefs.mainColor || "#6355f8"} ${palette.mode === "light" ? "12%" : "20%"}, ${palette.surface})`);
     document.body.dataset.reducedMotion = String(Boolean(prefs.reduceMotion));
-    const lowEnd = Boolean(navigator.connection?.saveData) || (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+    // Three tiers: "low" (data saver, <=2 GB or <=2 cores), "mid" (any Android WebView), "high"
+    // (Android with >=6 GB and >=6 cores, or desktop). Low and mid trim blur/shadows/stagger.
+    const cores = Number(navigator.hardwareConcurrency) || 4, memory = Number(navigator.deviceMemory) || 4;
+    const weak = Boolean(navigator.connection?.saveData) || memory <= 2 || cores <= 2;
+    const strongAndroid = nativeAndroid && memory >= 6 && cores >= 6;
+    const lowEnd = weak || (nativeAndroid && !strongAndroid);
+    root.dataset.perf = weak ? "low" : lowEnd ? "mid" : "high";
     root.dataset.lowend = String(lowEnd);
+    root.dataset.nativeAndroid = String(nativeAndroid);
     document.body.dataset.corners = prefs.cardCorners;
     document.body.dataset.density = prefs.dashboardDensity;
     document.body.dataset.dashboardView = prefs.dashboardView;
@@ -270,6 +347,7 @@
     document.body.dataset.barLabels = prefs.bottomBarLabels;
     document.body.dataset.sidebar = prefs.showSidebar ? "shown" : "hidden";
     document.documentElement.dataset.showScrollbars = prefs.showScrollbars === true ? "true" : "false";
+    window.Capacitor?.Plugins?.ScrollbarControl?.setEnabled?.({ enabled: prefs.showScrollbars === true }).catch(() => {});
     document.body.dataset.barLayout = prefs.bottomBarLayout;
     document.body.dataset.iconStyle = prefs.iconStyle === "inline" ? "inline" : "tiles";
     window.SplitAppDates?.setFormat(prefs.dateFormat); window.SplitAppBackend?.setImageStorage?.(prefs.imageStorage);
@@ -393,14 +471,87 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
+  function dashboardSortedItems(context = pageContext()) {
+    const cacheKey = [localMutationRevision, libraryQuery, activeCategory, dashboardPlatformFilter, prefs.dashboardSort].join("|");
+    if (dashboardSortedItemsCache?.key !== cacheKey) {
+      const library = window.SplitAppLibrary.create(context);
+      dashboardSortedItemsCache = { key: cacheKey, items: library.dashboardItems(null, libraryQuery).filter(item => matchesPlatform(item)) };
+    }
+    return dashboardSortedItemsCache.items;
+  }
+  // Update one rendered card in place. A full render() would reset every lazy-loaded
+  // group to its first batch and jump the scroll position while metadata syncs.
+  function patchDashboardCard(itemId) {
+    const node = document.querySelector(`#page-content [data-item="${CSS.escape(String(itemId))}"]`);
+    const item = itemById(String(itemId));
+    if (!node || !item) return;
+    const template = document.createElement("template");
+    template.innerHTML = window.SplitAppLibrary.create(pageContext()).card(item).trim();
+    const fresh = template.content.firstElementChild;
+    if (!fresh) return;
+    node.replaceWith(fresh);
+    observeDeferredImages(fresh);
+    window.lucide?.createIcons({ root: fresh, attrs: { "aria-hidden": "true" } });
+  }
+  // Remember how many cards each group has loaded so any full render() restores
+  // them instead of collapsing back to the first batch.
+  let dashboardRenderedState = { sig: "", counts: {} };
+  const dashboardSignature = () => [libraryQuery, activeCategory, dashboardPlatformFilter, dashboardStatusFilter, prefs.dashboardSort, prefs.dashboardGroupBy, prefs.dashboardView].join("|");
+  function dashboardRenderedCounts() {
+    if (dashboardRenderedState.sig !== dashboardSignature()) dashboardRenderedState = { sig: dashboardSignature(), counts: {} };
+    return dashboardRenderedState.counts;
+  }
+  // Long lists: cards far above/below the viewport are emptied (keeping their exact height
+  // so nothing shifts) and rebuilt just before they scroll back into view. DOM size and
+  // memory therefore stay flat however many games have been scrolled through.
+  const TRIM_MIN_CARDS = 160, TRIM_DISTANCE = 3.5;
+  let trimQueued = false, trimObserver = null;
+  function hydrateTrimmedCard(node) {
+    if (!node.isConnected || !node.dataset.trimmed) return;
+    const item = itemById(String(node.dataset.item));
+    if (!item) return;
+    const template = document.createElement("template");
+    template.innerHTML = window.SplitAppLibrary.create(pageContext()).card(item).trim();
+    const fresh = template.content.firstElementChild;
+    if (!fresh) return;
+    trimObserver?.unobserve(node);
+    node.replaceWith(fresh);
+    observeDeferredImages(fresh);
+    window.lucide?.createIcons({ root: fresh, attrs: { "aria-hidden": "true" } });
+  }
+  function trimFarCards() {
+    trimQueued = false;
+    if (page !== "dashboard") return;
+    const limit = window.innerHeight * TRIM_DISTANCE;
+    $$("[data-dashboard-items]").forEach(list => {
+      if (list.children.length < TRIM_MIN_CARDS) return;
+      for (const card of list.children) {
+        if (card.dataset.trimmed || !card.classList.contains("dashboard-card")) continue;
+        const rect = card.getBoundingClientRect();
+        if (rect.bottom > -limit && rect.top < window.innerHeight + limit) continue;
+        card.style.height = `${rect.height}px`;
+        card.dataset.trimmed = "1";
+        card.replaceChildren();
+        if (!trimObserver && window.IntersectionObserver) {
+          trimObserver = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) hydrateTrimmedCard(entry.target); }), { rootMargin: `${Math.round(window.innerHeight * 2)}px 0px` });
+        }
+        trimObserver?.observe(card);
+      }
+    });
+  }
+  window.addEventListener("scroll", () => {
+    if (trimQueued || page !== "dashboard") return;
+    trimQueued = true;
+    setTimeout(() => requestAnimationFrame(trimFarCards), 400);
+  }, { passive: true });
   function dashboardGroupItems(groupKey) {
-    const library = window.SplitAppLibrary.create(pageContext());
     const groupBy = prefs.dashboardGroupBy || "status";
-    if (groupBy === "status") return library.dashboardItems(groupKey, libraryQuery);
-    let games = library.dashboardItems(null, libraryQuery);
+    const sortedItems = dashboardSortedItems();
+    if (groupBy === "status") return sortedItems.filter(item => item.status === groupKey);
+    let games = sortedItems;
     if (dashboardStatusFilter !== "all") games = games.filter(item => item.status === dashboardStatusFilter);
     if (groupBy === "category") return games.filter(item => String(item.category || "other") === groupKey);
     if (groupBy === "release") return games.filter(item => String(item.year || "Unknown release date") === groupKey);
@@ -415,9 +566,22 @@
     if (!target || !batch.length) { button.remove(); return; }
     const library = window.SplitAppLibrary.create(pageContext());
     target.insertAdjacentHTML("beforeend", batch.map(library.card).join(""));
-    observeDeferredImages(target);
+    const addedCards = [...target.children].slice(-batch.length);
+    addedCards.forEach((card, index) => {
+      if (prefs.reduceMotion || nativeAndroid) return;
+      card.classList.add("dashboard-card-enter");
+      card.style.setProperty("--dashboard-enter-order", String(Math.min(index, 7)));
+      const clearEntrance = () => {
+        card.classList.remove("dashboard-card-enter");
+        card.style.removeProperty("--dashboard-enter-order");
+      };
+      card.addEventListener("animationend", clearEntrance, { once: true });
+      setTimeout(clearEntrance, 900);
+    });
+    addedCards.forEach(card => observeDeferredImages(card));
     const nextOffset = offset + batch.length;
     target.dataset.renderedCount = String(nextOffset);
+    dashboardRenderedCounts()[status] = nextOffset;
     button.dataset.offset = String(nextOffset);
     const remaining = Math.max(0, games.length - nextOffset);
     if (!remaining) {
@@ -439,10 +603,15 @@
     dashboardLazyObserver = new IntersectionObserver(entries => entries.forEach(entry => {
       if (!entry.isIntersecting) return;
       const button = entry.target;
+      if (dashboardLoadPending) return;
       dashboardLazyObserver.unobserve(button);
-      loadDashboardMore(button);
-      if (button.isConnected && button.dataset.offset < button._dashboardItems.length) dashboardLazyObserver.observe(button);
-    }), { rootMargin: "640px 0px" });
+      dashboardLoadPending = true;
+      requestAnimationFrame(() => {
+        loadDashboardMore(button);
+        dashboardLoadPending = false;
+        if (button.isConnected && button.dataset.offset < button._dashboardItems.length) dashboardLazyObserver.observe(button);
+      });
+    }), { rootMargin: "0px" });
     loaders.forEach(button => dashboardLazyObserver.observe(button));
   }
   function deferredImageSource(image) {
@@ -450,6 +619,7 @@
   }
   function setDeferredImageSource(image, source) {
     if (!image?.isConnected) return;
+    if (nativeAndroid && image.closest(".dashboard-card") && source) image.dataset.dashboardCacheSrc = source;
     delete image.dataset.localItemId;
     delete image.dataset.lazySrc;
     if (source) image.src = source;
@@ -466,8 +636,12 @@
         catch (error) { recordLog("warning", `Could not load saved artwork: ${error?.message || error}`); }
         for (const record of batch) {
           timelineLocalThumbnailChecked.add(record.id);
-          const source = record.item.localThumbnailData || record.fallback;
-          record.images.forEach(image => setDeferredImageSource(image, source));
+          record.images.forEach(image => {
+            const source = image.dataset.localImageMode === "landscape"
+              ? record.item.localLandscapeData || record.item.backdrop || record.item.cachedDetails?.landscapeImage || record.item.cachedDetails?.backgroundImage || record.item.localPortraitData || record.item.localThumbnailData || record.fallback
+              : record.item.localPortraitData || record.item.localThumbnailData || record.fallback;
+            setDeferredImageSource(image, source);
+          });
           deferredLocalImageRequests.delete(record.id);
         }
       }
@@ -477,14 +651,16 @@
   function activateDeferredImage(image) {
     if (!image?.isConnected || image.hasAttribute("src")) return;
     const id = String(image.dataset.localItemId || "");
-    const item = id && items.find(row => String(row.id) === id);
+    const item = id && itemById(id);
     if (!item) { setDeferredImageSource(image, deferredImageSource(image)); return; }
     const existing = deferredLocalImageRequests.get(id);
     if (existing) { existing.images.add(image); return; }
+    const landscape = image.dataset.localImageMode === "landscape";
     const hasLocalFile = Boolean(item.thumbnailPath || item.localImageFiles?.length);
-    if (!hasLocalFile || item.localThumbnailData || timelineLocalThumbnailChecked.has(id)) {
+    const localImage = landscape ? item.localLandscapeData : item.localPortraitData || item.localThumbnailData;
+    if (!hasLocalFile || localImage || timelineLocalThumbnailChecked.has(id)) {
       timelineLocalThumbnailChecked.add(id);
-      setDeferredImageSource(image, item.localThumbnailData || deferredImageSource(image));
+      setDeferredImageSource(image, localImage || deferredImageSource(image));
       return;
     }
     const record = { id, item, fallback: deferredImageSource(image), images: new Set([image]) };
@@ -502,10 +678,17 @@
     if (!window.IntersectionObserver) { images.forEach(activateDeferredImage); return; }
     if (!deferredImageObserver) {
       deferredImageObserver = new IntersectionObserver(entries => entries.forEach(entry => {
-        if (!entry.isIntersecting) return;
-        deferredImageObserver.unobserve(entry.target);
-        activateDeferredImage(entry.target);
-      }), { rootMargin: "700px 0px" });
+        const image = entry.target;
+        if (!entry.isIntersecting) {
+          if (nativeAndroid && image.closest(".dashboard-card") && image.hasAttribute("src") && image.dataset.dashboardCacheSrc) {
+            image.dataset.lazySrc = image.dataset.dashboardCacheSrc;
+            image.removeAttribute("src");
+          }
+          return;
+        }
+        if (!nativeAndroid) deferredImageObserver.unobserve(image);
+        activateDeferredImage(image);
+      }), { rootMargin: nativeAndroid ? "180px 0px" : "700px 0px" });
     }
     images.forEach(image => deferredImageObserver.observe(image));
   }
@@ -581,7 +764,7 @@
   function fetchTimelineOnlineThumbnails(itemIds = [], historyIndexes = []) {
     if (page !== "timeline" || prefs.metadataMode === "offline" || !prefs.metadataThumbnails || !navigator.onLine || !window.SplitAppDiscovery?.search || timelineThumbnailLookup) return;
     const normalizeTitle = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-    const findByEntry = entry => items.find(item => String(item.id) === String(entry.itemId)) || items.find(item => String(item.title || "").toLowerCase() === String(entry.title || "").toLowerCase());
+    const findByEntry = entry => itemById(String(entry.itemId)) || items.find(item => String(item.title || "").toLowerCase() === String(entry.title || "").toLowerCase());
     const entryKey = entry => `${String(entry.itemId || "")}|${Number(entry.at) || Date.parse(entry.at) || 0}|${String(entry.status || entry.action || "")}|${String(entry.title || "")}`;
     const itemDescriptor = item => ({ key: `item:${item.id}`, item, entry: null, title: item.title, category: item.category });
     const entryDescriptor = entry => {
@@ -596,12 +779,12 @@
     let recent;
     if (itemIds.length || historyIndexes.length) {
       recent = [
-        ...itemIds.map(id => items.find(item => String(item.id) === String(id))).filter(Boolean).map(itemDescriptor),
+        ...itemIds.map(id => itemById(String(id))).filter(Boolean).map(itemDescriptor),
         ...historyIndexes.map(index => history[index]).filter(Boolean).map(entryDescriptor)
       ];
     } else if (visibleIds.length || visibleIndexes.length) {
       recent = [
-        ...visibleIds.map(id => items.find(item => String(item.id) === id)).filter(Boolean).map(itemDescriptor),
+        ...visibleIds.map(id => itemById(id)).filter(Boolean).map(itemDescriptor),
         ...visibleIndexes.map(index => history[index]).filter(Boolean).map(entryDescriptor)
       ];
     } else {
@@ -643,13 +826,14 @@
   }
   function render() {
     document.body.dataset.page = page;
+    { const fab = document.getElementById("sync-fab"); if (fab) fab.hidden = !syncJob || page === "sync"; }
     $("#page-title").textContent = titles[page];
     const topbarActions = $("#topbar-actions");
     if (topbarActions) topbarActions.hidden = page !== "dashboard";
     if (page === "dashboard") {
       const filterButton = topbarActions?.querySelector("[data-open-collection-filter]");
       const filterBadge = $("#collection-filter-badge");
-      const hasActiveFilter = dashboardStatusFilter !== "all" || Boolean(libraryQuery)
+      const hasActiveFilter = dashboardStatusFilter !== "all" || dashboardPlatformFilter !== "all" || Boolean(libraryQuery)
         || prefs.dashboardSort !== "alphabetical-asc"
         || prefs.dashboardView !== "list"
         || (prefs.dashboardGroupBy || "status") !== "status";
@@ -683,7 +867,11 @@
       renderedRoute = route;
     }
     content.querySelectorAll("[data-timeline-cache-object-url]").forEach(image => URL.revokeObjectURL(image.dataset.timelineCacheObjectUrl));
-    content.innerHTML = window.SplitAppPages[page](pageContext());
+    const context = pageContext();
+    if (page === "dashboard") context.dashboardSortedItems = dashboardSortedItems(context);
+    const keepScrollY = preservePageState && page === "dashboard" ? window.scrollY : null;
+    content.innerHTML = window.SplitAppPages[page](context);
+    if (keepScrollY) window.scrollTo({ top: keepScrollY, behavior: "auto" });
     if (topbarActions) window.lucide?.createIcons({ root: topbarActions, attrs: { "aria-hidden": "true" } });
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
     else if (page === "discover" && !discoverQuery) loadDiscoverSuggestions();
@@ -871,13 +1059,13 @@
       event.preventDefault(); event.stopPropagation();
       const key = button.dataset.navIconPick, icon = button.dataset.icon;
       prefs.navIcons[key] = icon === "controller" && key === "dashboard" ? "controller" : safeLucideName(icon, prefs.navIcons[key]);
-      persist(); applyPreferences(); render();
+      persist({ meta: true }); applyPreferences(); render();
     }));
     content.querySelectorAll("[data-nav-icon-select]").forEach(select => select.addEventListener("change", event => {
       event.stopPropagation();
       const key = select.dataset.navIconSelect;
       prefs.navIcons[key] = key === "dashboard" && select.value === "controller" ? "controller" : safeLucideName(select.value, prefs.navIcons[key]);
-      persist(); applyPreferences(); render();
+      persist({ meta: true }); applyPreferences(); render();
     }));
     content.querySelector("[data-close-dashboard-filter]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#dashboard-filter-dialog")); });
     const dashboardFilterDialog = content.querySelector("#dashboard-filter-dialog");
@@ -894,11 +1082,14 @@
       if (!dashboardFilterForm) return;
       dashboardStatusFilter = dashboardFilterForm?.elements.status.value || "all";
       prefs.dashboardStatusFilter = dashboardStatusFilter;
+      prefs.dashboardLastStatus = dashboardStatusFilter;
+      dashboardPlatformFilter = dashboardFilterForm?.elements.platform.value || "all";
+      prefs.dashboardPlatformFilter = dashboardPlatformFilter;
       prefs.dashboardView = dashboardFilterForm?.elements.view?.value || prefs.dashboardView;
       prefs.dashboardSort = dashboardFilterForm.elements.sort?.value || prefs.dashboardSort;
       prefs.theme = dashboardFilterForm.elements.theme?.value || prefs.theme;
       prefs.dashboardGroupBy = dashboardFilterForm.elements.groupBy?.value || prefs.dashboardGroupBy;
-      persist(); applyPreferences(); closePopup($("#dashboard-filter-dialog")); render();
+      persist({ meta: true }); applyPreferences(); closePopup($("#dashboard-filter-dialog")); render();
     };
     dashboardFilterForm?.addEventListener("submit", event => { event.preventDefault(); event.stopPropagation(); applyDashboardFilter(); });
     dashboardFilterForm?.querySelector('[type="submit"]')?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); applyDashboardFilter(); });
@@ -1036,15 +1227,32 @@
   async function refreshBackupFolderStatus() {
     const status = $("#backup-folder-status");
     if (!status || !window.SplitAppBackend?.inspectFolder) return;
+    const checkButton = $("[data-backup-folder-action=check]");
+    const chooseButton = $("[data-backup-folder-action=choose]");
+    const folderAvailable = Boolean(window.SplitAppBackend.isNativeFolderStorageAvailable?.());
+    if (checkButton) checkButton.disabled = true;
+    if (chooseButton) chooseButton.disabled = true;
+    status.dataset.state = "checking";
+    const show = (message, state) => {
+      if (!status.isConnected) return;
+      status.dataset.state = state;
+      const label = status.querySelector(".backup-folder-location") || status;
+      label.textContent = message;
+    };
+    show("Checking folder access and database…", "checking");
     try {
       const result = await window.SplitAppBackend.inspectFolder();
       if (!status.isConnected) return;
-      if (result.unsupported) status.textContent = "Folder storage is available in the Android app.";
-      else if (!result.configured) status.textContent = "No database folder selected";
-      else if (!result.valid) status.textContent = "Folder access is unavailable. Choose a folder again.";
-      else status.textContent = result.databaseExists ? "Database found in the selected folder." : "Folder is available. A database will be created there.";
+      if (result.unsupported) show("Folder storage is available in the Android app.", "unsupported");
+      else if (!result.configured) show("No database folder selected. Choose a folder to enable shared storage.", "empty");
+      else if (!result.valid) show("Folder access is unavailable. Choose the folder again.", "invalid");
+      else if (result.databaseExists) show("Database found. This folder is ready and synced.", "ready");
+      else show("Folder is available. SavePoint will create its database here.", "empty");
     } catch (error) {
-      if (status.isConnected) status.textContent = `Could not check folder: ${error.message || error}`;
+      show(`Could not check folder: ${error.message || error}`, "error");
+    } finally {
+      if (checkButton?.isConnected) checkButton.disabled = !folderAvailable;
+      if (chooseButton?.isConnected) chooseButton.disabled = !folderAvailable;
     }
   }
   function applySelectedFolderData(selected) {
@@ -1061,7 +1269,18 @@
   }
   async function chooseBackupDatabaseFolder() {
     const button = $("[data-backup-folder-action=choose]");
+    const checkButton = $("[data-backup-folder-action=check]");
+    const folderAvailable = Boolean(window.SplitAppBackend?.isNativeFolderStorageAvailable?.());
+    const status = $("#backup-folder-status");
     if (button) button.disabled = true;
+    if (checkButton) checkButton.disabled = true;
+    const buttonLabel = button?.querySelector("span");
+    if (buttonLabel) buttonLabel.textContent = "Opening picker…";
+    if (status) {
+      status.dataset.state = "checking";
+      const label = status.querySelector(".backup-folder-location") || status;
+      label.textContent = "Choose a folder in the Android picker…";
+    }
     try {
       const selected = await window.SplitAppBackend.chooseFolder({ items, history, preferences: prefs });
       applySelectedFolderData(selected);
@@ -1070,9 +1289,18 @@
       applyPreferences(); render();
       toast(selected.loadedFromFolder ? "Database loaded from the selected folder." : "Database folder selected and current data saved.");
     } catch (error) {
+      if (status?.isConnected) {
+        status.dataset.state = "error";
+        const label = status.querySelector(".backup-folder-location") || status;
+        label.textContent = error.message || "Could not select a database folder.";
+      }
       toast(error.message || "Could not select a database folder.");
     } finally {
-      if (button?.isConnected) button.disabled = false;
+      if (button?.isConnected) {
+        button.disabled = !folderAvailable;
+        if (buttonLabel?.isConnected) buttonLabel.textContent = "Choose folder";
+      }
+      if (checkButton?.isConnected) checkButton.disabled = !folderAvailable;
     }
   }
   async function clearAppCaches(kind) {
@@ -1221,7 +1449,7 @@
   }
   async function saveItem(event) {
     const form = event.currentTarget; const data = new FormData(form); const id = data.get("id");
-    const old = items.find(item => item.id === id); const key = data.get("category") || old?.category || config.categories[0]?.key;
+    const old = itemById(id); const key = data.get("category") || old?.category || config.categories[0]?.key;
     const image = String(data.get("image") || "");
     const entry = { ...old, id: id || crypto.randomUUID(), title: String(data.get("title")).trim(), category: key, status: data.get("status") || defaultStatus(key), progress: Math.max(0, Number(data.get("progress")) || 0), rating: Number(data.get("rating")) || 0, goal: Math.max(0, Number(data.get("goal")) || 0), image, ...(image.startsWith("data:image/") ? { localThumbnailData: image } : {}), description: String(data.get("description") || "").trim(), metadataSource: String(data.get("metadataSource") || ""), providerId: String(data.get("providerId") || ""), url: String(data.get("url") || ""), year: String(data.get("year") || ""), createdAt: old?.createdAt || Date.now(), updatedAt: Date.now() };
     if (!entry.title) return;
@@ -1234,7 +1462,7 @@
     syncEditedCompletionTarget(entry, old);
     if (old) items[items.indexOf(old)] = entry; else items.unshift(entry);
     if (entry.status !== "Backlog" && entry.status !== old?.status) history.unshift({ itemId: entry.id, title: entry.title, action: entry.status, status: entry.status, at: Date.now() });
-    await persist(); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
+    await persist({ ids: [entry.id] }); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
     if (!old && key === "game") enrichLibraryEntryWithMix(entry, { ...entry, source: entry.metadataSource }, "Add Game");
   }
   async function saveAddForm(form) {
@@ -1242,13 +1470,13 @@
     await saveItem({ currentTarget: form });
   }
   async function updateProgress(id) {
-    const item = items.find(entry => entry.id === id); if (!item) return;
+    const item = itemById(id); if (!item) return;
     const step = Math.max(1, Number(prefs.progressIncrement) || 1); item.progress = (Number(item.progress) || 0) + step; item.updatedAt = Date.now();
     const previousStatus = item.status;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = "Completed";
     if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
-    await persist(); render(); toast("Progress updated.");
+    await persist({ ids: [item.id] }); render(); toast("Progress updated.");
   }
   function finishDeletingItem(id, returnPage) {
     const exists = id != null && items.some(entry => String(entry.id) === String(id));
@@ -1269,14 +1497,14 @@
     return true;
   }
   async function deleteItem(id) {
-    const item = items.find(entry => entry.id === id); if (!item) return;
+    const item = itemById(id); if (!item) return;
     if (!(await appConfirm(`Delete “${item.title}” from your library?`, { title: "Delete title", confirmLabel: "Delete", danger: true }))) return;
     finishDeletingItem(id, addReturnPage);
   }
-  function openEdit(id) { const item = items.find(entry => entry.id === id); if (item) openItem(item); }
+  function openEdit(id) { const item = itemById(id); if (item) openItem(item); }
   async function saveDetailEdit(event) {
     event.preventDefault();
-    const item = items.find(row => row.id === detailItemId);
+    const item = itemById(detailItemId);
     if (!item) return;
     const data = new FormData(event.currentTarget);
     const oldStatus = item.status;
@@ -1291,7 +1519,7 @@
     Object.assign(item, draft, { updatedAt: Date.now() });
     if (oldStatus !== item.status && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     detailEditMode = false;
-    await persist(); render(); toast("Entry updated.");
+    await persist({ ids: [item.id] }); render(); toast("Entry updated.");
   }
 
   function submitDiscover() {
@@ -1312,8 +1540,12 @@
   function findLibraryMatch(result) {
     if (!result?.title) return null;
     const normalize = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const yearOf = value => String(value || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
     const title = normalize(result.title);
-    return items.find(item => item.category === result.category && normalize(item.title) === title) || null;
+    const matches = items.filter(item => item.category === result.category && normalize(item.title) === title);
+    const year = yearOf(result.year);
+    if (year) return matches.find(item => yearOf(item.year) === year) || (matches.length === 1 && !yearOf(matches[0].year) ? matches[0] : null);
+    return matches.length === 1 ? matches[0] : null;
   }
   function discoverAddButton(result, index) {
     const saved = Boolean(findLibraryMatch(result));
@@ -1420,6 +1652,7 @@
     box.innerHTML = html || ""; box._results = flat;
     updateDiscoverLibraryActions();
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
+    observeDeferredImages(box);
     if (empty) empty.hidden = flat.length > 0;
     if (!flat.length) setDiscoverEmptyState("No suggestions available", "Search for a game above or check your enabled sources.");
     if (message && flat.length) message.textContent = !navigator.onLine || prefs.metadataMode === "offline"
@@ -1542,7 +1775,7 @@
       if (["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     }
     item.updatedAt = Date.now();
-    await persist();
+    await persist({ ids: [item.id] });
     updateDiscoverLibraryActions();
     if (page === "mix") paintMixResults();
     toast(wasSaved ? "Refreshing this library entry from enabled sources…" : `Added to your library. Fetching details from enabled sources…`);
@@ -1558,63 +1791,64 @@
     }
     return merged;
   }
-  function enrichLibraryEntryWithMix(item, sourceResult = {}, origin = "Library") {
+  function applyEnrichedDetails(current, loaded, mixed) {
+    if (!current || !loaded) return;
+    if (mixed) {
+      applyMixIdentity(current, loaded);
+      current.mixSourceKeys = [...new Set(loaded.facts?.sources || [])];
+      current.mixSources = [...new Set(loaded.mixSources || current.mixSourceKeys.map(key => window.SplitAppSources.list().find(source => source.key === key)?.name || key))];
+    }
+    current.cachedDetails = loaded;
+    current.facts = mergeFacts(current.facts, loaded.facts);
+    current.description = loaded.description || current.description;
+    current.year = loaded.year || current.year;
+    current.url = loaded.url || current.url;
+    current.image = current.localThumbnailData || loaded.portraitImage || loaded.image || current.image;
+    current.backdrop = loaded.landscapeImage || loaded.backgroundImage || current.backdrop;
+    current.updatedAt = Date.now();
+  }
+  function enrichLibraryEntryWithMix(item, sourceResult = {}, origin = "Library", options = {}) {
     if (!item?.id || item.category !== "game" || !window.SplitAppMix?.load) return Promise.resolve(null);
     if (mixEnrichmentByItem.has(String(item.id))) return mixEnrichmentByItem.get(String(item.id));
     const itemId = String(item.id);
     const task = (async () => {
-      await persist();
-      const saved = items.find(row => String(row.id) === itemId);
+      const saved = itemById(itemId);
       if (!saved) return null;
       let loaded = null, mixed = false;
       try {
-        loaded = await window.SplitAppMix.load({ ...saved, ...sourceResult, title: saved.title, category: saved.category }, detailSettings());
+        loaded = await window.SplitAppMix.load({ ...saved, ...sourceResult, title: saved.title, category: saved.category }, { ...detailSettings(), background: options.background === true }, options.quiet ? null : partial => {
+          const current = itemById(itemId);
+          if (!current) return;
+          applyEnrichedDetails(current, partial, true);
+          if (page === "details" && String(detailItemId) === itemId) { detailData = partial; render(); }
+        });
         mixed = true;
       } catch (mixError) {
-        recordLog("warning", `Mix fetch could not load ${saved.title}: ${mixError?.message || mixError}`);
+        if (!options.quiet) recordLog("warning", `Mix fetch could not load ${saved.title}: ${mixError?.message || mixError}`);
         const sourceKey = sourceResult.metadataSource || sourceResult.source || saved.metadataSource;
         const providerId = sourceResult.providerId || saved.providerId;
         if (sourceKey && sourceKey !== "mix" && providerId && window.SplitAppDetailController?.load) {
           try { loaded = await window.SplitAppDetailController.load({ ...saved, ...sourceResult, metadataSource: sourceKey, providerId, title: saved.title, category: saved.category }, detailSettings()); }
-          catch (error) { recordLog("warning", `Could not load source details for ${saved.title}: ${error?.message || error}`); }
+          catch (error) { if (!options.quiet) recordLog("warning", `Could not load source details for ${saved.title}: ${error?.message || error}`); }
         }
       }
-      const current = items.find(row => String(row.id) === itemId);
+      const current = itemById(itemId);
       if (!current || !loaded) return null;
-      const tracking = {
-        status: current.status,
-        goal: current.goal,
-        progress: current.progress,
-        completionTarget: current.completionTarget,
-        completionTargetHours: current.completionTargetHours
-      };
-      if (mixed) {
-        applyMixIdentity(current, loaded);
-        current.mixSourceKeys = [...new Set(loaded.facts?.sources || [])];
-        current.mixSources = [...new Set(loaded.mixSources || current.mixSourceKeys.map(key => window.SplitAppSources.list().find(source => source.key === key)?.name || key))];
+      applyEnrichedDetails(current, loaded, mixed);
+      if (options.persist !== false) await persist({ ids: [itemId] });
+      if (options.loadImages !== false) {
+        try {
+          const localImages = await window.SplitAppBackend?.loadItemImages?.(current);
+          if (localImages && Object.keys(localImages).length) current.localImageData = localImages;
+        } catch (error) { if (!options.quiet) recordLog("warning", `Could not load local images for ${current.title}: ${error?.message || error}`); }
       }
-      current.cachedDetails = loaded;
-      current.facts = mergeFacts(current.facts, loaded.facts);
-      current.description = loaded.description || current.description;
-      current.year = loaded.year || current.year;
-      current.url = loaded.url || current.url;
-      current.image = current.localThumbnailData || loaded.portraitImage || loaded.image || current.image;
-      current.backdrop = loaded.landscapeImage || loaded.backgroundImage || current.backdrop;
-      Object.assign(current, tracking);
-      current.updatedAt = Date.now();
-      await persist();
-      await window.SplitAppBackend?.flushFolderWrites?.();
-      try {
-        const localImages = await window.SplitAppBackend?.loadItemImages?.(current);
-        if (localImages && Object.keys(localImages).length) current.localImageData = localImages;
-      } catch (error) { recordLog("warning", `Could not load local images for ${current.title}: ${error?.message || error}`); }
       if (page === "details" && String(detailItemId) === itemId) { detailData = loaded; detailLoading = false; render(); }
       updateDiscoverLibraryActions();
-      if (page === "dashboard" || page === "discover" || page === "mix") render();
-      toast(mixed ? `Saved merged details from ${current.mixSources?.length || 0} sources.` : "Saved source details to your library.");
+      if (page === "dashboard") patchDashboardCard(itemId);
+      else if (page === "discover" || page === "mix") render();
       return loaded;
     })().catch(error => {
-      recordLog("error", `Could not save fetched details for ${item.title}: ${error?.message || error}`);
+      if (!options.quiet) recordLog("error", `Could not save fetched details for ${item.title}: ${error?.message || error}`);
       return null;
     }).finally(() => mixEnrichmentByItem.delete(itemId));
     mixEnrichmentByItem.set(itemId, task);
@@ -1656,15 +1890,16 @@
     if (factsRunning) return; factsRunning = true; button.disabled = true;
     const hasHours = item => Number(item.facts?.mainHours) || Number(item.facts?.averageHours);
     const pending = items.filter(item => !hasHours(item));
-    let found = 0;
-    for (const [index, item] of pending.entries()) {
-      button.textContent = `Looking up ${index + 1} of ${pending.length}…`;
+    let found = 0, completed = 0;
+    await runWithConcurrency(pending, prefs.metadataWorkers, async item => {
+      button.textContent = `Looking up ${Math.min(pending.length, completed + 1)} of ${pending.length}…`;
       try {
         const hours = await window.SplitAppMix.hours(item.title, detailSettings());
-        if (hours) { item.facts = mergeFacts(item.facts, hours); item.updatedAt = Date.now(); found += 1; persist(); }
+        if (hours) { item.facts = mergeFacts(item.facts, hours); item.updatedAt = Date.now(); found += 1; }
       } catch (error) { recordLog("warning", `Play-time lookup failed for ${item.title}: ${error?.message || error}`); }
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
+      completed += 1;
+    });
+    if (found) await persist();
     factsRunning = false; render(); toast(found ? `Found play times for ${found} of ${pending.length} games.` : "No play times found. Enable HowLongToBeat (Android) or add a RAWG key.");
   }
   // Saves provider details (play time, price, team, requirements, images) for games that never opened their details page.
@@ -1672,18 +1907,21 @@
   async function fetchMissingFacts(button) {
     if (factsRunning) return; factsRunning = true; button.disabled = true;
     const pending = items.filter(item => item.metadataSource && item.providerId && !item.facts?.fetchedAt);
-    let done = 0;
-    for (const item of pending) {
-      button.textContent = `Fetching ${done + 1} of ${pending.length}…`;
+    let done = 0, completed = 0;
+    await runWithConcurrency(pending, prefs.metadataWorkers, async item => {
+      button.textContent = `Fetching ${Math.min(pending.length, completed + 1)} of ${pending.length}…`;
       try {
         const loaded = await window.SplitAppDetails.load(item, detailSettings());
         item.cachedDetails = loaded; item.facts = mergeFacts(item.facts, loaded.facts);
         item.description = loaded.description || item.description; item.year = loaded.year || item.year;
         item.image = loaded.portraitImage || loaded.image || item.image;
-        done += 1; persist();
+        item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
+        item.updatedAt = Date.now();
+        done += 1;
       } catch (error) { recordLog("warning", `Could not fetch details for ${item.title}: ${error?.message || error}`); }
-      await new Promise(resolve => setTimeout(resolve, 350));
-    }
+      completed += 1;
+    });
+    if (done) await persist();
     factsRunning = false; render(); toast(`Saved details for ${done} of ${pending.length} games.`);
   }
   function readCustomSourceForm() {
@@ -1734,7 +1972,7 @@
   }
   async function loadDetails({ force = false } = {}) {
     const isPreview = Boolean(detailPreview);
-    const item = detailPreview || items.find(row => row.id === detailItemId);
+    const item = detailPreview || itemById(detailItemId);
     const requestId = ++detailRequest; detailData = item?.cachedDetails || null; detailError = "";
     if (!item) { detailLoading = false; render(); return; }
     const hasCachedDetails = Boolean(item.cachedDetails);
@@ -1800,7 +2038,7 @@
           item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
           Object.assign(item, tracking);
           item.updatedAt = Date.now();
-          persist();
+          persist({ ids: [item.id] });
           window.SplitAppBackend?.loadItemImages?.(item).then(localImageData => {
             if (requestId === detailRequest && page === "details" && Object.keys(localImageData || {}).length) { item.localImageData = localImageData; render(); }
           }).catch(() => {});
@@ -1811,7 +2049,7 @@
     finally { if (requestId === detailRequest) { detailLoading = false; render(); } }
   }
   function toggleEpisodeWatched(itemId, episodeId, episodeTitle) {
-    const item = items.find(entry => entry.id === itemId); if (!item) return;
+    const item = itemById(itemId); if (!item) return;
     const watched = new Set((item.watchedEpisodeIds || []).map(String));
     const id = String(episodeId);
     const previousStatus = item.status;
@@ -1822,7 +2060,7 @@
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
     item.updatedAt = Date.now();
     if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
-    persist(); render(); toast(watched.has(id) ? "Episode marked watched." : "Episode marked unwatched.");
+    persist({ ids: [item.id] }); render(); toast(watched.has(id) ? "Episode marked watched." : "Episode marked unwatched.");
   }
   function deleteFromDetails(id) {
     // Deleting from a detail view always returns to the Home library.
@@ -1876,11 +2114,11 @@
     const changed = item.status !== status;
     item.status = status; item.updatedAt = Date.now();
     if (changed && ["Dropped", "Completed", "On Hold", "Playing"].includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
-    await persist();
+    await persist({ ids: [item.id] });
     return true;
   }
   function openItemActions(id) {
-    const item = items.find(entry => String(entry.id) === String(id)); if (!item) return;
+    const item = itemById(String(id)); if (!item) return;
     const statusIcons = { Playing: "gamepad-2", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus", Completed: "check-circle" };
     const statusColors = { Playing: "accent", Backlog: "neutral", "On Hold": "warning", Dropped: "danger", Completed: "success" };
     const availableStatuses = [...new Set(category(item.category)?.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed"])]
@@ -1893,7 +2131,7 @@
       dialog.addEventListener("click", async event => {
         if (event.target === dialog) { closePopup(dialog); return; }
         const button = event.target.closest("[data-sheet-action]"); if (!button) return;
-        const target = items.find(entry => String(entry.id) === String(dialog.dataset.itemId));
+        const target = itemById(String(dialog.dataset.itemId));
         if (!target) return;
         const action = button.dataset.sheetAction;
         if (action === "details") {
@@ -1906,7 +2144,7 @@
         else if (action === "remove") {
           if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
           if (prefs.backupBeforeDestructive) exportList();
-          items = items.filter(entry => entry.id !== target.id); persist(); render(); toast("Entry removed.");
+          items = items.filter(entry => entry.id !== target.id); persist({ removed: [target.id] }); render(); toast("Entry removed.");
         } else if (action !== "cancel") { if (await setItemStatus(target, action)) { render(); toast(`Marked as ${action}.`); } }
       });
     }
@@ -2073,12 +2311,24 @@
   function setPreference(key, value) {
     prefs[key] = value;
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
-    persist(); applyPreferences();
+    persist({ meta: true }); applyPreferences();
     if (key === "backgroundBackups" || key === "backupSchedule") syncBackupSchedule();
     if (key === "ratingFormat") updateRatingOptions();
-    if (key === "dashboardStatusFilter") dashboardStatusFilter = value || "all";
-    if (key === "dashboardDefaultCategory") activeCategory = value === "remember" || value === "all" ? "all" : value;
-    if (["dashboardGroupBy", "dashboardSort", "showRatings", "showProgress", "showThumbnails", "dashboardDensity", "dashboardView", "dashboardStatusFilter", "dashboardDefaultCategory", "dashboardRowActions", "cardCorners", "oneHandedMode", "tabletTwoColumn", "theme", "ratingFormat"].includes(key)) render();
+    if (key === "dashboardStatusFilter") {
+      dashboardStatusFilter = value || "all";
+      if (prefs.dashboardDefaultCategory === "remember") prefs.dashboardLastStatus = dashboardStatusFilter;
+    }
+    if (key === "dashboardDefaultCategory") {
+      dashboardStatusFilter = value === "remember" ? prefs.dashboardLastStatus || "all" : value || "all";
+      prefs.dashboardStatusFilter = dashboardStatusFilter;
+      persist({ meta: true });
+    }
+    if (key === "dashboardDefaultPlatform") {
+      dashboardPlatformFilter = value || "all";
+      prefs.dashboardPlatformFilter = dashboardPlatformFilter;
+      persist({ meta: true });
+    }
+    if (["dashboardGroupBy", "dashboardSort", "showRatings", "showProgress", "showThumbnails", "dashboardDensity", "dashboardView", "dashboardStatusFilter", "dashboardDefaultCategory", "dashboardDefaultPlatform", "dashboardRowActions", "cardCorners", "oneHandedMode", "tabletTwoColumn", "theme", "ratingFormat", "humanReadableStats", "currencyDisplay", "usdToInrRate"].includes(key)) render();
   }
   function openSettingPicker(trigger) {
     let options = [];
@@ -2108,7 +2358,8 @@
       bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid" },
       bottomBarLayout: { spread: "align-horizontal-space-between", center: "align-horizontal-justify-center", left: "align-horizontal-justify-start" },
       dashboardView: { list: "list", "detailed-grid": "layout-dashboard", "compact-grid": "grid-3x3", "large-grid": "square" },
-      dashboardDefaultCategory: { remember: "history", all: "layers", game: "gamepad-2" },
+      dashboardDefaultPlatform: { all: "layers-3", pc: "monitor", mac: "laptop", mobile: "smartphone", xbox: "tv", playstation: "gamepad-2", nintendo: "joystick" },
+      dashboardDefaultCategory: { remember: "history", all: "layers", Playing: "gamepad-2", Completed: "circle-check", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus" },
       defaultStatus: { Backlog: "bookmark", Playing: "play", "On Hold": "pause", Dropped: "circle-x", Completed: "circle-check" },
       dateFormat: { auto: "globe", dmy: "calendar", mdy: "calendar", iso: "calendar-days", long: "calendar-check" },
       iconStyle: { tiles: "layout-grid", inline: "list" },
@@ -2205,7 +2456,7 @@
       row.append(copy, color); list.appendChild(row);
     });
     const save = document.createElement("button"); save.type = "button"; save.className = "setting-picker-save"; save.textContent = "Save colors";
-    save.addEventListener("click", () => { prefs.categoryColors = draft; persist(); render(); closePopup(dialog); toast("Category colors updated."); });
+    save.addEventListener("click", () => { prefs.categoryColors = draft; persist({ meta: true }); render(); closePopup(dialog); toast("Category colors updated."); });
     list.appendChild(save);
     showPopup(dialog);
   }
@@ -2213,31 +2464,247 @@
     const blob = new Blob([JSON.stringify({ app: config.name, version: 1, exportedAt: new Date().toISOString(), items, history, preferences: prefs }, null, 2)], { type: "application/json" });
     const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); toast("Export ready.");
   }
+  function importIdentity(item) {
+    const title = String(item?.title || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const year = String(item?.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
+    return `${item?.category || "game"}:${title}:${year}`;
+  }
   async function importList(file) {
     if (!file) return;
+    importState = { phase: "reading", fileName: file.name || "Library backup", fileSize: Number(file.size) || 0, incoming: [], fresh: [], skipped: 0, completed: 0, synced: 0, failed: 0, error: "" };
+    goto("import-preview");
     try {
       const data = JSON.parse(await file.text()); const incoming = Array.isArray(data) ? data : data.items;
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
-      const normalized = incoming.filter(item => item && item.title).map(item => ({ ...item, id: crypto.randomUUID(), category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: Date.now(), updatedAt: Date.now() }));
-      const known = new Set(items.map(item => `${item.category}:${item.title.toLowerCase()}`));
-      const fresh = normalized.filter(item => !known.has(`${item.category}:${item.title.toLowerCase()}`)); items = [...fresh, ...items]; persist(); render(); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}.`);
-    } catch (error) { toast(error.message || "Could not import this file."); }
+      const now = Date.now();
+      const normalized = incoming.filter(item => item && String(item.title || "").trim()).map(item => ({ ...item, id: crypto.randomUUID(), category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: now, updatedAt: now }));
+      const known = new Set(items.map(importIdentity));
+      const seen = new Set();
+      const fresh = normalized.filter(item => {
+        const identity = importIdentity(item);
+        if (known.has(identity) || seen.has(identity)) return false;
+        seen.add(identity);
+        return true;
+      });
+      importState = { ...importState, phase: "preview", incoming: normalized, fresh, skipped: normalized.length - fresh.length };
+      render();
+    } catch (error) {
+      importState = { ...importState, phase: "error", error: error.message || "Could not import this file." };
+      render();
+    }
   }
+  function updateImportProgress(message = "") {
+    if (!importState) return;
+    const counter = $("#import-progress-count"), label = $("#import-progress-label"), bar = $("#import-progress-bar"), synced = $("#import-progress-synced");
+    const total = importState.total || 0, completed = importState.completed || 0;
+    const percent = total ? Math.min(100, Math.round(completed / total * 100)) : importState.phase === "complete" ? 100 : 0;
+    if (counter) counter.textContent = `${Math.min(completed, total)} / ${total}`;
+    const percentLabel = $("#import-progress-percent"); if (percentLabel) percentLabel.textContent = `${percent}%`;
+    if (label) label.textContent = message || `Checking ${importState.currentTitle || "next game"}…`;
+    if (synced) synced.textContent = `${importState.synced || 0} updated · ${importState.failed || 0} unavailable`;
+    if (bar) bar.style.width = `${total ? Math.min(100, completed / total * 100) : importState.phase === "complete" ? 100 : 0}%`;
+    const progress = $(".import-progress-track");
+    if (progress) {
+      progress.setAttribute("aria-valuemax", String(total));
+      progress.setAttribute("aria-valuenow", String(Math.min(completed, total)));
+      progress.setAttribute("aria-valuetext", `${percent}%`);
+    }
+  }
+  async function continueImport() {
+    if (!importState || importState.phase !== "preview") return;
+    const fresh = importState.fresh;
+    importState = { ...importState, phase: "saving", total: fresh.length, completed: 0, synced: 0, failed: 0, currentTitle: "" };
+    render();
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    items = [...fresh, ...items];
+    await persist({ ids: fresh.map(item => item.id) });
+    const count = fresh.length;
+    importState = { ...importState, phase: "complete", completed: count, total: count };
+    render();
+    await new Promise(resolve => setTimeout(resolve, 600));
+    importState = null;
+    goto("dashboard");
+    const started = startSyncJob(fresh);
+    toast(started ? `Added ${count} ${count === 1 ? "game" : "games"}. Syncing metadata in the background.` : `Added ${count} ${count === 1 ? "game" : "games"}.`);
+  }
+  // ---- Background metadata sync -------------------------------------------
+  let syncJob = null, syncHideTimer = 0, syncPersistCount = 0;
+  const syncNotifier = () => window.Capacitor?.Plugins?.SyncNotification;
+  function syncCounts() {
+    const e = syncJob?.entries || [];
+    const done = e.filter(x => x.status === "done").length, failed = e.filter(x => x.status === "failed").length;
+    const total = e.length, completed = done + failed;
+    return { total, done, failed, completed, syncing: e.filter(x => x.status === "syncing").length, percent: total ? Math.round(completed / total * 100) : 0 };
+  }
+  function startSyncJob(list) {
+    const sources = window.SplitAppSources?.available("game", prefs) || [];
+    const canSync = prefs.metadataMode !== "offline" && navigator.onLine && sources.length > 0 && Boolean(window.SplitAppMix?.load);
+    const games = list.filter(item => item.category === "game");
+    if (!canSync || !games.length) return false;
+    if (syncJob && !syncJob.finished) {
+      syncJob.entries.push(...games.map(i => ({ id: i.id, title: i.title, status: "queued", error: "" })));
+      syncJob.queue.push(...games);
+      return true;
+    }
+    clearTimeout(syncHideTimer);
+    syncJob = { finished: false, paused: false, waiters: [], dirty: [], queue: [...games], entries: games.map(i => ({ id: i.id, title: i.title, status: "queued", error: "" })) };
+    syncPersistCount = 0;
+    syncNotifier()?.requestPermission?.().catch(() => {});
+    if (!syncActionListener && syncNotifier()?.addListener) {
+      // Notification "Pause"/"Resume" button.
+      syncActionListener = syncNotifier().addListener("action", event => setSyncPaused(event?.action === "pause"));
+    }
+    updateSyncUI();
+    runSyncJob(syncJob);
+    return true;
+  }
+  // How many lookups may run at once. Scales with cores and memory, backs off on slow or
+  // metered networks and when the tab is hidden, and never exceeds the user's setting.
+  function syncConcurrency() {
+    const cores = Number(navigator.hardwareConcurrency) || 4, memory = Number(navigator.deviceMemory) || 4;
+    const connection = navigator.connection || {};
+    let limit = Math.round(cores / 2);
+    if (memory <= 2) limit = Math.min(limit, 1); else if (memory <= 4) limit = Math.min(limit, 2);
+    if (connection.saveData || /^(slow-2g|2g)$/.test(connection.effectiveType || "")) limit = 1;
+    else if (connection.effectiveType === "3g") limit = Math.min(limit, 2);
+    if (document.hidden) limit = Math.min(limit, 2);
+    return Math.max(1, Math.min(limit, Number(prefs.metadataWorkers) || 5, 8));
+  }
+  // Background work waits for an idle moment and for pending taps/scrolls, so it never
+  // competes with what the user is doing.
+  function yieldToUser() {
+    return new Promise(resolve => {
+      const go = () => {
+        if (navigator.scheduling?.isInputPending?.()) { setTimeout(go, 40); return; }
+        if (window.scheduler?.postTask) window.scheduler.postTask(resolve, { priority: "background" }).catch(resolve);
+        else if (window.requestIdleCallback) window.requestIdleCallback(() => resolve(), { timeout: 1500 });
+        else setTimeout(resolve, 0);
+      };
+      go();
+    });
+  }
+  async function runSyncJob(job) {
+    // Extra workers are parked while the adaptive limit is lower than their number.
+    const workers = Array.from({ length: 8 }, async (_, index) => {
+      while (true) {
+        while (job.paused || index >= syncConcurrency()) {
+          if (!job.queue.length && !job.entries.some(x => x.status === "syncing")) return;
+          if (job.paused) await new Promise(resolve => job.waiters.push(resolve));
+          else await new Promise(resolve => setTimeout(resolve, 1500));
+          if (index > 0 && !job.queue.length) return;
+        }
+        if (!job.queue.length) break;
+        await yieldToUser();
+        if (!job.queue.length || job.paused) continue;
+        const item = job.queue.shift();
+        const entry = job.entries.find(x => x.id === item.id);
+        if (!entry) continue;
+        entry.status = "syncing"; updateSyncUI();
+        try {
+          const current = itemById(item.id) || item;
+          const loaded = await enrichLibraryEntryWithMix(current, { ...current, source: current.metadataSource }, "Background sync", { persist: false, loadImages: false, quiet: true, background: true });
+          entry.status = loaded ? "done" : "failed";
+          if (!loaded) entry.error = "No metadata found";
+        } catch (error) { entry.status = "failed"; entry.error = error?.message || "Request failed"; }
+        mixEnrichmentByItem.delete(String(item.id));
+        // Paused with nothing left to fetch: finish instead of waiting for a resume.
+        if (job.paused && !job.queue.length && !job.entries.some(x => x.status === "syncing" || x.status === "queued")) { job.paused = false; const waiters = job.waiters; job.waiters = []; waiters.forEach(resolve => resolve()); }
+        job.dirty.push(item.id);
+        if (++syncPersistCount % 10 === 0) persist({ ids: job.dirty.splice(0) });
+        updateSyncUI();
+      }
+    });
+    await Promise.all(workers);
+    job.finished = true;
+    await persist({ ids: job.dirty.splice(0) });
+    updateSyncUI();
+    const c = syncCounts();
+    toast(c.failed ? `Sync finished · ${c.done} updated, ${c.failed} failed.` : `Metadata sync finished · ${c.done} updated.`);
+    if (!c.failed) syncHideTimer = setTimeout(() => { if (syncJob === job) { syncJob = null; updateSyncUI(); if (page === "sync") render(); } }, 6000);
+  }
+  let syncActionListener = null;
+  function setSyncPaused(paused) {
+    if (!syncJob || syncJob.finished || syncJob.paused === paused) return;
+    syncJob.paused = paused;
+    if (!paused) { const waiters = syncJob.waiters; syncJob.waiters = []; waiters.forEach(resolve => resolve()); }
+    updateSyncUI();
+    if (page === "sync") render();
+    toast(paused ? "Sync paused." : "Sync resumed.");
+  }
+  function retrySyncFailures() {
+    if (!syncJob || !syncJob.finished) return;
+    const failed = syncJob.entries.filter(x => x.status === "failed");
+    const games = failed.map(x => itemById(x.id)).filter(Boolean);
+    if (!games.length) return;
+    failed.forEach(x => { x.status = "queued"; x.error = ""; });
+    syncJob.finished = false; syncJob.queue = games; syncPersistCount = 0;
+    runSyncJob(syncJob); render();
+  }
+  // Paint at most once per frame, and talk to the native notification at most once a second
+  // (every bridge call costs a JS->Java hop), except when the state itself changes.
+  let syncPaintQueued = false, lastNotify = 0, lastNotifyState = "";
+  function updateSyncUI() {
+    if (syncPaintQueued) return;
+    syncPaintQueued = true;
+    requestAnimationFrame(() => { syncPaintQueued = false; paintSyncUI(); });
+  }
+  function paintSyncUI() {
+    let fab = $("#sync-fab");
+    const c = syncCounts();
+    const show = Boolean(syncJob) && page !== "sync";
+    if (!fab && syncJob) {
+      fab = document.createElement("a"); fab.id = "sync-fab"; fab.className = "sync-fab"; fab.href = "#sync";
+      fab.innerHTML = '<span class="sync-fab-pie"><b></b></span>';
+      document.body.appendChild(fab);
+    }
+    if (fab) {
+      fab.hidden = !show;
+      fab.style.setProperty("--p", c.percent + "%");
+      fab.classList.toggle("is-done", Boolean(syncJob?.finished));
+      fab.classList.toggle("is-paused", Boolean(syncJob?.paused));
+      fab.classList.toggle("has-failed", c.failed > 0);
+      fab.querySelector("b").textContent = syncJob?.finished && !c.failed ? "✓" : syncJob?.paused ? "❚❚" : c.percent + "%";
+      fab.setAttribute("aria-label", `Metadata sync ${c.percent}% — ${c.completed} of ${c.total} done. Open details.`);
+    }
+    if (page === "sync") livePatchSyncPage(c);
+    const n = syncNotifier();
+    const stateKey = syncJob ? `${syncJob.finished}|${syncJob.paused}` : "none";
+    if (n && syncJob && stateKey === lastNotifyState && Date.now() - lastNotify < 1000) return;
+    lastNotifyState = stateKey; lastNotify = Date.now();
+    if (n && syncJob) {
+      const text = syncJob.finished ? `${c.done} updated${c.failed ? ` · ${c.failed} failed` : ""}` : `${c.completed} / ${c.total} games · ${c.percent}%${syncJob.paused ? " · paused" : ""}`;
+      n.update({ title: syncJob.finished ? "Metadata sync finished" : syncJob.paused ? "Metadata sync paused" : "Syncing game metadata", text, progress: c.completed, max: c.total, done: Boolean(syncJob.finished), paused: Boolean(syncJob.paused) }).catch(() => {});
+    } else if (n && !syncJob) n.cancel?.().catch(() => {});
+  }
+  function livePatchSyncPage(c) {
+    const root = $("#sync-page"); if (!root) return;
+    const set = (sel, v) => { const el = root.querySelector(sel); if (el) el.textContent = v; };
+    root.style.setProperty("--p", c.percent + "%");
+    set("[data-sync-percent]", c.percent + "%"); set("[data-sync-completed]", `${c.completed} / ${c.total}`);
+    set("[data-sync-done]", c.done); set("[data-sync-failed]", c.failed); set("[data-sync-active]", c.total - c.completed);
+    // Only the ~60 rendered rows matter; re-render (at most twice a second) when one changed state.
+    const byId = new Map((syncJob?.entries || []).map(entry => [entry.id, entry]));
+    const stale = [...root.querySelectorAll("[data-sync-row]")].some(row => byId.get(row.dataset.syncRow)?.status !== row.dataset.status);
+    if (stale && !syncPageRenderTimer) syncPageRenderTimer = setTimeout(() => { syncPageRenderTimer = 0; if (page === "sync") render(); }, 500);
+  }
+  let syncPageRenderTimer = 0;
   function resetDashboard() {
-    Object.assign(prefs, { dashboardView: "list", dashboardDefaultCategory: "remember", dashboardStatusFilter: "all", dashboardSort: "alphabetical-asc", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardRowActions: "menu", showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars", oneHandedMode: "off", tabletTwoColumn: true });
-    dashboardStatusFilter = "all"; activeCategory = "all"; persist(); applyPreferences(); render(); toast("Dashboard preferences restored.");
+    Object.assign(prefs, { dashboardView: "list", dashboardDefaultCategory: "remember", dashboardStatusFilter: "all", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", dashboardSort: "alphabetical-asc", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardRowActions: "menu", showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars", oneHandedMode: "off", tabletTwoColumn: true });
+    dashboardStatusFilter = "all"; dashboardPlatformFilter = "all"; activeCategory = "all"; persist({ meta: true }); applyPreferences(); render(); toast("Dashboard preferences restored.");
   }
   function clearDashboardFilters() {
     dashboardStatusFilter = prefs.dashboardStatusFilter = "all";
+    prefs.dashboardLastStatus = "all";
+    dashboardPlatformFilter = prefs.dashboardPlatformFilter = "all";
     prefs.dashboardView = "list";
     prefs.dashboardSort = "alphabetical-asc";
     prefs.dashboardGroupBy = "status";
     libraryQuery = "";
-    persist(); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render();
+    persist({ meta: true }); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render();
   }
   function resetAnimations() {
     ["reduceMotion", "animationSpeed", "animationCustom", "animationEasing", "pageTransition", "cardEntrance", "animationStagger", "sheetAnimation", "pressEffect", "hoverLift", "navBounce", "progressAnimation", "skeletonShimmer"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
-    persist(); applyPreferences(); render(); toast("Animation settings restored.");
+    persist({ meta: true }); applyPreferences(); render(); toast("Animation settings restored.");
   }
   function previewAnimations() {
     const content = $("#page-content"); if (!content) return;
@@ -2249,7 +2716,7 @@
     prefs.categoryColors = {};
     prefs.navIcons = { ...prefsDefaults.navIcons };
     prefs.navBar = { order: [...prefsDefaults.navBar.order], visible: { ...prefsDefaults.navBar.visible } };
-    persist(); applyPreferences(); render(); toast("Appearance settings restored.");
+    persist({ meta: true }); applyPreferences(); render(); toast("Appearance settings restored.");
   }
 
   $("#topbar-actions")?.addEventListener("click", event => {
@@ -2300,6 +2767,7 @@
         || pill.textContent.replace(/\s+\d+\s*$/, "").trim();
       if (selection && name === "sort") selection.textContent = label;
       if (selection && name === "status") selection.textContent = label;
+      if (selection && name === "platform") selection.textContent = label;
       if (selection && name === "view") {
         const grouping = card.querySelector('[data-pill-name="groupBy"].active')?.textContent.trim() || "Status";
         selection.textContent = `${label} · ${grouping}`;
@@ -2317,11 +2785,12 @@
     }
     const quickStatus = event.target.closest("[data-quick-status]");
     if (quickStatus) { setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
+    if (event.target.closest("[data-clear-dashboard-filters-home]")) { clearDashboardFilters(); return; }
     if (event.target.closest("[data-open-collection-filter]")) { showPopup($("#dashboard-filter-dialog")); return; }
     if (event.target.closest("[data-reveal-playing]")) { document.querySelector(".library-section")?.scrollIntoView({ behavior: prefs.reduceMotion ? "auto" : "smooth", block: "start" }); return; }
     const detailStatus = event.target.closest("[data-detail-status-btn]");
     if (detailStatus) {
-      const item = items.find(row => row.id === detailItemId);
+      const item = itemById(detailItemId);
       if (item) {
         setItemStatus(item, detailStatus.dataset.detailStatusBtn).then(changed => { if (changed) render(); });
       }
@@ -2365,8 +2834,8 @@
     if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; render(); return; }
     const statsRating = event.target.closest("[data-stats-rating]");
     if (statsRating) {
-      const item = items.find(row => String(row.id) === String(statsRating.dataset.statsRating));
-      if (item) { item.rating = Number(statsRating.dataset.score) || 0; item.updatedAt = Date.now(); persist(); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
+      const item = itemById(String(statsRating.dataset.statsRating));
+      if (item) { item.rating = Number(statsRating.dataset.score) || 0; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
       return;
     }
     const findHours = event.target.closest("[data-stats-find-hours]");
@@ -2375,8 +2844,8 @@
     if (fetchFacts) { fetchMissingFacts(fetchFacts); return; }
     const adjust = event.target.closest("[data-adjust-progress]");
     if (adjust) {
-      const item = items.find(row => row.id === detailItemId);
-      if (item) { item.progress = Math.max(0, (Number(item.progress) || 0) + Number(adjust.dataset.adjustProgress)); item.updatedAt = Date.now(); persist(); render(); }
+      const item = itemById(detailItemId);
+      if (item) { item.progress = Math.max(0, (Number(item.progress) || 0) + Number(adjust.dataset.adjustProgress)); item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); }
       return;
     }
     const stepper = event.target.closest("[data-step-input]");
@@ -2401,11 +2870,11 @@
     }
     const detailRating = event.target.closest("[data-detail-rating]");
     if (detailRating) {
-      const item = items.find(row => row.id === detailItemId);
+      const item = itemById(detailItemId);
       if (!item) return;
       item.rating = Number(detailRating.dataset.detailRating) || 0;
       item.updatedAt = Date.now();
-      persist();
+      persist({ ids: [item.id] });
       $$("[data-detail-rating]").forEach(button => {
         const active = Number(button.dataset.detailRating) <= item.rating;
         button.setAttribute("aria-pressed", String(Number(button.dataset.detailRating) === item.rating));
@@ -2434,7 +2903,7 @@
       persist(); render(); toast("Cookies cleared."); return;
     }
     const resetOptions = event.target.closest("[data-source-reset-options]");
-    if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist(); render(); toast("Source options reset."); return; }
+    if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist({ meta: true }); render(); toast("Source options reset."); return; }
     const go = event.target.closest("[data-go]"); if (go) { if (go.classList.contains("detail-back")) navigateBackTo(go.dataset.go); else goto(go.dataset.go); return; }
     if (event.target.closest("[data-category-colors-picker]")) { openCategoryColorsPicker(); return; }
     const sourceFilter = event.target.closest("[data-source-filter]");
@@ -2487,20 +2956,25 @@
       }
       return;
     }
+    if (event.target.closest("[data-sync-toggle]")) { setSyncPaused(!syncJob?.paused); return; }
+    if (event.target.closest("[data-sync-retry]")) { retrySyncFailures(); return; }
+    if (event.target.closest("[data-sync-dismiss]")) { if (syncJob?.finished) { syncJob = null; updateSyncUI(); goto("dashboard"); } return; }
+    if (event.target.closest("[data-continue-import]")) { continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not restore this library."; render(); } }); return; }
+    if (event.target.closest("[data-cancel-import]")) { importState = null; settingsGroup = "backups"; goto("settings"); return; }
     const sourceDetails = event.target.closest("[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
     const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { await addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); return; }
   });
   document.addEventListener("change", event => {
     const input = event.target;
     if (input.matches("[data-detail-status]")) {
-      const item = items.find(row => row.id === detailItemId);
+      const item = itemById(detailItemId);
       if (!item || item.status === input.value) return;
       setItemStatus(item, input.value).then(changed => { if (!changed) input.value = item.status; else render(); });
       return;
     }
     if (input.matches("[data-detail-rating-select]")) {
-      const item = items.find(row => row.id === detailItemId);
-      if (item) { item.rating = Number(input.value) || 0; item.updatedAt = Date.now(); persist(); }
+      const item = itemById(detailItemId);
+      if (item) { item.rating = Number(input.value) || 0; item.updatedAt = Date.now(); persist({ ids: [item.id] }); }
       return;
     }
     if (input.matches("[data-custom-picker]")) {
@@ -2514,17 +2988,17 @@
       if (input.type === "number" || input.type === "range") value = Number(value);
       setPreference(key, value); if (input.type === "range") input.nextElementSibling.value = `${value}%`;
     }
-    if (input.matches("[data-category-color]")) { prefs.categoryColors[input.dataset.categoryColor] = input.value; persist(); render(); }
-    if (input.matches("[data-api-key]")) { prefs.apiKeys[input.dataset.apiKey] = input.value.trim(); persist(); }
-    if (input.matches("[data-source]")) { window.SplitAppSources.setEnabled(prefs, input.dataset.source, input.checked); persist(); }
+    if (input.matches("[data-category-color]")) { prefs.categoryColors[input.dataset.categoryColor] = input.value; persist({ meta: true }); render(); }
+    if (input.matches("[data-api-key]")) { prefs.apiKeys[input.dataset.apiKey] = input.value.trim(); persist({ meta: true }); }
+    if (input.matches("[data-source]")) { window.SplitAppSources.setEnabled(prefs, input.dataset.source, input.checked); persist({ meta: true }); }
     if (input.matches("[data-nav-visible]")) {
       const key = input.dataset.navVisible;
       if (key !== "dashboard" && key !== "settings") prefs.navBar.visible[key] = input.checked;
-      persist(); applyPreferences(); render();
+      persist({ meta: true }); applyPreferences(); render();
     }
     if (input.matches("[data-source-enabled]")) {
       window.SplitAppSources.setEnabled(prefs, input.dataset.sourceEnabled, input.checked);
-      persist(); render();
+      persist({ meta: true }); render();
     }
     if (input.matches("[data-source-option]")) {
       const [key, field] = input.dataset.sourceOption.split("|");
@@ -2532,9 +3006,9 @@
       if (value) next[field] = value; else delete next[field];
       if (Object.keys(next).length) prefs.sourceOptions[key] = next; else delete prefs.sourceOptions[key];
       if (field === "domain") input.value = value;
-      persist(); return;
+      persist({ meta: true }); return;
     }
-    if (input.matches("[data-source-api-key]")) { prefs.apiKeys[input.dataset.sourceApiKey] = input.value.trim(); persist(); }
+    if (input.matches("[data-source-api-key]")) { prefs.apiKeys[input.dataset.sourceApiKey] = input.value.trim(); persist({ meta: true }); }
     if (input.matches("[data-setting-action=import]")) { const file = input.files?.[0]; input.value = ""; importList(file); }
   });
   let navTouchDrag = null;
@@ -2572,7 +3046,7 @@
     const list = drag.row.closest("#nav-bar-arrangement-list");
     if (!list) return;
     prefs.navBar.order = [...list.querySelectorAll("[data-nav-row]")].map(row => row.dataset.navRow);
-    persist(); applyPreferences(); render();
+    persist({ meta: true }); applyPreferences(); render();
   };
   document.addEventListener("touchend", finishNavTouchDrag);
   document.addEventListener("touchcancel", finishNavTouchDrag);
@@ -2595,15 +3069,15 @@
     event.preventDefault();
     const [kind, key] = event.dataTransfer.getData("text/plain").split(":");
     if (kind === "nav" && targetRow.dataset.navRow) {
-      prefs.navBar.order = moveInOrder([...prefs.navBar.order], key, null, targetRow.dataset.navRow); persist(); applyPreferences(); render();
+      prefs.navBar.order = moveInOrder([...prefs.navBar.order], key, null, targetRow.dataset.navRow); persist({ meta: true }); applyPreferences(); render();
     } else if (kind === "source" && targetRow.dataset.sourceRow) {
-      prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], key, null, targetRow.dataset.sourceRow); persist(); render();
+      prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], key, null, targetRow.dataset.sourceRow); persist({ meta: true }); render();
     }
   });
   document.addEventListener("input", event => {
     if (event.target.matches("[data-detail-notes]")) {
-      const item = items.find(row => row.id === detailItemId);
-      if (item) { item.notes = event.target.value; item.updatedAt = Date.now(); persist(); }
+      const item = itemById(detailItemId);
+      if (item) { item.notes = event.target.value; item.updatedAt = Date.now(); persist({ ids: [item.id] }); }
       return;
     }
     if (event.target.matches("[data-settings-index-search]")) {
@@ -2672,8 +3146,11 @@
     event.preventDefault();
     dashboardStatusFilter = event.target.elements.status.value || "all";
     prefs.dashboardStatusFilter = dashboardStatusFilter;
+    prefs.dashboardLastStatus = dashboardStatusFilter;
+    dashboardPlatformFilter = event.target.elements.platform.value || "all";
+    prefs.dashboardPlatformFilter = dashboardPlatformFilter;
     prefs.dashboardView = event.target.elements.view?.value || prefs.dashboardView;
-    persist();
+    persist({ meta: true });
     applyPreferences();
     closePopup($("#dashboard-filter-dialog"));
     render();
@@ -2714,7 +3191,16 @@
       return;
     }
     if (page === "settings" && ["metadata-sources", "source-options", "custom-source"].includes(settingsGroup)) refreshSourceRegistry();
+    if (page === "dashboard") syncUnsyncedGames();
     render();
+  }
+  // Pull-to-refresh on the library: queue every game that has no saved metadata yet.
+  function syncUnsyncedGames() {
+    const active = new Set(syncJob && !syncJob.finished ? syncJob.entries.filter(e => e.status === "queued" || e.status === "syncing").map(e => e.id) : []);
+    const pending = items.filter(item => item.category === "game" && !item.cachedDetails && !active.has(item.id));
+    if (!pending.length) { toast(active.size ? "Sync is already running." : "All games are already synced."); return; }
+    if (!startSyncJob(pending)) { toast(prefs.metadataMode === "offline" || !navigator.onLine ? "Go online to sync metadata." : "No metadata sources are enabled."); return; }
+    toast(`Syncing ${pending.length} ${pending.length === 1 ? "game" : "games"} in the background.`);
   }
   // Pull to refresh on the requested library, activity, discovery, statistics, and source pages.
   (() => {
@@ -2818,7 +3304,8 @@
   });
   window.addEventListener("hashchange", syncRouteFromHash);
   window.addEventListener("storage", event => { if (event.key === storageKey) toast("Library changed in another tab."); });
-  window.addEventListener("beforeunload", persist);
+  window.addEventListener("beforeunload", flushPersist);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPersist(); });
   window.addEventListener("error", event => recordLog("error", event.message || "Unknown page error"));
   window.addEventListener("unhandledrejection", event => recordLog("error", event.reason?.message || event.reason || "Unhandled promise rejection"));
   async function restoreNativeData() {
@@ -2852,6 +3339,7 @@
         }
         Object.assign(prefs, nativePreferences);
       }
+      dashboardSortedItemsCache = null;
       normalizeDashboardView();
       delete prefs.defaultCategory;
       delete prefs.appLook;
@@ -2888,8 +3376,9 @@
   applyPreferences();
   render();
   if (page === "details" && detailItemId) loadDetails();
-  requestAnimationFrame(() => requestAnimationFrame(() => window.SavePointSplash?.ready?.()));
-  restoreNativeData().then(success => {
+  // Keep the splash until the saved library is loaded (never longer than 1.5s, so a storage-folder prompt stays reachable).
+  setTimeout(() => window.SavePointSplash?.ready?.(), 1500);
+  restoreNativeData().finally(() => requestAnimationFrame(() => window.SavePointSplash?.ready?.())).then(success => {
     if (!success) {
       if (nativeFolderStorage && storageFolderGate) storageFolderGate.hidden = false;
       else {

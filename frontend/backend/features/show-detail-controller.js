@@ -27,6 +27,7 @@
   // can use play time, price, team, requirements and names without re-reading provider-specific fields.
   const toList = input => Array.isArray(input) ? input.map(String).filter(Boolean) : String(input ?? "").split(/,\s*/).map(part => part.trim()).filter(Boolean);
   const numberFrom = input => { const match = String(input ?? "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)/); return match ? Number(match[1]) : 0; };
+  const currencyFrom = input => /₹|\bINR\b|\bRs\.?/i.test(String(input || "")) ? "INR" : /€|\bEUR\b/i.test(String(input || "")) ? "EUR" : /£|\bGBP\b/i.test(String(input || "")) ? "GBP" : /\$|\bUSD\b/i.test(String(input || "")) ? "USD" : "";
   const deriveFacts = (out, source) => {
     const field = pattern => out.fields.find(row => pattern.test(row.label))?.value;
     const team = (out.sections.find(section => /development team/i.test(section.title))?.items || []).map(row => ({ name: row.title, role: row.meta || "" }));
@@ -36,7 +37,7 @@
       source, fetchedAt: Date.now(),
       mainHours: numberFrom(field(/^Main story$/)), extrasHours: numberFrom(field(/^Main \+ extras$/)), completionistHours: numberFrom(field(/^Completionist$/)),
       averageHours: numberFrom(field(/^Playtime$/)),
-      price: priceText, priceValue: /free/i.test(priceText) ? 0 : numberFrom(priceText),
+      price: priceText, priceValue: /free/i.test(priceText) ? 0 : numberFrom(priceText), priceCurrency: currencyFrom(priceText),
       developers: toList(field(/^Developers?$/)), publishers: toList(field(/^Publishers?$/)), genres: toList(field(/^Genres?$/)), platforms: toList(field(/^Platforms?$/)),
       released: field(/^(Released|Release date|Published)$/) || "", metacritic: numberFrom(field(/^Metacritic$/)),
       rating: Number(out.rating) || 0, ratingCount: out.ratingCount || 0, ageRating: out.badge || "",
