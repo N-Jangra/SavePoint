@@ -2,7 +2,7 @@
 // so a save touches only changed games instead of rewriting one huge JSON blob
 // into localStorage (5 MB cap, synchronous, blocks the UI thread).
 (root => {
-  const DB_NAME = "savepoint_library", VERSION = 1;
+  const DB_NAME = "savepoint_library", VERSION = 2;
   let dbPromise = null;
   const known = new Map(); // id -> JSON snapshot last written/read
 
@@ -13,12 +13,16 @@
       const request = indexedDB.open(DB_NAME, VERSION);
       request.onupgradeneeded = () => {
         const db = request.result;
-        const items = db.createObjectStore("items", { keyPath: "id" });
-        items.createIndex("status", "status");
-        items.createIndex("category", "category");
-        items.createIndex("updatedAt", "updatedAt");
-        items.createIndex("createdAt", "createdAt");
-        db.createObjectStore("meta", { keyPath: "key" });
+        if (!db.objectStoreNames.contains("items")) {
+          const items = db.createObjectStore("items", { keyPath: "id" });
+          items.createIndex("status", "status");
+          items.createIndex("category", "category");
+          items.createIndex("updatedAt", "updatedAt");
+          items.createIndex("createdAt", "createdAt");
+        }
+        if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+        // Device-local artwork cache: one small Blob per game/artwork kind, read in one fast batch.
+        if (!db.objectStoreNames.contains("thumbs")) db.createObjectStore("thumbs", { keyPath: "key" });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -76,7 +80,32 @@
     removedIds.forEach(id => known.delete(String(id)));
   }
 
-  const core = Object.freeze({ open, loadAll, save, saveSome });
+  // Thumbnail cache. entries: [[key, sig]] -> returns [[key, blob]] for entries whose stored signature still matches.
+  async function getThumbs(entries) {
+    const db = await open();
+    const store = db.transaction("thumbs", "readonly").objectStore("thumbs");
+    const rows = await Promise.all(entries.map(([key]) => result(store.get(key)).catch(() => null)));
+    const hits = [];
+    rows.forEach((row, index) => { if (row?.blob && row.sig === entries[index][1]) hits.push([row.key, row.blob]); });
+    return hits;
+  }
+  async function putThumbs(entries) {
+    if (!entries.length) return;
+    const db = await open();
+    const tx = db.transaction("thumbs", "readwrite");
+    const store = tx.objectStore("thumbs");
+    entries.forEach(([key, sig, blob]) => store.put({ key, sig, blob }));
+    await done(tx);
+  }
+  // Which artwork is already cached ([[key, sig]]), so background fill only touches what is missing.
+  async function listThumbKeys() {
+    const db = await open();
+    const store = db.transaction("thumbs", "readonly").objectStore("thumbs");
+    const rows = await result(store.getAll());
+    return rows.map(row => [row.key, row.sig]);
+  }
+
+  const core = Object.freeze({ open, loadAll, save, saveSome, getThumbs, putThumbs, listThumbKeys });
   root.SplitAppIDBCore = core;
   if (typeof window === "undefined") return; // inside the data worker: expose the core only
 
@@ -118,6 +147,9 @@
     loadAll: () => call("loadAll"),
     save: data => call("save", data),
     saveSome: data => call("saveSome", data),
+    getThumbs: entries => call("getThumbs", entries),
+    putThumbs: entries => call("putThumbs", entries),
+    listThumbKeys: () => call("listThumbKeys"),
     // Merge several sources' details off the main thread (used by background sync).
     merge: (entries, title, item) => {
       const target = ensureWorker();

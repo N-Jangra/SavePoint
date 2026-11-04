@@ -444,8 +444,11 @@
     };
     const itemQueue = [...pendingItems];
     const workerCount = Math.max(1, Math.min(6, Number(payload.preferences?.metadataWorkers) || 4, itemQueue.length || 1));
-    await Promise.all(Array.from({ length: workerCount }, async () => {
-      while (itemQueue.length) await syncItem(itemQueue.shift());
+    // Folder mirroring is background work: hand the main thread back between games (image resizing and hashing
+    // for ~1500 games otherwise freezes taps and scrolling), and pause while the app is hidden.
+    const idle = () => new Promise(resolve => (window.requestIdleCallback ? window.requestIdleCallback(() => resolve(), { timeout: 800 }) : setTimeout(resolve, 20)));
+    await Promise.all(Array.from({ length: Math.min(workerCount, 3) }, async () => {
+      while (itemQueue.length) { await idle(); await syncItem(itemQueue.shift()); }
     }));
 
     if (plugin.deleteFile) {
@@ -665,7 +668,9 @@
     } catch (error) { console.warn("Could not apply SavePoint backup retention", error); }
   }
 
-  async function load() {
+  // fast: return what IndexedDB already holds without touching the (slow) Android folder, or
+  // `null` when there is nothing local yet so the caller falls back to the full restore.
+  async function load({ fast = false } = {}) {
     const mirror = readMirror();
     let data = {
       items: Array.isArray(mirror.items) ? mirror.items : [],
@@ -683,6 +688,11 @@
           writeMirror(data);
         }
       } catch (error) { console.warn("IndexedDB load failed; using localStorage", error); idbHealthy = false; }
+    }
+    if (fast) {
+      if (!data.items.length) return null;
+      discardRemovedFields(data);
+      return { ...data, loadedFromFolder: false, fast: true };
     }
     let folderData = null;
     const encryptedItemIds = new Set();
@@ -747,7 +757,9 @@
         preferences: folderData.fromItemTree ? { ...data.preferences, ...folderData.preferences } : folderData.preferences
       };
     }
-    if (folderUri) data = await hydrateFolderData(data, folderUri);
+    // database.json already carries every game's artwork refs; walking ~1500 game folders over the
+    // storage framework (minutes) is only needed when the library itself came from that tree.
+    if (folderUri && folderData?.fromItemTree) data = await hydrateFolderData(data, folderUri);
     discardRemovedFields(data);
     itemIds.clear();
     itemSnapshots.clear();
@@ -768,7 +780,7 @@
   // Folder snapshots rewrite the whole library through Android's storage framework, so they
   // are coalesced (and the app's private encrypted store, written per game, stays the
   // durable copy). Deletions flush at once so a stale folder can never resurrect a game.
-  const FOLDER_DEBOUNCE_MS = 8000;
+  let folderDelayMs = 8000; // Settings → Backups → Folder Sync Delay
   let folderTimer = 0, folderLatest = null, folderLastCount = -1;
   function runFolderWrite() {
     clearTimeout(folderTimer); folderTimer = 0;
@@ -781,8 +793,8 @@
   function scheduleFolderWrite(getPayload, count, urgent) {
     if (!activeFolderUri) return Promise.resolve();
     folderLatest = getPayload;
-    if (urgent || !hasEncryptedStore() || (folderLastCount >= 0 && count < folderLastCount) || folderLastCount < 0) return runFolderWrite();
-    clearTimeout(folderTimer); folderTimer = setTimeout(runFolderWrite, FOLDER_DEBOUNCE_MS);
+    if (urgent || folderDelayMs === 0 || !hasEncryptedStore() || (folderLastCount >= 0 && count < folderLastCount) || folderLastCount < 0) return runFolderWrite();
+    clearTimeout(folderTimer); folderTimer = setTimeout(runFolderWrite, folderDelayMs);
     return Promise.resolve();
   }
   function flushFolderNow() { return folderLatest ? runFolderWrite() : Promise.resolve(); }
@@ -798,6 +810,7 @@
   function save(data, scope = { full: true }) {
     const history = Array.isArray(data.history) ? clone(data.history) : [];
     const preferences = data.preferences && typeof data.preferences === "object" ? clone(data.preferences) : {};
+    if (preferences.folderSyncDelay !== undefined && Number.isFinite(Number(preferences.folderSyncDelay))) folderDelayMs = Math.max(0, Number(preferences.folderSyncDelay)) * 1000;
     let payload;
     if (scope.full || !idbHealthy) {
       payload = { items: Array.isArray(data.items) ? clone(data.items) : [], history, preferences };
@@ -915,7 +928,8 @@
       || new RegExp(`^${app.key}-backup-\\d{4}-\\d{2}-\\d{2}\\.json$`, "i").test(file.name));
     let itemTreeHasData = false;
     const games = treeFiles.find(file => file.name === "games" && file.uri);
-    if (games) {
+    // Listing ~1500 game folders through the storage framework is slow; skip it when a database file already proves the folder is in use.
+    if (games && !rootHasDatabase && !treeFiles.some(file => file.name === "database.json")) {
       const folders = (await plugin.listFiles({ uri: games.uri }))?.files || [];
       itemTreeHasData = folders.some(file => file.uri);
     }
@@ -923,7 +937,39 @@
     return { configured: true, valid: true, databaseExists, uri };
   }
 
+  // Streams the library to a file in small chunks, so a 1500-game export never builds one huge string
+  // or sends one huge message across the Android bridge (that crashed the app).
+  // mode "ask": Android's "Save as" screen. mode "folder": straight into the chosen backup folder.
+  async function exportLibrary({ items, history, preferences }, { mode = "ask", onProgress } = {}) {
+    const plugin = window.Capacitor?.Plugins?.BackupFolder;
+    const fileName = `${app.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    if (!plugin?.writeDocumentChunk) throw new Error("This build cannot save files. Update the app.");
+    let opened;
+    if (mode === "folder") {
+      const uri = await getFolderUri({ prompt: false });
+      if (!uri) throw new Error("No backup folder selected. Pick one in Settings → Backups.");
+      opened = await plugin.beginFolderExport({ uri, fileName });
+    } else opened = await plugin.createDocument({ fileName, mimeType: "application/json" });
+    try {
+      const CHUNK = 256 * 1024;
+      let buffer = `{"app":${JSON.stringify(app.name)},"version":1,"exportedAt":${JSON.stringify(new Date().toISOString())},"items":[`;
+      for (let index = 0; index < items.length; index++) {
+        buffer += (index ? "," : "") + JSON.stringify(portableItem(items[index]));
+        if (buffer.length >= CHUNK) {
+          await plugin.writeDocumentChunk({ content: buffer }); buffer = "";
+          onProgress?.(index + 1, items.length);
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+      buffer += `],"history":${JSON.stringify(history || [])},"preferences":${JSON.stringify(preferences || {})}}`;
+      await plugin.writeDocumentChunk({ content: buffer });
+      onProgress?.(items.length, items.length);
+    } finally { await plugin.closeDocument().catch(() => {}); }
+    return { fileName, uri: opened?.uri || "" };
+  }
+
   window.SplitAppBackend = Object.freeze({
+    exportLibrary,
     name: app.name,
     key: app.key,
     categories: app.categories.map(category => ({ ...category })),
