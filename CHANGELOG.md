@@ -20,6 +20,9 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Currency display now offers 32 currencies, each with its symbol, and an editable exchange rate for the selected currency; prices in Statistics and game details convert between any pair.
 - Redesigned App Info page (hero, stat tiles, grouped lists) that follows the Icon style setting.
 - Redesigned Home filter sheet with flat sections and wrapping chips.
+- Favorites: a heart in the details top bar, a Favorite option in the ⋮ menu, a Favorites filter pill with a count on Home, and a ♥ on favorite cards.
+- Statistics → Ratings: rated games are grouped by score (closed by default) and a "Games without a score" list lets you rate games with outline stars, with "Show more" buttons.
+- Installed version: App Info shows the version of the installed app instead of a fixed string.
 
 ### Changed
 
@@ -51,6 +54,10 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Edit entry from the three-dot menu opens the game's details page in edit mode.
 - Settings → Backups: Folder Sync Delay and Restore Preview now take effect.
 - Removed Settings → Tracking's USD-only exchange row in favour of the per-currency rate.
+- Importing a list now also writes history (from the backup, or from each game's status) and keeps the backup's own dates, so imported games appear on Timeline and Statistics → Activity.
+- Mix fetch has the standard sub-page header and no longer shows the sources panel or the large title block.
+- Statistics action buttons (Open full timeline, Find play times) are full-width and easier to tap.
+- Launches no longer parse the encrypted copy of the library, rewrite the folder snapshot or re-save every game when nothing changed.
 
 ### Fixed
 
@@ -63,6 +70,9 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Discover and Metadata Sync headers sit flush under the status bar.
 - Export no longer force-closes the app on large libraries.
 - Platform pills in the filter sheet no longer show a pill inside a pill.
+- Home grid views (Detailed, Compact, Poster) loaded wide artwork only after slow folder reads; images now show straight away, and Compact is denser.
+- Statistics pages did not update when tapping "Show more" or opening a section until something else changed.
+- Metadata Sync header sits flush under the status bar.
 
 ### Removed
 
