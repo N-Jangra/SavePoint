@@ -86,3 +86,34 @@ body[data-hover-lift=true] .detail-carousel-card:hover{transform:translate3d(0,-
 body[data-nav-bounce=false] .nav-button.active .nav-icon{animation:none}
 body[data-progress-anim=false] :is(.progress-line span,.bar-track span){transition:none}
 body[data-shimmer=false] :is(.discover-suggest-loading span,[class*=skeleton],[class*=shimmer]){animation:none}
+
+
+/* ---- Android / touch smoothness ---- */
+/* No 300ms double-tap wait and no grey flash on tap. */
+a,button,[role=button],input,select,label,summary,.item-card{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+/* Sheets and long lists shouldn't chain their scroll into the page behind them. */
+dialog,.setting-picker-list,.import-preview-list ul{overscroll-behavior:contain}
+/* Only animate properties the compositor can handle (never "all", never layout). */
+.nav-button{transition:color var(--speed,180ms),background-color var(--speed,180ms)}
+.item-card{will-change:auto}
+/* Floating sync pie: pulse with a transform on a pseudo-element instead of animating box-shadow. */
+.sync-fab:not(.is-done){animation:none}
+.sync-fab:not(.is-done)::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--accent);opacity:0;animation:sync-ring 2.2s ease-out infinite;pointer-events:none}
+@keyframes sync-ring{0%{opacity:.5;transform:scale(.92)}100%{opacity:0;transform:scale(1.22)}}
+.sync-fab.is-paused::after{animation:none;opacity:0}
+.sync-fab{position:fixed}
+
+/* Mid/low tiers (all Android WebViews by default): cheaper page and sheet transitions. */
+html[data-lowend=true] dialog::backdrop{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+html[data-lowend=true] body[data-nav-dir] #page-content.page-route-enter{animation-name:sp-fade;animation-duration:110ms}
+html[data-lowend=true] .sync-fab::after,html[data-lowend=true] .sync-fab{animation:none!important}
+html[data-lowend=true] .progress-line span,html[data-lowend=true] .bar-track span,html[data-lowend=true] .import-progress-track span{transition:none}
+html[data-lowend=true] .item-card{transition:none}
+html[data-lowend=true] .choice-dialog[open],html[data-lowend=true] dialog.ios-action-sheet[open]{animation-duration:150ms}
+/* Weakest tier: no decorative motion at all, and no off-screen paint work. */
+html[data-perf=low] #page-content.page-route-enter{animation:none!important}
+html[data-perf=low] .ptr-bubble,html[data-perf=low] .toast{transition-duration:.001ms!important}
+html[data-perf=low] .sync-fab::after{display:none}
+
+/* Statistics lists can hold every game: skip layout and paint for rows that are off-screen. */
+.stats-playtime-row,.stats-game-row,.stats-rated-entry,.stats-unrated-entry,.stats-activity-entry,.stats-genre-row{content-visibility:auto;contain-intrinsic-size:auto 62px}

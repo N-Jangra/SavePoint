@@ -232,21 +232,43 @@
     if (!document.querySelector("dialog[data-popup-fallback][open]")) delete document.body.dataset.popupFallback;
   }
 
-  // Saves clone and diff the whole library, so bursts of changes (background sync,
-  // quick edits) are coalesced into one write ~250ms after the last change.
-  let persistTimer = 0, persistWaiters = [];
-  function persist(immediate = false) {
+  // O(1) game lookup. The index stores each id's position and re-checks it on every hit,
+  // so it can never return a replaced or moved entry; a miss rebuilds it once.
+  let itemIndex = new Map();
+  function itemById(id) {
+    const key = String(id);
+    let at = itemIndex.get(key);
+    if (at !== undefined && String(items[at]?.id) === key) return items[at];
+    itemIndex = new Map(items.map((row, index) => [String(row.id), index]));
+    at = itemIndex.get(key);
+    return at === undefined ? undefined : items[at];
+  }
+  // Saving is scoped so a change only touches what changed:
+  //   persist()                    whole library (imports, resets, anything unspecified)
+  //   persist({ ids: [id, ...] })  only those games (add / edit / status / progress / rating / sync)
+  //   persist({ removed: [id] })   delete those games
+  //   persist({ meta: true })      preferences and history only
+  // Bursts are coalesced into one write ~250ms after the last change.
+  let persistTimer = 0, persistWaiters = [], persistFull = false;
+  const persistIds = new Set(), persistRemoved = new Set();
+  function persist(scope) {
     localMutationRevision += 1;
+    if (scope && typeof scope === "object") {
+      (scope.ids || []).forEach(id => persistIds.add(String(id)));
+      (scope.removed || []).forEach(id => persistRemoved.add(String(id)));
+    } else persistFull = true;
     const promise = new Promise(resolve => persistWaiters.push(resolve));
     clearTimeout(persistTimer);
-    persistTimer = setTimeout(flushPersist, immediate === true ? 0 : 250);
+    persistTimer = setTimeout(flushPersist, 250);
     return promise;
   }
   function flushPersist() {
     clearTimeout(persistTimer); persistTimer = 0;
     const waiters = persistWaiters; persistWaiters = [];
     if (!waiters.length) return;
-    const write = window.SplitAppBackend?.save({ items, history, preferences: prefs });
+    const scope = persistFull ? { full: true } : { ids: [...persistIds], removed: [...persistRemoved] };
+    persistFull = false; persistIds.clear(); persistRemoved.clear();
+    const write = window.SplitAppBackend?.save({ items, history, preferences: prefs }, scope);
     const finish = () => waiters.forEach(resolve => resolve());
     if (write?.catch) write.catch(error => { recordLog("error", `App data save failed: ${error.message || error}`); }).then(finish);
     else finish();
@@ -306,7 +328,13 @@
     document.body.style.setProperty("--muted", palette.muted);
     document.body.style.setProperty("--accent-soft", `color-mix(in srgb, ${prefs.mainColor || "#6355f8"} ${palette.mode === "light" ? "12%" : "20%"}, ${palette.surface})`);
     document.body.dataset.reducedMotion = String(Boolean(prefs.reduceMotion));
-    const lowEnd = nativeAndroid || Boolean(navigator.connection?.saveData) || (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+    // Three tiers: "low" (data saver, <=2 GB or <=2 cores), "mid" (any Android WebView), "high"
+    // (Android with >=6 GB and >=6 cores, or desktop). Low and mid trim blur/shadows/stagger.
+    const cores = Number(navigator.hardwareConcurrency) || 4, memory = Number(navigator.deviceMemory) || 4;
+    const weak = Boolean(navigator.connection?.saveData) || memory <= 2 || cores <= 2;
+    const strongAndroid = nativeAndroid && memory >= 6 && cores >= 6;
+    const lowEnd = weak || (nativeAndroid && !strongAndroid);
+    root.dataset.perf = weak ? "low" : lowEnd ? "mid" : "high";
     root.dataset.lowend = String(lowEnd);
     root.dataset.nativeAndroid = String(nativeAndroid);
     document.body.dataset.corners = prefs.cardCorners;
@@ -443,7 +471,7 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
@@ -458,7 +486,7 @@
   // group to its first batch and jump the scroll position while metadata syncs.
   function patchDashboardCard(itemId) {
     const node = document.querySelector(`#page-content [data-item="${CSS.escape(String(itemId))}"]`);
-    const item = items.find(row => String(row.id) === String(itemId));
+    const item = itemById(String(itemId));
     if (!node || !item) return;
     const template = document.createElement("template");
     template.innerHTML = window.SplitAppLibrary.create(pageContext()).card(item).trim();
@@ -476,6 +504,49 @@
     if (dashboardRenderedState.sig !== dashboardSignature()) dashboardRenderedState = { sig: dashboardSignature(), counts: {} };
     return dashboardRenderedState.counts;
   }
+  // Long lists: cards far above/below the viewport are emptied (keeping their exact height
+  // so nothing shifts) and rebuilt just before they scroll back into view. DOM size and
+  // memory therefore stay flat however many games have been scrolled through.
+  const TRIM_MIN_CARDS = 160, TRIM_DISTANCE = 3.5;
+  let trimQueued = false, trimObserver = null;
+  function hydrateTrimmedCard(node) {
+    if (!node.isConnected || !node.dataset.trimmed) return;
+    const item = itemById(String(node.dataset.item));
+    if (!item) return;
+    const template = document.createElement("template");
+    template.innerHTML = window.SplitAppLibrary.create(pageContext()).card(item).trim();
+    const fresh = template.content.firstElementChild;
+    if (!fresh) return;
+    trimObserver?.unobserve(node);
+    node.replaceWith(fresh);
+    observeDeferredImages(fresh);
+    window.lucide?.createIcons({ root: fresh, attrs: { "aria-hidden": "true" } });
+  }
+  function trimFarCards() {
+    trimQueued = false;
+    if (page !== "dashboard") return;
+    const limit = window.innerHeight * TRIM_DISTANCE;
+    $$("[data-dashboard-items]").forEach(list => {
+      if (list.children.length < TRIM_MIN_CARDS) return;
+      for (const card of list.children) {
+        if (card.dataset.trimmed || !card.classList.contains("dashboard-card")) continue;
+        const rect = card.getBoundingClientRect();
+        if (rect.bottom > -limit && rect.top < window.innerHeight + limit) continue;
+        card.style.height = `${rect.height}px`;
+        card.dataset.trimmed = "1";
+        card.replaceChildren();
+        if (!trimObserver && window.IntersectionObserver) {
+          trimObserver = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) hydrateTrimmedCard(entry.target); }), { rootMargin: `${Math.round(window.innerHeight * 2)}px 0px` });
+        }
+        trimObserver?.observe(card);
+      }
+    });
+  }
+  window.addEventListener("scroll", () => {
+    if (trimQueued || page !== "dashboard") return;
+    trimQueued = true;
+    setTimeout(() => requestAnimationFrame(trimFarCards), 400);
+  }, { passive: true });
   function dashboardGroupItems(groupKey) {
     const groupBy = prefs.dashboardGroupBy || "status";
     const sortedItems = dashboardSortedItems();
@@ -580,7 +651,7 @@
   function activateDeferredImage(image) {
     if (!image?.isConnected || image.hasAttribute("src")) return;
     const id = String(image.dataset.localItemId || "");
-    const item = id && items.find(row => String(row.id) === id);
+    const item = id && itemById(id);
     if (!item) { setDeferredImageSource(image, deferredImageSource(image)); return; }
     const existing = deferredLocalImageRequests.get(id);
     if (existing) { existing.images.add(image); return; }
@@ -693,7 +764,7 @@
   function fetchTimelineOnlineThumbnails(itemIds = [], historyIndexes = []) {
     if (page !== "timeline" || prefs.metadataMode === "offline" || !prefs.metadataThumbnails || !navigator.onLine || !window.SplitAppDiscovery?.search || timelineThumbnailLookup) return;
     const normalizeTitle = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-    const findByEntry = entry => items.find(item => String(item.id) === String(entry.itemId)) || items.find(item => String(item.title || "").toLowerCase() === String(entry.title || "").toLowerCase());
+    const findByEntry = entry => itemById(String(entry.itemId)) || items.find(item => String(item.title || "").toLowerCase() === String(entry.title || "").toLowerCase());
     const entryKey = entry => `${String(entry.itemId || "")}|${Number(entry.at) || Date.parse(entry.at) || 0}|${String(entry.status || entry.action || "")}|${String(entry.title || "")}`;
     const itemDescriptor = item => ({ key: `item:${item.id}`, item, entry: null, title: item.title, category: item.category });
     const entryDescriptor = entry => {
@@ -708,12 +779,12 @@
     let recent;
     if (itemIds.length || historyIndexes.length) {
       recent = [
-        ...itemIds.map(id => items.find(item => String(item.id) === String(id))).filter(Boolean).map(itemDescriptor),
+        ...itemIds.map(id => itemById(String(id))).filter(Boolean).map(itemDescriptor),
         ...historyIndexes.map(index => history[index]).filter(Boolean).map(entryDescriptor)
       ];
     } else if (visibleIds.length || visibleIndexes.length) {
       recent = [
-        ...visibleIds.map(id => items.find(item => String(item.id) === id)).filter(Boolean).map(itemDescriptor),
+        ...visibleIds.map(id => itemById(id)).filter(Boolean).map(itemDescriptor),
         ...visibleIndexes.map(index => history[index]).filter(Boolean).map(entryDescriptor)
       ];
     } else {
@@ -988,13 +1059,13 @@
       event.preventDefault(); event.stopPropagation();
       const key = button.dataset.navIconPick, icon = button.dataset.icon;
       prefs.navIcons[key] = icon === "controller" && key === "dashboard" ? "controller" : safeLucideName(icon, prefs.navIcons[key]);
-      persist(); applyPreferences(); render();
+      persist({ meta: true }); applyPreferences(); render();
     }));
     content.querySelectorAll("[data-nav-icon-select]").forEach(select => select.addEventListener("change", event => {
       event.stopPropagation();
       const key = select.dataset.navIconSelect;
       prefs.navIcons[key] = key === "dashboard" && select.value === "controller" ? "controller" : safeLucideName(select.value, prefs.navIcons[key]);
-      persist(); applyPreferences(); render();
+      persist({ meta: true }); applyPreferences(); render();
     }));
     content.querySelector("[data-close-dashboard-filter]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#dashboard-filter-dialog")); });
     const dashboardFilterDialog = content.querySelector("#dashboard-filter-dialog");
@@ -1018,7 +1089,7 @@
       prefs.dashboardSort = dashboardFilterForm.elements.sort?.value || prefs.dashboardSort;
       prefs.theme = dashboardFilterForm.elements.theme?.value || prefs.theme;
       prefs.dashboardGroupBy = dashboardFilterForm.elements.groupBy?.value || prefs.dashboardGroupBy;
-      persist(); applyPreferences(); closePopup($("#dashboard-filter-dialog")); render();
+      persist({ meta: true }); applyPreferences(); closePopup($("#dashboard-filter-dialog")); render();
     };
     dashboardFilterForm?.addEventListener("submit", event => { event.preventDefault(); event.stopPropagation(); applyDashboardFilter(); });
     dashboardFilterForm?.querySelector('[type="submit"]')?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); applyDashboardFilter(); });
@@ -1378,7 +1449,7 @@
   }
   async function saveItem(event) {
     const form = event.currentTarget; const data = new FormData(form); const id = data.get("id");
-    const old = items.find(item => item.id === id); const key = data.get("category") || old?.category || config.categories[0]?.key;
+    const old = itemById(id); const key = data.get("category") || old?.category || config.categories[0]?.key;
     const image = String(data.get("image") || "");
     const entry = { ...old, id: id || crypto.randomUUID(), title: String(data.get("title")).trim(), category: key, status: data.get("status") || defaultStatus(key), progress: Math.max(0, Number(data.get("progress")) || 0), rating: Number(data.get("rating")) || 0, goal: Math.max(0, Number(data.get("goal")) || 0), image, ...(image.startsWith("data:image/") ? { localThumbnailData: image } : {}), description: String(data.get("description") || "").trim(), metadataSource: String(data.get("metadataSource") || ""), providerId: String(data.get("providerId") || ""), url: String(data.get("url") || ""), year: String(data.get("year") || ""), createdAt: old?.createdAt || Date.now(), updatedAt: Date.now() };
     if (!entry.title) return;
@@ -1391,7 +1462,7 @@
     syncEditedCompletionTarget(entry, old);
     if (old) items[items.indexOf(old)] = entry; else items.unshift(entry);
     if (entry.status !== "Backlog" && entry.status !== old?.status) history.unshift({ itemId: entry.id, title: entry.title, action: entry.status, status: entry.status, at: Date.now() });
-    await persist(); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
+    await persist({ ids: [entry.id] }); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
     if (!old && key === "game") enrichLibraryEntryWithMix(entry, { ...entry, source: entry.metadataSource }, "Add Game");
   }
   async function saveAddForm(form) {
@@ -1399,13 +1470,13 @@
     await saveItem({ currentTarget: form });
   }
   async function updateProgress(id) {
-    const item = items.find(entry => entry.id === id); if (!item) return;
+    const item = itemById(id); if (!item) return;
     const step = Math.max(1, Number(prefs.progressIncrement) || 1); item.progress = (Number(item.progress) || 0) + step; item.updatedAt = Date.now();
     const previousStatus = item.status;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = "Completed";
     if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
-    await persist(); render(); toast("Progress updated.");
+    await persist({ ids: [item.id] }); render(); toast("Progress updated.");
   }
   function finishDeletingItem(id, returnPage) {
     const exists = id != null && items.some(entry => String(entry.id) === String(id));
@@ -1426,14 +1497,14 @@
     return true;
   }
   async function deleteItem(id) {
-    const item = items.find(entry => entry.id === id); if (!item) return;
+    const item = itemById(id); if (!item) return;
     if (!(await appConfirm(`Delete “${item.title}” from your library?`, { title: "Delete title", confirmLabel: "Delete", danger: true }))) return;
     finishDeletingItem(id, addReturnPage);
   }
-  function openEdit(id) { const item = items.find(entry => entry.id === id); if (item) openItem(item); }
+  function openEdit(id) { const item = itemById(id); if (item) openItem(item); }
   async function saveDetailEdit(event) {
     event.preventDefault();
-    const item = items.find(row => row.id === detailItemId);
+    const item = itemById(detailItemId);
     if (!item) return;
     const data = new FormData(event.currentTarget);
     const oldStatus = item.status;
@@ -1448,7 +1519,7 @@
     Object.assign(item, draft, { updatedAt: Date.now() });
     if (oldStatus !== item.status && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     detailEditMode = false;
-    await persist(); render(); toast("Entry updated.");
+    await persist({ ids: [item.id] }); render(); toast("Entry updated.");
   }
 
   function submitDiscover() {
@@ -1704,7 +1775,7 @@
       if (["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     }
     item.updatedAt = Date.now();
-    await persist();
+    await persist({ ids: [item.id] });
     updateDiscoverLibraryActions();
     if (page === "mix") paintMixResults();
     toast(wasSaved ? "Refreshing this library entry from enabled sources…" : `Added to your library. Fetching details from enabled sources…`);
@@ -1741,12 +1812,12 @@
     if (mixEnrichmentByItem.has(String(item.id))) return mixEnrichmentByItem.get(String(item.id));
     const itemId = String(item.id);
     const task = (async () => {
-      const saved = items.find(row => String(row.id) === itemId);
+      const saved = itemById(itemId);
       if (!saved) return null;
       let loaded = null, mixed = false;
       try {
-        loaded = await window.SplitAppMix.load({ ...saved, ...sourceResult, title: saved.title, category: saved.category }, detailSettings(), partial => {
-          const current = items.find(row => String(row.id) === itemId);
+        loaded = await window.SplitAppMix.load({ ...saved, ...sourceResult, title: saved.title, category: saved.category }, { ...detailSettings(), background: options.background === true }, options.quiet ? null : partial => {
+          const current = itemById(itemId);
           if (!current) return;
           applyEnrichedDetails(current, partial, true);
           if (page === "details" && String(detailItemId) === itemId) { detailData = partial; render(); }
@@ -1761,10 +1832,10 @@
           catch (error) { if (!options.quiet) recordLog("warning", `Could not load source details for ${saved.title}: ${error?.message || error}`); }
         }
       }
-      const current = items.find(row => String(row.id) === itemId);
+      const current = itemById(itemId);
       if (!current || !loaded) return null;
       applyEnrichedDetails(current, loaded, mixed);
-      if (options.persist !== false) await persist();
+      if (options.persist !== false) await persist({ ids: [itemId] });
       if (options.loadImages !== false) {
         try {
           const localImages = await window.SplitAppBackend?.loadItemImages?.(current);
@@ -1901,7 +1972,7 @@
   }
   async function loadDetails({ force = false } = {}) {
     const isPreview = Boolean(detailPreview);
-    const item = detailPreview || items.find(row => row.id === detailItemId);
+    const item = detailPreview || itemById(detailItemId);
     const requestId = ++detailRequest; detailData = item?.cachedDetails || null; detailError = "";
     if (!item) { detailLoading = false; render(); return; }
     const hasCachedDetails = Boolean(item.cachedDetails);
@@ -1967,7 +2038,7 @@
           item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
           Object.assign(item, tracking);
           item.updatedAt = Date.now();
-          persist();
+          persist({ ids: [item.id] });
           window.SplitAppBackend?.loadItemImages?.(item).then(localImageData => {
             if (requestId === detailRequest && page === "details" && Object.keys(localImageData || {}).length) { item.localImageData = localImageData; render(); }
           }).catch(() => {});
@@ -1978,7 +2049,7 @@
     finally { if (requestId === detailRequest) { detailLoading = false; render(); } }
   }
   function toggleEpisodeWatched(itemId, episodeId, episodeTitle) {
-    const item = items.find(entry => entry.id === itemId); if (!item) return;
+    const item = itemById(itemId); if (!item) return;
     const watched = new Set((item.watchedEpisodeIds || []).map(String));
     const id = String(episodeId);
     const previousStatus = item.status;
@@ -1989,7 +2060,7 @@
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
     item.updatedAt = Date.now();
     if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
-    persist(); render(); toast(watched.has(id) ? "Episode marked watched." : "Episode marked unwatched.");
+    persist({ ids: [item.id] }); render(); toast(watched.has(id) ? "Episode marked watched." : "Episode marked unwatched.");
   }
   function deleteFromDetails(id) {
     // Deleting from a detail view always returns to the Home library.
@@ -2043,11 +2114,11 @@
     const changed = item.status !== status;
     item.status = status; item.updatedAt = Date.now();
     if (changed && ["Dropped", "Completed", "On Hold", "Playing"].includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
-    await persist();
+    await persist({ ids: [item.id] });
     return true;
   }
   function openItemActions(id) {
-    const item = items.find(entry => String(entry.id) === String(id)); if (!item) return;
+    const item = itemById(String(id)); if (!item) return;
     const statusIcons = { Playing: "gamepad-2", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus", Completed: "check-circle" };
     const statusColors = { Playing: "accent", Backlog: "neutral", "On Hold": "warning", Dropped: "danger", Completed: "success" };
     const availableStatuses = [...new Set(category(item.category)?.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed"])]
@@ -2060,7 +2131,7 @@
       dialog.addEventListener("click", async event => {
         if (event.target === dialog) { closePopup(dialog); return; }
         const button = event.target.closest("[data-sheet-action]"); if (!button) return;
-        const target = items.find(entry => String(entry.id) === String(dialog.dataset.itemId));
+        const target = itemById(String(dialog.dataset.itemId));
         if (!target) return;
         const action = button.dataset.sheetAction;
         if (action === "details") {
@@ -2073,7 +2144,7 @@
         else if (action === "remove") {
           if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
           if (prefs.backupBeforeDestructive) exportList();
-          items = items.filter(entry => entry.id !== target.id); persist(); render(); toast("Entry removed.");
+          items = items.filter(entry => entry.id !== target.id); persist({ removed: [target.id] }); render(); toast("Entry removed.");
         } else if (action !== "cancel") { if (await setItemStatus(target, action)) { render(); toast(`Marked as ${action}.`); } }
       });
     }
@@ -2240,7 +2311,7 @@
   function setPreference(key, value) {
     prefs[key] = value;
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
-    persist(); applyPreferences();
+    persist({ meta: true }); applyPreferences();
     if (key === "backgroundBackups" || key === "backupSchedule") syncBackupSchedule();
     if (key === "ratingFormat") updateRatingOptions();
     if (key === "dashboardStatusFilter") {
@@ -2250,12 +2321,12 @@
     if (key === "dashboardDefaultCategory") {
       dashboardStatusFilter = value === "remember" ? prefs.dashboardLastStatus || "all" : value || "all";
       prefs.dashboardStatusFilter = dashboardStatusFilter;
-      persist();
+      persist({ meta: true });
     }
     if (key === "dashboardDefaultPlatform") {
       dashboardPlatformFilter = value || "all";
       prefs.dashboardPlatformFilter = dashboardPlatformFilter;
-      persist();
+      persist({ meta: true });
     }
     if (["dashboardGroupBy", "dashboardSort", "showRatings", "showProgress", "showThumbnails", "dashboardDensity", "dashboardView", "dashboardStatusFilter", "dashboardDefaultCategory", "dashboardDefaultPlatform", "dashboardRowActions", "cardCorners", "oneHandedMode", "tabletTwoColumn", "theme", "ratingFormat", "humanReadableStats", "currencyDisplay", "usdToInrRate"].includes(key)) render();
   }
@@ -2385,7 +2456,7 @@
       row.append(copy, color); list.appendChild(row);
     });
     const save = document.createElement("button"); save.type = "button"; save.className = "setting-picker-save"; save.textContent = "Save colors";
-    save.addEventListener("click", () => { prefs.categoryColors = draft; persist(); render(); closePopup(dialog); toast("Category colors updated."); });
+    save.addEventListener("click", () => { prefs.categoryColors = draft; persist({ meta: true }); render(); closePopup(dialog); toast("Category colors updated."); });
     list.appendChild(save);
     showPopup(dialog);
   }
@@ -2446,7 +2517,7 @@
     render();
     await new Promise(resolve => requestAnimationFrame(resolve));
     items = [...fresh, ...items];
-    await persist();
+    await persist({ ids: fresh.map(item => item.id) });
     const count = fresh.length;
     importState = { ...importState, phase: "complete", completed: count, total: count };
     render();
@@ -2476,49 +2547,108 @@
       return true;
     }
     clearTimeout(syncHideTimer);
-    syncJob = { finished: false, queue: [...games], entries: games.map(i => ({ id: i.id, title: i.title, status: "queued", error: "" })) };
+    syncJob = { finished: false, paused: false, waiters: [], dirty: [], queue: [...games], entries: games.map(i => ({ id: i.id, title: i.title, status: "queued", error: "" })) };
     syncPersistCount = 0;
     syncNotifier()?.requestPermission?.().catch(() => {});
+    if (!syncActionListener && syncNotifier()?.addListener) {
+      // Notification "Pause"/"Resume" button.
+      syncActionListener = syncNotifier().addListener("action", event => setSyncPaused(event?.action === "pause"));
+    }
     updateSyncUI();
     runSyncJob(syncJob);
     return true;
   }
+  // How many lookups may run at once. Scales with cores and memory, backs off on slow or
+  // metered networks and when the tab is hidden, and never exceeds the user's setting.
+  function syncConcurrency() {
+    const cores = Number(navigator.hardwareConcurrency) || 4, memory = Number(navigator.deviceMemory) || 4;
+    const connection = navigator.connection || {};
+    let limit = Math.round(cores / 2);
+    if (memory <= 2) limit = Math.min(limit, 1); else if (memory <= 4) limit = Math.min(limit, 2);
+    if (connection.saveData || /^(slow-2g|2g)$/.test(connection.effectiveType || "")) limit = 1;
+    else if (connection.effectiveType === "3g") limit = Math.min(limit, 2);
+    if (document.hidden) limit = Math.min(limit, 2);
+    return Math.max(1, Math.min(limit, Number(prefs.metadataWorkers) || 5, 8));
+  }
+  // Background work waits for an idle moment and for pending taps/scrolls, so it never
+  // competes with what the user is doing.
+  function yieldToUser() {
+    return new Promise(resolve => {
+      const go = () => {
+        if (navigator.scheduling?.isInputPending?.()) { setTimeout(go, 40); return; }
+        if (window.scheduler?.postTask) window.scheduler.postTask(resolve, { priority: "background" }).catch(resolve);
+        else if (window.requestIdleCallback) window.requestIdleCallback(() => resolve(), { timeout: 1500 });
+        else setTimeout(resolve, 0);
+      };
+      go();
+    });
+  }
   async function runSyncJob(job) {
-    // Two lookups at a time; the shared per-host queue spaces provider calls.
-    await Promise.all([0, 1].map(async () => {
-      while (job.queue.length) {
+    // Extra workers are parked while the adaptive limit is lower than their number.
+    const workers = Array.from({ length: 8 }, async (_, index) => {
+      while (true) {
+        while (job.paused || index >= syncConcurrency()) {
+          if (!job.queue.length && !job.entries.some(x => x.status === "syncing")) return;
+          if (job.paused) await new Promise(resolve => job.waiters.push(resolve));
+          else await new Promise(resolve => setTimeout(resolve, 1500));
+          if (index > 0 && !job.queue.length) return;
+        }
+        if (!job.queue.length) break;
+        await yieldToUser();
+        if (!job.queue.length || job.paused) continue;
         const item = job.queue.shift();
         const entry = job.entries.find(x => x.id === item.id);
         if (!entry) continue;
         entry.status = "syncing"; updateSyncUI();
         try {
-          const current = items.find(row => row.id === item.id) || item;
-          const loaded = await enrichLibraryEntryWithMix(current, { ...current, source: current.metadataSource }, "Background sync", { persist: false, loadImages: false, quiet: true });
+          const current = itemById(item.id) || item;
+          const loaded = await enrichLibraryEntryWithMix(current, { ...current, source: current.metadataSource }, "Background sync", { persist: false, loadImages: false, quiet: true, background: true });
           entry.status = loaded ? "done" : "failed";
           if (!loaded) entry.error = "No metadata found";
         } catch (error) { entry.status = "failed"; entry.error = error?.message || "Request failed"; }
         mixEnrichmentByItem.delete(String(item.id));
-        if (++syncPersistCount % 10 === 0) persist();
+        // Paused with nothing left to fetch: finish instead of waiting for a resume.
+        if (job.paused && !job.queue.length && !job.entries.some(x => x.status === "syncing" || x.status === "queued")) { job.paused = false; const waiters = job.waiters; job.waiters = []; waiters.forEach(resolve => resolve()); }
+        job.dirty.push(item.id);
+        if (++syncPersistCount % 10 === 0) persist({ ids: job.dirty.splice(0) });
         updateSyncUI();
       }
-    }));
+    });
+    await Promise.all(workers);
     job.finished = true;
-    await persist();
+    await persist({ ids: job.dirty.splice(0) });
     updateSyncUI();
     const c = syncCounts();
     toast(c.failed ? `Sync finished · ${c.done} updated, ${c.failed} failed.` : `Metadata sync finished · ${c.done} updated.`);
     if (!c.failed) syncHideTimer = setTimeout(() => { if (syncJob === job) { syncJob = null; updateSyncUI(); if (page === "sync") render(); } }, 6000);
   }
+  let syncActionListener = null;
+  function setSyncPaused(paused) {
+    if (!syncJob || syncJob.finished || syncJob.paused === paused) return;
+    syncJob.paused = paused;
+    if (!paused) { const waiters = syncJob.waiters; syncJob.waiters = []; waiters.forEach(resolve => resolve()); }
+    updateSyncUI();
+    if (page === "sync") render();
+    toast(paused ? "Sync paused." : "Sync resumed.");
+  }
   function retrySyncFailures() {
     if (!syncJob || !syncJob.finished) return;
     const failed = syncJob.entries.filter(x => x.status === "failed");
-    const games = failed.map(x => items.find(i => i.id === x.id)).filter(Boolean);
+    const games = failed.map(x => itemById(x.id)).filter(Boolean);
     if (!games.length) return;
     failed.forEach(x => { x.status = "queued"; x.error = ""; });
     syncJob.finished = false; syncJob.queue = games; syncPersistCount = 0;
     runSyncJob(syncJob); render();
   }
+  // Paint at most once per frame, and talk to the native notification at most once a second
+  // (every bridge call costs a JS->Java hop), except when the state itself changes.
+  let syncPaintQueued = false, lastNotify = 0, lastNotifyState = "";
   function updateSyncUI() {
+    if (syncPaintQueued) return;
+    syncPaintQueued = true;
+    requestAnimationFrame(() => { syncPaintQueued = false; paintSyncUI(); });
+  }
+  function paintSyncUI() {
     let fab = $("#sync-fab");
     const c = syncCounts();
     const show = Boolean(syncJob) && page !== "sync";
@@ -2531,15 +2661,19 @@
       fab.hidden = !show;
       fab.style.setProperty("--p", c.percent + "%");
       fab.classList.toggle("is-done", Boolean(syncJob?.finished));
+      fab.classList.toggle("is-paused", Boolean(syncJob?.paused));
       fab.classList.toggle("has-failed", c.failed > 0);
-      fab.querySelector("b").textContent = syncJob?.finished && !c.failed ? "✓" : c.percent + "%";
+      fab.querySelector("b").textContent = syncJob?.finished && !c.failed ? "✓" : syncJob?.paused ? "❚❚" : c.percent + "%";
       fab.setAttribute("aria-label", `Metadata sync ${c.percent}% — ${c.completed} of ${c.total} done. Open details.`);
     }
     if (page === "sync") livePatchSyncPage(c);
     const n = syncNotifier();
+    const stateKey = syncJob ? `${syncJob.finished}|${syncJob.paused}` : "none";
+    if (n && syncJob && stateKey === lastNotifyState && Date.now() - lastNotify < 1000) return;
+    lastNotifyState = stateKey; lastNotify = Date.now();
     if (n && syncJob) {
-      const text = syncJob.finished ? `${c.done} updated${c.failed ? ` · ${c.failed} failed` : ""}` : `${c.completed} / ${c.total} games · ${c.percent}%`;
-      n.update({ title: syncJob.finished ? "Metadata sync finished" : "Syncing game metadata", text, progress: c.completed, max: c.total, done: Boolean(syncJob.finished) }).catch(() => {});
+      const text = syncJob.finished ? `${c.done} updated${c.failed ? ` · ${c.failed} failed` : ""}` : `${c.completed} / ${c.total} games · ${c.percent}%${syncJob.paused ? " · paused" : ""}`;
+      n.update({ title: syncJob.finished ? "Metadata sync finished" : syncJob.paused ? "Metadata sync paused" : "Syncing game metadata", text, progress: c.completed, max: c.total, done: Boolean(syncJob.finished), paused: Boolean(syncJob.paused) }).catch(() => {});
     } else if (n && !syncJob) n.cancel?.().catch(() => {});
   }
   function livePatchSyncPage(c) {
@@ -2548,14 +2682,15 @@
     root.style.setProperty("--p", c.percent + "%");
     set("[data-sync-percent]", c.percent + "%"); set("[data-sync-completed]", `${c.completed} / ${c.total}`);
     set("[data-sync-done]", c.done); set("[data-sync-failed]", c.failed); set("[data-sync-active]", c.total - c.completed);
-    (syncJob?.entries || []).forEach(entry => {
-      const row = root.querySelector(`[data-sync-row="${CSS.escape(entry.id)}"]`);
-      if (row && row.dataset.status !== entry.status) { render(); }
-    });
+    // Only the ~60 rendered rows matter; re-render (at most twice a second) when one changed state.
+    const byId = new Map((syncJob?.entries || []).map(entry => [entry.id, entry]));
+    const stale = [...root.querySelectorAll("[data-sync-row]")].some(row => byId.get(row.dataset.syncRow)?.status !== row.dataset.status);
+    if (stale && !syncPageRenderTimer) syncPageRenderTimer = setTimeout(() => { syncPageRenderTimer = 0; if (page === "sync") render(); }, 500);
   }
+  let syncPageRenderTimer = 0;
   function resetDashboard() {
     Object.assign(prefs, { dashboardView: "list", dashboardDefaultCategory: "remember", dashboardStatusFilter: "all", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", dashboardSort: "alphabetical-asc", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardRowActions: "menu", showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars", oneHandedMode: "off", tabletTwoColumn: true });
-    dashboardStatusFilter = "all"; dashboardPlatformFilter = "all"; activeCategory = "all"; persist(); applyPreferences(); render(); toast("Dashboard preferences restored.");
+    dashboardStatusFilter = "all"; dashboardPlatformFilter = "all"; activeCategory = "all"; persist({ meta: true }); applyPreferences(); render(); toast("Dashboard preferences restored.");
   }
   function clearDashboardFilters() {
     dashboardStatusFilter = prefs.dashboardStatusFilter = "all";
@@ -2565,11 +2700,11 @@
     prefs.dashboardSort = "alphabetical-asc";
     prefs.dashboardGroupBy = "status";
     libraryQuery = "";
-    persist(); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render();
+    persist({ meta: true }); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render();
   }
   function resetAnimations() {
     ["reduceMotion", "animationSpeed", "animationCustom", "animationEasing", "pageTransition", "cardEntrance", "animationStagger", "sheetAnimation", "pressEffect", "hoverLift", "navBounce", "progressAnimation", "skeletonShimmer"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
-    persist(); applyPreferences(); render(); toast("Animation settings restored.");
+    persist({ meta: true }); applyPreferences(); render(); toast("Animation settings restored.");
   }
   function previewAnimations() {
     const content = $("#page-content"); if (!content) return;
@@ -2581,7 +2716,7 @@
     prefs.categoryColors = {};
     prefs.navIcons = { ...prefsDefaults.navIcons };
     prefs.navBar = { order: [...prefsDefaults.navBar.order], visible: { ...prefsDefaults.navBar.visible } };
-    persist(); applyPreferences(); render(); toast("Appearance settings restored.");
+    persist({ meta: true }); applyPreferences(); render(); toast("Appearance settings restored.");
   }
 
   $("#topbar-actions")?.addEventListener("click", event => {
@@ -2655,7 +2790,7 @@
     if (event.target.closest("[data-reveal-playing]")) { document.querySelector(".library-section")?.scrollIntoView({ behavior: prefs.reduceMotion ? "auto" : "smooth", block: "start" }); return; }
     const detailStatus = event.target.closest("[data-detail-status-btn]");
     if (detailStatus) {
-      const item = items.find(row => row.id === detailItemId);
+      const item = itemById(detailItemId);
       if (item) {
         setItemStatus(item, detailStatus.dataset.detailStatusBtn).then(changed => { if (changed) render(); });
       }
@@ -2699,8 +2834,8 @@
     if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; render(); return; }
     const statsRating = event.target.closest("[data-stats-rating]");
     if (statsRating) {
-      const item = items.find(row => String(row.id) === String(statsRating.dataset.statsRating));
-      if (item) { item.rating = Number(statsRating.dataset.score) || 0; item.updatedAt = Date.now(); persist(); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
+      const item = itemById(String(statsRating.dataset.statsRating));
+      if (item) { item.rating = Number(statsRating.dataset.score) || 0; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
       return;
     }
     const findHours = event.target.closest("[data-stats-find-hours]");
@@ -2709,8 +2844,8 @@
     if (fetchFacts) { fetchMissingFacts(fetchFacts); return; }
     const adjust = event.target.closest("[data-adjust-progress]");
     if (adjust) {
-      const item = items.find(row => row.id === detailItemId);
-      if (item) { item.progress = Math.max(0, (Number(item.progress) || 0) + Number(adjust.dataset.adjustProgress)); item.updatedAt = Date.now(); persist(); render(); }
+      const item = itemById(detailItemId);
+      if (item) { item.progress = Math.max(0, (Number(item.progress) || 0) + Number(adjust.dataset.adjustProgress)); item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); }
       return;
     }
     const stepper = event.target.closest("[data-step-input]");
@@ -2735,11 +2870,11 @@
     }
     const detailRating = event.target.closest("[data-detail-rating]");
     if (detailRating) {
-      const item = items.find(row => row.id === detailItemId);
+      const item = itemById(detailItemId);
       if (!item) return;
       item.rating = Number(detailRating.dataset.detailRating) || 0;
       item.updatedAt = Date.now();
-      persist();
+      persist({ ids: [item.id] });
       $$("[data-detail-rating]").forEach(button => {
         const active = Number(button.dataset.detailRating) <= item.rating;
         button.setAttribute("aria-pressed", String(Number(button.dataset.detailRating) === item.rating));
@@ -2768,7 +2903,7 @@
       persist(); render(); toast("Cookies cleared."); return;
     }
     const resetOptions = event.target.closest("[data-source-reset-options]");
-    if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist(); render(); toast("Source options reset."); return; }
+    if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist({ meta: true }); render(); toast("Source options reset."); return; }
     const go = event.target.closest("[data-go]"); if (go) { if (go.classList.contains("detail-back")) navigateBackTo(go.dataset.go); else goto(go.dataset.go); return; }
     if (event.target.closest("[data-category-colors-picker]")) { openCategoryColorsPicker(); return; }
     const sourceFilter = event.target.closest("[data-source-filter]");
@@ -2821,6 +2956,7 @@
       }
       return;
     }
+    if (event.target.closest("[data-sync-toggle]")) { setSyncPaused(!syncJob?.paused); return; }
     if (event.target.closest("[data-sync-retry]")) { retrySyncFailures(); return; }
     if (event.target.closest("[data-sync-dismiss]")) { if (syncJob?.finished) { syncJob = null; updateSyncUI(); goto("dashboard"); } return; }
     if (event.target.closest("[data-continue-import]")) { continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not restore this library."; render(); } }); return; }
@@ -2831,14 +2967,14 @@
   document.addEventListener("change", event => {
     const input = event.target;
     if (input.matches("[data-detail-status]")) {
-      const item = items.find(row => row.id === detailItemId);
+      const item = itemById(detailItemId);
       if (!item || item.status === input.value) return;
       setItemStatus(item, input.value).then(changed => { if (!changed) input.value = item.status; else render(); });
       return;
     }
     if (input.matches("[data-detail-rating-select]")) {
-      const item = items.find(row => row.id === detailItemId);
-      if (item) { item.rating = Number(input.value) || 0; item.updatedAt = Date.now(); persist(); }
+      const item = itemById(detailItemId);
+      if (item) { item.rating = Number(input.value) || 0; item.updatedAt = Date.now(); persist({ ids: [item.id] }); }
       return;
     }
     if (input.matches("[data-custom-picker]")) {
@@ -2852,17 +2988,17 @@
       if (input.type === "number" || input.type === "range") value = Number(value);
       setPreference(key, value); if (input.type === "range") input.nextElementSibling.value = `${value}%`;
     }
-    if (input.matches("[data-category-color]")) { prefs.categoryColors[input.dataset.categoryColor] = input.value; persist(); render(); }
-    if (input.matches("[data-api-key]")) { prefs.apiKeys[input.dataset.apiKey] = input.value.trim(); persist(); }
-    if (input.matches("[data-source]")) { window.SplitAppSources.setEnabled(prefs, input.dataset.source, input.checked); persist(); }
+    if (input.matches("[data-category-color]")) { prefs.categoryColors[input.dataset.categoryColor] = input.value; persist({ meta: true }); render(); }
+    if (input.matches("[data-api-key]")) { prefs.apiKeys[input.dataset.apiKey] = input.value.trim(); persist({ meta: true }); }
+    if (input.matches("[data-source]")) { window.SplitAppSources.setEnabled(prefs, input.dataset.source, input.checked); persist({ meta: true }); }
     if (input.matches("[data-nav-visible]")) {
       const key = input.dataset.navVisible;
       if (key !== "dashboard" && key !== "settings") prefs.navBar.visible[key] = input.checked;
-      persist(); applyPreferences(); render();
+      persist({ meta: true }); applyPreferences(); render();
     }
     if (input.matches("[data-source-enabled]")) {
       window.SplitAppSources.setEnabled(prefs, input.dataset.sourceEnabled, input.checked);
-      persist(); render();
+      persist({ meta: true }); render();
     }
     if (input.matches("[data-source-option]")) {
       const [key, field] = input.dataset.sourceOption.split("|");
@@ -2870,9 +3006,9 @@
       if (value) next[field] = value; else delete next[field];
       if (Object.keys(next).length) prefs.sourceOptions[key] = next; else delete prefs.sourceOptions[key];
       if (field === "domain") input.value = value;
-      persist(); return;
+      persist({ meta: true }); return;
     }
-    if (input.matches("[data-source-api-key]")) { prefs.apiKeys[input.dataset.sourceApiKey] = input.value.trim(); persist(); }
+    if (input.matches("[data-source-api-key]")) { prefs.apiKeys[input.dataset.sourceApiKey] = input.value.trim(); persist({ meta: true }); }
     if (input.matches("[data-setting-action=import]")) { const file = input.files?.[0]; input.value = ""; importList(file); }
   });
   let navTouchDrag = null;
@@ -2910,7 +3046,7 @@
     const list = drag.row.closest("#nav-bar-arrangement-list");
     if (!list) return;
     prefs.navBar.order = [...list.querySelectorAll("[data-nav-row]")].map(row => row.dataset.navRow);
-    persist(); applyPreferences(); render();
+    persist({ meta: true }); applyPreferences(); render();
   };
   document.addEventListener("touchend", finishNavTouchDrag);
   document.addEventListener("touchcancel", finishNavTouchDrag);
@@ -2933,15 +3069,15 @@
     event.preventDefault();
     const [kind, key] = event.dataTransfer.getData("text/plain").split(":");
     if (kind === "nav" && targetRow.dataset.navRow) {
-      prefs.navBar.order = moveInOrder([...prefs.navBar.order], key, null, targetRow.dataset.navRow); persist(); applyPreferences(); render();
+      prefs.navBar.order = moveInOrder([...prefs.navBar.order], key, null, targetRow.dataset.navRow); persist({ meta: true }); applyPreferences(); render();
     } else if (kind === "source" && targetRow.dataset.sourceRow) {
-      prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], key, null, targetRow.dataset.sourceRow); persist(); render();
+      prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], key, null, targetRow.dataset.sourceRow); persist({ meta: true }); render();
     }
   });
   document.addEventListener("input", event => {
     if (event.target.matches("[data-detail-notes]")) {
-      const item = items.find(row => row.id === detailItemId);
-      if (item) { item.notes = event.target.value; item.updatedAt = Date.now(); persist(); }
+      const item = itemById(detailItemId);
+      if (item) { item.notes = event.target.value; item.updatedAt = Date.now(); persist({ ids: [item.id] }); }
       return;
     }
     if (event.target.matches("[data-settings-index-search]")) {
@@ -3014,7 +3150,7 @@
     dashboardPlatformFilter = event.target.elements.platform.value || "all";
     prefs.dashboardPlatformFilter = dashboardPlatformFilter;
     prefs.dashboardView = event.target.elements.view?.value || prefs.dashboardView;
-    persist();
+    persist({ meta: true });
     applyPreferences();
     closePopup($("#dashboard-filter-dialog"));
     render();

@@ -1,7 +1,7 @@
 // Collection health and activity summaries for the current SavePoint library.
 (() => {
   window.SplitAppPages = window.SplitAppPages || {};
-  window.SplitAppPages.statistics = context => {
+  const renderStatistics = context => {
     const { items, history, config, prefs = {}, esc, statsRange = "week", statsSubpage = "", statsActivityDate = "" } = context;
     const statisticsInBottomBar = prefs.navBar?.visible?.statistics !== false;
     const statisticsBack = statisticsInBottomBar
@@ -101,19 +101,29 @@
     const month = statsRange === "month", rangeDays = month ? 30 : 7;
     const dayKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     const historyTime = entry => Number(entry.at) || Date.parse(entry.at) || 0;
-    const activityDays = Array.from({ length: rangeDays }, (_, offset) => {
+    // One pass over history: parse every timestamp once, then count per day with a lookup
+    // (previously: one full scan of the history for each of the 7 or 30 days).
+    const stamps = new Map(history.map(entry => [entry, historyTime(entry)]));
+    const timeOf = entry => stamps.get(entry) ?? historyTime(entry);
+    const dayStarts = Array.from({ length: rangeDays }, (_, offset) => {
       const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - (rangeDays - 1 - offset));
-      const nextDay = new Date(date); nextDay.setDate(nextDay.getDate() + 1);
-      const count = history.filter(entry => { const at = historyTime(entry); return at >= date.getTime() && at < nextDay.getTime(); }).length;
-      return { date, key: dayKey(date), count };
+      return date;
     });
+    const dayCounts = dayStarts.map(() => 0);
+    const firstDay = dayStarts[0].getTime(), lastEnd = new Date(dayStarts[rangeDays - 1].getTime() + 36 * 3600000);
+    lastEnd.setHours(0, 0, 0, 0);
+    stamps.forEach(at => {
+      if (at < firstDay || at >= lastEnd.getTime()) return;
+      for (let index = rangeDays - 1; index >= 0; index -= 1) { if (at >= dayStarts[index].getTime()) { dayCounts[index] += 1; break; } }
+    });
+    const activityDays = dayStarts.map((date, index) => ({ date, key: dayKey(date), count: dayCounts[index] }));
     const maxActivity = Math.max(1, ...activityDays.map(day => day.count));
     const activityTotal = activityDays.reduce((sum, day) => sum + day.count, 0);
     const selectedActivityDay = activityDays.find(day => day.key === statsActivityDate) || [...activityDays].reverse().find(day => day.count) || activityDays.at(-1);
     const selectedDayEvents = selectedActivityDay ? history.filter(entry => {
-      const at = historyTime(entry), start = selectedActivityDay.date.getTime(), end = start + 86400000;
+      const at = timeOf(entry), start = selectedActivityDay.date.getTime(), end = start + 86400000;
       return at >= start && at < end;
-    }).sort((a, b) => historyTime(b) - historyTime(a)) : [];
+    }).sort((a, b) => timeOf(b) - timeOf(a)) : [];
     const activityBars = activityDays.map((day, index) => {
       const label = month ? `${day.date.getDate()}` : day.date.toLocaleDateString(undefined, { weekday: "short" });
       const sub = month && (index === 0 || day.date.getDate() === 1) ? `<em>${esc(day.date.toLocaleDateString(undefined, { month: "short" }))}</em>` : "";
@@ -144,8 +154,9 @@
     const genreRows = [...genreCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 6).map(([genre, count]) => `<div class="stats-genre-row"><span><strong>${esc(genre)}</strong><small>${count} ${count === 1 ? "game" : "games"} · ${total ? Math.round(count / total * 100) : 0}%</small></span><i><b style="width:${total ? count / total * 100 : 0}%"></b></i></div>`).join("");
     const genresPanel = `<article class="stats-panel"><header class="stats-panel-heading"><div><span class="stats-eyebrow">GENRE MIX</span><h3>Genres in your library</h3></div></header>${genreRows ? `<div class="stats-genre-list">${genreRows}</div>` : `<p class="stats-empty-copy">Genre data isn’t available yet. Fetch details for games in your library to build this view.</p>`}</article>`;
     const detailedLibraryPanel = `${statusPanel}${genresPanel}`;
+    const itemsById = new Map(items.map(row => [String(row.id), row]));
     const activityEntryRows = selectedDayEvents.map(entry => {
-      const item = items.find(row => String(row.id) === String(entry.itemId));
+      const item = itemsById.get(String(entry.itemId));
       const stamp = historyTime(entry) ? new Date(historyTime(entry)).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
       const content = `<span class="stats-activity-entry-icon"><i data-lucide="${String(entry.status || entry.action).toLowerCase() === "completed" ? "circle-check" : "activity"}" aria-hidden="true"></i></span><span class="stats-activity-entry-copy"><strong>${esc(entry.title || item?.title || "Library update")}</strong><small>${esc(entry.action || entry.status || "Updated")}${stamp ? ` · ${esc(stamp)}` : ""}</small></span><span class="stats-activity-entry-status">${esc(entry.status || "Updated")}</span>`;
       return item ? `<button type="button" class="stats-activity-entry" data-open-details data-id="${esc(item.id)}">${content}</button>` : `<div class="stats-activity-entry">${content}</div>`;
@@ -184,5 +195,15 @@
     const subpage = selected ? `<section class="stats-subpage stats-subpage-${esc(statsSubpage)}"><header class="detail-page-heading analytics-page-heading"><button type="button" class="detail-back" data-go="statistics"><span aria-hidden="true">‹</span> All statistics</button><strong>${selected.title}</strong><span class="stats-subpage-badge">${selected.badge}</span></header><div class="stats-subpage-intro"><span class="stats-eyebrow">STATISTICS</span><h1>${selected.title}</h1><p>${selected.subtitle}</p></div>${selected.body}</section>` : "";
     const empty = total === 0 && !statsSubpage ? `<div class="stats-empty-state"><span aria-hidden="true">▥</span><strong>Your stats will appear here.</strong><p>Add games to your library to get started.</p><a href="#dashboard">Go to your library <span aria-hidden="true">→</span></a></div>` : "";
     return `<section class="stats-page">${statsSubpage ? subpage : overview}${empty}</section>`;
+  };
+
+  // The page is a pure function of the library, history, a few preferences and the selected
+  // range/day, so identical inputs reuse the previous HTML instead of recomputing every panel.
+  let cache = { key: "", html: "" };
+  window.SplitAppPages.statistics = context => {
+    if (context.dataRevision === undefined) return renderStatistics(context);
+    const key = [context.dataRevision, context.items.length, context.history.length, context.statsRange, context.statsSubpage, context.statsActivityDate, new Date().toDateString(), JSON.stringify(context.prefs)].join("|");
+    if (cache.key !== key) cache = { key, html: renderStatistics(context) };
+    return cache.html;
   };
 })();

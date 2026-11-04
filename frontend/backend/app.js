@@ -229,18 +229,34 @@
     return items;
   }
 
+  // Listing the games folder through Android's storage framework is slow (one call per
+  // directory level, ~1000 entries), and every artwork batch used to repeat it. Cache the
+  // index for a short time and drop it whenever we write to the folder.
+  let gamesIndexCache = null;
+  function invalidateGamesIndex() { gamesIndexCache = null; }
+  function getGamesIndex(plugin, uri) {
+    if (gamesIndexCache && gamesIndexCache.uri === uri && Date.now() - gamesIndexCache.at < 30000) return gamesIndexCache.promise;
+    const promise = (async () => {
+      const root = (await plugin.listFiles({ uri }))?.files || [];
+      const tree = root.find(file => file.name === folderTreeName && file.uri);
+      const treeFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
+      const titlesDir = treeFiles.find(file => file.name === "games" && file.uri);
+      if (!titlesDir) return new Map();
+      return new Map(((await plugin.listFiles({ uri: titlesDir.uri }))?.files || []).filter(file => file.uri).map(file => [file.name, file]));
+    })();
+    gamesIndexCache = { uri, at: Date.now(), promise };
+    promise.catch(() => { if (gamesIndexCache?.promise === promise) gamesIndexCache = null; });
+    return promise;
+  }
+
   // Fills in `localThumbnailData` for library items from the saved folder, so covers still show after the app/WebView cache is cleared or while offline.
   async function hydrateThumbnails(items, onBatch) {
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
     if (!Array.isArray(items) || !plugin?.listFiles || !plugin?.readBinaryFile) return 0;
     const uri = await getFolderUri({ prompt: false });
     if (!uri) return 0;
-    const root = (await plugin.listFiles({ uri }))?.files || [];
-    const tree = root.find(file => file.name === folderTreeName && file.uri);
-    const treeFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
-    const titlesDir = treeFiles.find(file => file.name === "games" && file.uri);
-    if (!titlesDir) return 0;
-    const folders = new Map(((await plugin.listFiles({ uri: titlesDir.uri }))?.files || []).filter(file => file.uri).map(file => [file.name, file]));
+    const folders = await getGamesIndex(plugin, uri);
+    if (!folders.size) return 0;
     const queue = items.filter(item => ((!item.localPortraitData && !item.localThumbnailData) || (!item.localLandscapeData && (item.backdrop || item.cachedDetails?.landscapeImage))) && (item.thumbnailPath || item.localImageFiles?.length));
     let done = 0;
     const worker = async () => {
@@ -271,12 +287,7 @@
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
     const uri = await getFolderUri({ prompt: false });
     if (!uri || !plugin?.listFiles || !plugin?.readBinaryFile || !Array.isArray(item?.localImageFiles)) return {};
-    const root = (await plugin.listFiles({ uri }))?.files || [];
-    const tree = root.find(file => file.name === folderTreeName && file.uri);
-    const treeFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
-    const games = treeFiles.find(file => file.name === "games" && file.uri);
-    const folders = games ? (await plugin.listFiles({ uri: games.uri }))?.files || [] : [];
-    const folder = folders.find(file => file.name === itemDirectoryName(item) && file.uri);
+    const folder = (await getGamesIndex(plugin, uri)).get(itemDirectoryName(item));
     const files = folder ? (await plugin.listFiles({ uri: folder.uri }))?.files || [] : [];
     const result = {};
     for (const image of item.localImageFiles) {
@@ -422,7 +433,7 @@
             try { await plugin.deleteFile?.({ uri: oldFile.uri }); } catch (_) {}
           }
         }
-        await plugin.writeNestedFile({ uri, dirPath, fileName: "index.json", content: JSON.stringify(portableItem(item), null, 2) });
+        await plugin.writeNestedFile({ uri, dirPath, fileName: "index.json", content: JSON.stringify(portableItem(item), null, 2) }); invalidateGamesIndex();
         hashes[id] = itemFingerprint(item);
         if (imageWritten) imageHashes[id] = { fingerprint: imageHash, files: localImageFiles };
         else delete imageHashes[id];
@@ -450,7 +461,7 @@
             try {
               const files = (await plugin.listFiles({ uri: folder.uri }))?.files || [];
               for (const file of files) if (file.uri) await plugin.deleteFile({ uri: file.uri });
-              await plugin.deleteFile({ uri: folder.uri });
+              await plugin.deleteFile({ uri: folder.uri }); invalidateGamesIndex();
             } catch (error) { console.warn(`Could not remove old SavePoint item folder ${folder.name}`, error); }
           }
         }
@@ -585,12 +596,13 @@
   function queueFolderDatabaseWrite(payload, uri = activeFolderUri) {
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
     if (!uri || !plugin?.writeFile) return Promise.resolve();
+    invalidateGamesIndex();
     // Commit the portable database snapshot immediately. Artwork downloads and
     // per-game mirrors can be slow; the library's status/details must survive
     // an app being closed while those files are syncing.
     const content = JSON.stringify(portableData(payload));
     const snapshotWrite = folderSnapshotQueue.catch(() => {}).then(async () => {
-      if (plugin.writeNestedFile) await plugin.writeNestedFile({ uri, dirPath: [folderTreeName], fileName: "database.json", content });
+      if (plugin.writeNestedFile) await plugin.writeNestedFile({ uri, dirPath: [folderTreeName], fileName: "database.json", content }); invalidateGamesIndex();
       await plugin.writeFile({ uri, fileName: databaseFileName, content });
     });
     // Keep portable snapshots ordered by save revision. Concurrent SAF writes
@@ -750,29 +762,99 @@
   }
 
   let appSaveQueue = Promise.resolve();
+  const clone = value => typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+  const hasEncryptedStore = () => Boolean(window.Capacitor?.Plugins?.EncryptedStore?.setItem);
+
+  // Folder snapshots rewrite the whole library through Android's storage framework, so they
+  // are coalesced (and the app's private encrypted store, written per game, stays the
+  // durable copy). Deletions flush at once so a stale folder can never resurrect a game.
+  const FOLDER_DEBOUNCE_MS = 8000;
+  let folderTimer = 0, folderLatest = null, folderLastCount = -1;
+  function runFolderWrite() {
+    clearTimeout(folderTimer); folderTimer = 0;
+    const latest = folderLatest; folderLatest = null;
+    if (!latest) return Promise.resolve();
+    const payload = latest();
+    folderLastCount = payload.items.length;
+    return queueFolderDatabaseWrite(payload);
+  }
+  function scheduleFolderWrite(getPayload, count, urgent) {
+    if (!activeFolderUri) return Promise.resolve();
+    folderLatest = getPayload;
+    if (urgent || !hasEncryptedStore() || (folderLastCount >= 0 && count < folderLastCount) || folderLastCount < 0) return runFolderWrite();
+    clearTimeout(folderTimer); folderTimer = setTimeout(runFolderWrite, FOLDER_DEBOUNCE_MS);
+    return Promise.resolve();
+  }
+  function flushFolderNow() { return folderLatest ? runFolderWrite() : Promise.resolve(); }
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushFolderNow(); });
+    window.addEventListener("pagehide", flushFolderNow);
+  }
 
   // Capture each revision before waiting in the queue. Encrypted-store writes
   // must finish in the same order as user changes or an older snapshot can win.
-  function save(data) {
-    const clone = value => typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
-    const payload = {
-      items: Array.isArray(data.items) ? clone(data.items) : [],
-      history: Array.isArray(data.history) ? clone(data.history) : [],
-      preferences: data.preferences && typeof data.preferences === "object" ? clone(data.preferences) : {}
-    };
+  // scope: undefined/{full} rewrites by diffing everything; {ids, removed} touches only
+  // those games; {meta} saves just preferences/history.
+  function save(data, scope = { full: true }) {
+    const history = Array.isArray(data.history) ? clone(data.history) : [];
+    const preferences = data.preferences && typeof data.preferences === "object" ? clone(data.preferences) : {};
+    let payload;
+    if (scope.full || !idbHealthy) {
+      payload = { items: Array.isArray(data.items) ? clone(data.items) : [], history, preferences };
+    } else {
+      const wanted = new Set([...(scope.ids || [])].map(String));
+      const changed = wanted.size ? clone((data.items || []).filter(item => wanted.has(String(item.id)))) : [];
+      const removedIds = [...(scope.removed || [])].map(String);
+      const live = data.items;
+      payload = { scoped: true, changed, removedIds, history, preferences, live, count: Array.isArray(live) ? live.length : 0 };
+    }
     const write = appSaveQueue.then(() => saveSnapshot(payload), () => saveSnapshot(payload));
     appSaveQueue = write.catch(() => {});
     return write;
   }
 
+  let lastMetaJson = "";
+  async function saveScoped(payload) {
+    const stored = payload.changed.map(item => (activeFolderUri ? portableItem(item) : browserData({ items: [item] }).items[0]));
+    try { await window.SplitAppIDB.saveSome({ changed: stored, removedIds: payload.removedIds, history: payload.history, preferences: payload.preferences }); }
+    catch (error) { console.warn("IndexedDB save failed; falling back to a full save", error); idbHealthy = false; throw error; }
+    writeMirror({ items: [], history: payload.history, preferences: payload.preferences });
+    const folderWrite = scheduleFolderWrite(() => portableData({ items: payload.live, history: payload.history, preferences: payload.preferences }), payload.count, payload.removedIds.length > 0);
+    const plugin = window.Capacitor?.Plugins?.EncryptedStore;
+    try {
+      if (plugin?.setItem && plugin?.setMeta) {
+        const writes = [];
+        const changedSnapshots = [];
+        for (const item of payload.changed) {
+          const id = String(item.id), snapshot = JSON.stringify(portableItem(item));
+          if (itemSnapshots.get(id) !== snapshot) { writes.push(plugin.setItem({ id, data: snapshot })); changedSnapshots.push([id, snapshot]); }
+        }
+        for (const id of payload.removedIds) writes.push(plugin.deleteItem({ id }));
+        const meta = JSON.stringify({ history: payload.history, preferences: payload.preferences });
+        if (meta !== lastMetaJson) writes.push(plugin.setMeta({ data: meta }));
+        await Promise.all(writes);
+        changedSnapshots.forEach(([id, snapshot]) => { itemSnapshots.set(id, snapshot); itemIds.add(id); });
+        payload.removedIds.forEach(id => { itemSnapshots.delete(id); itemIds.delete(id); });
+        lastMetaJson = meta;
+      }
+    } finally {
+      await folderWrite;
+    }
+  }
+
   async function saveSnapshot(payload) {
+    if (payload.scoped) {
+      try { await saveScoped(payload); return; }
+      catch (_) { /* fall through to a full save below */ }
+      payload = { items: clone(payload.live || []), history: payload.history, preferences: payload.preferences };
+    }
     const stored = activeFolderUri ? portableData(payload) : browserData(payload);
     if (idbHealthy) {
       try { await window.SplitAppIDB.save(stored); }
       catch (error) { console.warn("IndexedDB save failed; using localStorage", error); idbHealthy = false; }
     }
     writeMirror(stored);
-    const folderWrite = queueFolderDatabaseWrite(payload);
+    const folderWrite = scheduleFolderWrite(() => payload, payload.items.length, false);
     const plugin = window.Capacitor?.Plugins?.EncryptedStore;
     try {
       if (plugin?.setItem && plugin?.setMeta) {
@@ -787,7 +869,8 @@
         }
         for (const id of itemIds) if (!nextIds.has(id)) writes.push(plugin.deleteItem({ id }));
         await Promise.all(writes);
-        await plugin.setMeta({ data: JSON.stringify({ history: payload.history, preferences: payload.preferences }) });
+        const meta = JSON.stringify({ history: payload.history, preferences: payload.preferences });
+        await plugin.setMeta({ data: meta }); lastMetaJson = meta;
         itemIds.clear(); nextIds.forEach(id => itemIds.add(id));
         itemSnapshots.clear(); snapshots.forEach((snapshot, id) => itemSnapshots.set(id, snapshot));
       }
@@ -853,7 +936,7 @@
     getFolderUri: () => getFolderUri({ prompt: false }),
     loadItemImages,
     hydrateThumbnails,
-    flushFolderWrites: () => Promise.all([folderSnapshotQueue, folderWriteQueue]),
+    flushFolderWrites: () => Promise.all([flushFolderNow(), folderSnapshotQueue, folderWriteQueue]),
     setImageStorage,
     inspectFolder,
     isNativeFolderStorageAvailable: hasFolderPlugin

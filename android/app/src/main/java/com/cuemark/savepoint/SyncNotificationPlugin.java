@@ -5,7 +5,9 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.IntentFilter;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -13,7 +15,9 @@ import android.os.Build;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
 
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -24,6 +28,28 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public class SyncNotificationPlugin extends Plugin {
     private static final String CHANNEL = "metadata_sync";
     private static final int ID = 4107;
+
+    private static final String ACTION = "com.cuemark.savepoint.SYNC_ACTION";
+    private BroadcastReceiver receiver;
+
+    @Override
+    public void load() {
+        // Tapping the notification's Pause/Resume button is delivered to JS as an "action" event.
+        receiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                JSObject data = new JSObject();
+                data.put("action", intent.getStringExtra("action"));
+                notifyListeners("action", data);
+            }
+        };
+        ContextCompat.registerReceiver(getContext(), receiver, new IntentFilter(ACTION), ContextCompat.RECEIVER_NOT_EXPORTED);
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        if (receiver != null) { try { getContext().unregisterReceiver(receiver); } catch (Exception ignored) {} receiver = null; }
+    }
 
     private boolean allowed() {
         return Build.VERSION.SDK_INT < 33
@@ -52,6 +78,9 @@ public class SyncNotificationPlugin extends Plugin {
         int progress = call.getInt("progress", 0);
         Intent open = new Intent(ctx, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pi = PendingIntent.getActivity(ctx, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        boolean paused = call.getBoolean("paused", false);
+        Intent toggle = new Intent(ACTION).setPackage(ctx.getPackageName()).putExtra("action", paused ? "resume" : "pause");
+        PendingIntent toggleIntent = PendingIntent.getBroadcast(ctx, 1, toggle, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(ctx.getApplicationInfo().icon)
             .setContentTitle(call.getString("title", "Syncing metadata"))
@@ -62,6 +91,7 @@ public class SyncNotificationPlugin extends Plugin {
             .setAutoCancel(done)
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setProgress(done ? 0 : max, done ? 0 : progress, false);
+        if (!done) b.addAction(0, paused ? "Resume" : "Pause", toggleIntent);
         NotificationManagerCompat.from(ctx).notify(ID, b.build());
         call.resolve();
     }

@@ -60,28 +60,41 @@
     }
     return responseType === "text" ? await response.text() : await response.json();
   }
-  const hostQueues = new Map();
-  const hostNextRequestAt = new Map();
+  // Per-host request queue: one request at a time per host, spaced apart (and paused after
+  // HTTP 429). User-initiated requests jump ahead of background sync requests, so opening
+  // a game never waits behind hundreds of queued sync lookups.
+  const hostStates = new Map();
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  async function pumpHost(state) {
+    if (state.running) return;
+    state.running = true;
+    while (state.queue.length) {
+      // Wait out the spacing first, then pick: a user request that arrived meanwhile wins.
+      const wait = Math.max(0, state.nextAt - Date.now());
+      if (wait) await delay(wait);
+      const index = state.queue.findIndex(job => !job.background);
+      const [job] = state.queue.splice(index >= 0 ? index : 0, 1);
+      try {
+        const result = await wireRequest(job.url, job.options, job.responseType);
+        state.nextAt = Date.now() + 1200;
+        job.resolve(result);
+      } catch (error) {
+        const cooldown = error?.status === 429 ? Math.max(60_000, Number(error.retryAfterMs) || 0) : 1200;
+        state.nextAt = Date.now() + cooldown;
+        job.reject(error);
+      }
+    }
+    state.running = false;
+  }
   function pacedWireRequest(url, options = {}, responseType = "json") {
     let host = "unknown";
     try { host = new URL(url, location?.href).host || host; } catch (_) {}
-    const previous = hostQueues.get(host) || Promise.resolve();
-    const request = previous.catch(() => {}).then(async () => {
-      const wait = Math.max(0, (hostNextRequestAt.get(host) || 0) - Date.now());
-      if (wait) await delay(wait);
-      try {
-        const result = await wireRequest(url, options, responseType);
-        hostNextRequestAt.set(host, Date.now() + 1200);
-        return result;
-      } catch (error) {
-        const cooldown = error?.status === 429 ? Math.max(60_000, Number(error.retryAfterMs) || 0) : 1200;
-        hostNextRequestAt.set(host, Date.now() + cooldown);
-        throw error;
-      }
+    if (!hostStates.has(host)) hostStates.set(host, { queue: [], running: false, nextAt: 0 });
+    const state = hostStates.get(host);
+    return new Promise((resolve, reject) => {
+      state.queue.push({ url, options, responseType, resolve, reject, background: options.background === true });
+      pumpHost(state);
     });
-    hostQueues.set(host, request.catch(() => {}));
-    return request;
   }
   // Every request to a known source picks up that source's domain / user agent / cookies from Settings (the user's values win over built-in headers).
   function applySource(url, options = {}) {
@@ -95,7 +108,7 @@
     ({ url, options } = applySource(url, options));
     const method = String(options.method || "GET").toUpperCase();
     if (method !== "GET" || options.noCache) return requestJsonDirect(url, options);
-    const key = JSON.stringify([url, options.headers || {}, Boolean(options.forceRefresh), options.offlineFallback || ""]);
+    const key = JSON.stringify([url, options.headers || {}, Boolean(options.forceRefresh), options.offlineFallback || "", options.background === true]);
     const active = requestFlights.get(key);
     if (active) return active;
     const request = requestJsonDirect(url, options);
