@@ -2004,3 +2004,96 @@ body[data-page="dashboard"] .topbar h1 { font-size:1.78rem; line-height:1.04; le
   .discover-consent-dialog[open] { height:min(84dvh,680px); }
   .discover-consent-dialog .choice-dialog-actions { grid-template-columns:minmax(0,1fr); gap:8px; }
 }
+
+/* Home filter sheet — final consolidated layer: every section is the same card on one calm background. */
+.dashboard-filter-dialog #dashboard-filter-form,
+.dashboard-filter-dialog .ios-sheet-body { background:var(--surface-2); }
+.dashboard-filter-dialog .ios-sheet-body { gap:12px; padding:12px 14px 14px; }
+.dashboard-filter-dialog .choice-dialog-header { margin:0; padding:10px 18px; }
+.dashboard-filter-dialog .dashboard-filter-card,
+.dashboard-filter-dialog .dashboard-filter-card:first-child { padding:12px; border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:none; }
+.dashboard-filter-dialog .dashboard-filter-card-heading { margin:0 0 10px; }
+.dashboard-filter-dialog .dashboard-filter-card:first-child .dashboard-sort-grid { border-radius:12px; }
+.dashboard-filter-dialog .dashboard-sort-grid { box-shadow:none; }
+.dashboard-filter-dialog .dashboard-status-pills .ios-pill,
+.dashboard-filter-dialog .dashboard-platform-pills .ios-pill { box-shadow:none; background:var(--surface-2); }
+.dashboard-filter-dialog .dashboard-status-pills .ios-pill.active,
+.dashboard-filter-dialog .dashboard-platform-pills .ios-pill.active { background:var(--accent); }
+/* Platform: icon + label inside ONE pill (legacy `.ios-pill span` styled the label as a second pill). */
+.dashboard-filter-dialog .dashboard-platform-pills { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.dashboard-filter-dialog .dashboard-platform-pills .ios-pill { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; min-height:40px; padding:6px 8px; border-radius:12px; font-size:.72rem; }
+.dashboard-filter-dialog .dashboard-platform-pills .ios-pill > span { display:block; min-width:0; padding:0; border:0; border-radius:0; background:transparent; color:inherit; font-size:inherit; font-weight:inherit; box-shadow:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dashboard-filter-dialog .dashboard-platform-pills .ios-pill svg { flex:none; width:15px; height:15px; }
+.dashboard-filter-dialog .dashboard-status-pills .ios-pill > span { padding:0; border:0; background:transparent; color:inherit; }
+.dashboard-filter-dialog .dashboard-status-pills .ios-pill > span { overflow:hidden; text-overflow:ellipsis; }
+.dashboard-filter-dialog .ios-row { display:none; }
+.dashboard-filter-dialog .dashboard-view-grid { margin-top:0; }
+.dashboard-filter-dialog .dashboard-group-by { margin-top:12px; padding-top:12px; }
+.dashboard-filter-dialog .choice-dialog-actions { background:var(--surface); }
+.dashboard-filter-dialog .choice-dialog-header { margin:0; border-radius:0; box-shadow:none; }
+.dashboard-filter-dialog #dashboard-filter-form { padding-inline:0; }
+.dashboard-filter-dialog .dashboard-status-pills { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.dashboard-filter-dialog .dashboard-status-pills .ios-pill { min-height:40px; font-size:.72rem; }
+.dashboard-filter-dialog .dashboard-status-pills .ios-pill em { margin-left:auto; font-size:.65rem; }
+.dashboard-filter-dialog .choice-dialog-actions { padding:10px 16px max(12px,env(safe-area-inset-bottom)); }
+
+/* Discover: heading sits flush under the status bar, edge to edge, like the other top-level pages. */
+body[data-page="discover"] .app-shell, body[data-page="discover"] #page-content, body[data-page="discover"] .discover-page { padding-top:0 !important; margin-top:0 !important; }
+body[data-page="discover"] .discover-page { gap:12px; min-height:0; }
+body[data-page="discover"] .discover-page > .discover-heading {
+  position:sticky; top:0; z-index:10; margin:0 calc(var(--gutter,16px) * -1); padding:calc(12px + env(safe-area-inset-top)) var(--gutter,16px) 12px;
+  background:color-mix(in srgb,var(--surface) 92%,transparent); backdrop-filter:blur(14px); border-bottom:1px solid var(--line);
+}
+
+/* Home filter sheet — flat redesign: sections divided by hairlines, options as wrapping chips (no truncation). */
+.dashboard-filter-dialog #dashboard-filter-form, .dashboard-filter-dialog .ios-sheet-body { background:var(--surface); }
+.dashboard-filter-dialog .ios-sheet-body { gap:0; padding:4px 18px 16px; }
+.dashboard-filter-dialog .dashboard-filter-card, .dashboard-filter-dialog .dashboard-filter-card:first-child { padding:16px 0; border:0; border-bottom:1px solid var(--line); border-radius:0; background:transparent; }
+.dashboard-filter-dialog .dashboard-filter-card:last-child { border-bottom:0; }
+.dashboard-filter-dialog .dashboard-filter-card-heading { margin:0 0 12px; }
+.dashboard-filter-dialog .dashboard-filter-card-heading .ios-label { font-size:.68rem; }
+.dashboard-filter-dialog .dashboard-sort-grid, .dashboard-filter-dialog .dashboard-status-pills, .dashboard-filter-dialog .dashboard-platform-pills { display:flex; flex-wrap:wrap; gap:8px; overflow:visible; border:0; border-radius:0; background:transparent; }
+.dashboard-filter-dialog .dashboard-sort-option, .dashboard-filter-dialog .dashboard-status-pills .ios-pill, .dashboard-filter-dialog .dashboard-platform-pills .ios-pill {
+  display:inline-flex; flex:0 0 auto; align-items:center; gap:7px; width:auto; min-height:38px; padding:0 14px; border:1px solid var(--line)!important; border-radius:999px; background:var(--surface-2); color:var(--text,var(--legacy-text)); font-size:.78rem; font-weight:600; box-shadow:none; text-align:left; white-space:nowrap;
+}
+.dashboard-filter-dialog .dashboard-sort-option:nth-of-type(n) { border:1px solid var(--line); }
+.dashboard-filter-dialog .dashboard-sort-option > span, .dashboard-filter-dialog .dashboard-status-pills .ios-pill > span, .dashboard-filter-dialog .dashboard-platform-pills .ios-pill > span { flex:none; overflow:visible; text-overflow:clip; white-space:nowrap; }
+.dashboard-filter-dialog .dashboard-sort-check { display:none; }
+.dashboard-filter-dialog .dashboard-sort-option > svg:first-child, .dashboard-filter-dialog .dashboard-platform-pills .ios-pill svg { width:15px; height:15px; }
+.dashboard-filter-dialog .dashboard-sort-option.active, .dashboard-filter-dialog .dashboard-status-pills .ios-pill.active, .dashboard-filter-dialog .dashboard-platform-pills .ios-pill.active {
+  border-color:var(--accent)!important; background:var(--accent); color:var(--accent-foreground,#fff); box-shadow:none;
+}
+.dashboard-filter-dialog .dashboard-sort-option.active > svg:first-child { color:inherit; }
+.dashboard-filter-dialog .dashboard-status-pills .ios-pill em { margin-left:2px; padding:1px 7px; border-radius:99px; background:color-mix(in srgb,currentColor 14%,transparent); font-size:.68rem; font-style:normal; }
+.dashboard-filter-dialog .dashboard-view-grid { grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.dashboard-filter-dialog .dashboard-view-option { min-height:70px; padding:9px 4px; border-radius:14px; background:var(--surface-2); box-shadow:none; font-size:.72rem; }
+.dashboard-filter-dialog .dashboard-view-option.active { border-color:var(--accent); background:var(--accent-soft); box-shadow:none; }
+.dashboard-filter-dialog .dashboard-group-by { grid-template-columns:auto minmax(0,1fr); gap:12px; border-top:0; padding-top:14px; margin-top:0; }
+.dashboard-filter-dialog .choice-dialog-actions { padding:12px 18px max(14px,env(safe-area-inset-bottom)); background:var(--surface); }
+.dashboard-filter-dialog .dashboard-filter-card:first-child .dashboard-sort-grid, .dashboard-filter-dialog .dashboard-sort-grid { border:0!important; border-radius:0!important; }
+.setting-currency-preview { display:grid; place-items:center; font:700 1.05rem var(--font-heading,inherit); color:var(--accent-text,var(--accent)); }
+
+/* App Info — compact hero, stat tiles, grouped lists. */
+.ai-page { display:grid; gap:14px; align-content:start; }
+.ai-hero { display:grid; justify-items:center; gap:6px; padding:26px 18px 22px; border:1px solid var(--line); border-radius:24px; background:linear-gradient(165deg,color-mix(in srgb,var(--accent) 16%,var(--surface)),var(--surface) 70%); text-align:center; }
+.ai-logo { width:76px; height:76px; border-radius:22px; box-shadow:0 10px 26px -8px color-mix(in srgb,var(--accent) 55%,transparent); }
+.ai-hero h2 { margin:8px 0 0; font:800 1.55rem var(--font-heading,inherit); letter-spacing:-.03em; color:var(--text,var(--legacy-text)); }
+.ai-version { padding:3px 11px; border-radius:99px; background:var(--accent-soft); color:var(--accent-text,var(--accent)); font-size:.72rem; font-weight:700; }
+.ai-hero p { margin:4px 0 0; max-width:30ch; color:var(--muted); font-size:.85rem; line-height:1.45; }
+.ai-tiles { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.ai-tile { display:grid; justify-items:center; gap:2px; padding:14px 6px; border:1px solid var(--line); border-radius:18px; background:var(--surface); text-align:center; }
+.ai-tile-icon { display:grid; place-items:center; width:34px; height:34px; margin-bottom:4px; border-radius:11px; background:var(--accent-soft); color:var(--accent-text,var(--accent)); }
+.ai-tile-icon svg { width:18px; height:18px; }
+.ai-tile strong { font:800 1.15rem var(--font-heading,inherit); color:var(--text,var(--legacy-text)); }
+.ai-tile small { color:var(--muted); font-size:.68rem; font-weight:600; }
+.ai-heading { margin:6px 4px -4px; color:var(--muted); font-size:.68rem; font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
+.ai-list { display:grid; border:1px solid var(--line); border-radius:20px; background:var(--surface); overflow:hidden; }
+.ai-row { display:grid; grid-template-columns:34px minmax(0,1fr) auto; align-items:center; gap:12px; padding:13px 14px; }
+.ai-row + .ai-row, .ai-feature + .ai-feature { border-top:1px solid var(--line); }
+.ai-row-icon, .ai-feature-icon { display:grid; place-items:center; width:34px; height:34px; border-radius:11px; background:var(--accent-soft); color:var(--accent-text,var(--accent)); }
+.ai-row-icon svg, .ai-feature-icon svg { width:17px; height:17px; }
+.ai-row-label { color:var(--muted); font-size:.84rem; }
+.ai-row strong { font-size:.84rem; color:var(--text,var(--legacy-text)); text-align:right; }
+.ai-feature { display:grid; grid-template-columns:34px minmax(0,1fr); gap:12px; padding:14px; }
+.ai-feature h3 { margin:0 0 3px; font-size:.92rem; color:var(--text,var(--legacy-text)); }
+.ai-feature p { margin:0; color:var(--muted); font-size:.8rem; line-height:1.45; }
