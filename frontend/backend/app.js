@@ -707,7 +707,8 @@
     if (plugin?.getItems && plugin?.getMeta) {
       try {
         const [itemsResult, metaResult] = await Promise.all([plugin.getItems(), plugin.getMeta()]);
-        if (itemsResult?.exists && itemsResult.data) {
+        // IndexedDB already holds the library; parsing the encrypted copy (one huge JSON string over the bridge) only matters when it is empty.
+        if (!data.items.length && itemsResult?.exists && itemsResult.data) {
           const items = JSON.parse(itemsResult.data);
           if (Array.isArray(items)) {
             encryptedItems = items;
@@ -763,13 +764,17 @@
     discardRemovedFields(data);
     itemIds.clear();
     itemSnapshots.clear();
-    encryptedItems.forEach(item => {
+    // Encrypted copy skipped (IndexedDB supplied the library): treat it as in sync so a launch does not rewrite every title.
+    (encryptedItems.length ? encryptedItems : data.items).forEach(item => {
       if (item?.id == null) return;
       const id = String(item.id);
       itemIds.add(id);
       itemSnapshots.set(id, JSON.stringify(portableItem(item)));
     });
-    if (folderUri) queueFolderDatabaseWrite(data, folderUri).catch(error => console.warn("Could not save the restored database snapshot", error));
+    // Rewriting a ~14 MB snapshot at every launch janks the app; only do it when the folder is behind this device.
+    const folderStamp = new Map((folderData?.items || []).map(item => [String(item.id), Number(item.updatedAt) || 0]));
+    const folderBehind = !folderData || folderStamp.size !== data.items.length || data.items.some(item => (Number(item.updatedAt) || 0) > (folderStamp.get(String(item.id)) ?? -1));
+    if (folderUri && folderBehind) queueFolderDatabaseWrite(data, folderUri).catch(error => console.warn("Could not save the restored database snapshot", error));
     return { ...data, loadedFromFolder: Boolean(folderData) };
   }
 
