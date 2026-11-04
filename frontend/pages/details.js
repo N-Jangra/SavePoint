@@ -12,19 +12,17 @@
       : value && typeof value === "object"
         ? Object.values(value).map(detailValue).filter(Boolean).join(" · ")
         : window.SplitAppDates.text(String(value ?? ""));
-    const targetCurrency = prefs?.currencyDisplay === "INR" ? "INR" : "USD";
-    const usdToInrRate = Math.max(0.01, Number(prefs?.usdToInrRate) || 94.8);
+    const currency = window.SplitAppCurrency;
+    const targetCurrency = currency.target(prefs);
     const convertPriceText = value => {
       const text = String(value ?? "");
       if (!text || /free|unavailable/i.test(text)) return text;
-      const source = /₹|\bINR\b|\bRs\.?/i.test(text) ? "INR" : /\$|\bUSD\b/i.test(text) ? "USD" : "";
+      const source = currency.detect(text);
       if (!source || source === targetCurrency) return text;
       const token = text.match(/\d[\d,]*(?:\.\d+)?/);
       if (!token) return text;
-      let amount = Number(token[0].replace(/,/g, ""));
-      if (!Number.isFinite(amount)) return text;
-      amount = source === "USD" ? amount * usdToInrRate : amount / usdToInrRate;
-      return new Intl.NumberFormat(targetCurrency === "INR" ? "en-IN" : "en-US", { style: "currency", currency: targetCurrency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+      const amount = Number(token[0].replace(/,/g, ""));
+      return Number.isFinite(amount) ? currency.format(currency.convert(amount, source, targetCurrency, prefs), targetCurrency) : text;
     };
 
     const safeUrl = value => {

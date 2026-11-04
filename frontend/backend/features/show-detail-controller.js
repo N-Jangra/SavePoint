@@ -27,7 +27,7 @@
   // can use play time, price, team, requirements and names without re-reading provider-specific fields.
   const toList = input => Array.isArray(input) ? input.map(String).filter(Boolean) : String(input ?? "").split(/,\s*/).map(part => part.trim()).filter(Boolean);
   const numberFrom = input => { const match = String(input ?? "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)/); return match ? Number(match[1]) : 0; };
-  const currencyFrom = input => /₹|\bINR\b|\bRs\.?/i.test(String(input || "")) ? "INR" : /€|\bEUR\b/i.test(String(input || "")) ? "EUR" : /£|\bGBP\b/i.test(String(input || "")) ? "GBP" : /\$|\bUSD\b/i.test(String(input || "")) ? "USD" : "";
+  const currencyFrom = input => window.SplitAppCurrency?.detect ? window.SplitAppCurrency.detect(input) : /₹|\bINR\b|\bRs\.?/i.test(String(input || "")) ? "INR" : /€|\bEUR\b/i.test(String(input || "")) ? "EUR" : /£|\bGBP\b/i.test(String(input || "")) ? "GBP" : /\$|\bUSD\b/i.test(String(input || "")) ? "USD" : "";
   const deriveFacts = (out, source) => {
     const field = pattern => out.fields.find(row => pattern.test(row.label))?.value;
     const team = (out.sections.find(section => /development team/i.test(section.title))?.items || []).map(row => ({ name: row.title, role: row.meta || "" }));

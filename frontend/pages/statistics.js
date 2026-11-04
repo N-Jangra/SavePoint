@@ -47,12 +47,12 @@
       return parts.join(" ");
     };
     const hoursText = formatHours;
-    const targetCurrency = prefs.currencyDisplay === "INR" ? "INR" : "USD";
-    const usdToInrRate = Math.max(0.01, Number(prefs.usdToInrRate) || 94.8);
+    const currency = window.SplitAppCurrency;
+    const targetCurrency = currency.target(prefs);
     const formatMoney = value => {
       if (!value) return "—";
-      const symbol = targetCurrency === "INR" ? "₹" : "$";
-      if (!humanReadable) return `${symbol}${new Intl.NumberFormat(targetCurrency === "INR" ? "en-IN" : "en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
+      const symbol = currency.symbol(targetCurrency);
+      if (!humanReadable) return currency.format(value, targetCurrency);
       const amount = Math.abs(value);
       if (targetCurrency === "INR" && amount >= 100_000) return `${symbol}${(value / 100_000).toFixed(1).replace(/\.0$/, "")}L`;
       if (amount >= 1_000_000) return `${symbol}${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
@@ -66,13 +66,8 @@
     const knownHours = known.reduce((sum, item) => sum + lengthOf(item), 0);
     const knownPlayed = known.reduce((sum, item) => sum + Math.min(loggedOf(item), lengthOf(item)), 0);
     const remainingHours = known.filter(item => !finished(item)).reduce((sum, item) => sum + Math.max(0, lengthOf(item) - loggedOf(item)), 0);
-    const priceCurrency = item => item.facts?.priceCurrency || (/₹|\bINR\b|\bRs\.?/i.test(item.facts?.price || "") ? "INR" : /€|\bEUR\b/.test(item.facts?.price || "") ? "EUR" : /£|\bGBP\b/.test(item.facts?.price || "") ? "GBP" : /\b[A-Z]{3}\b/.test(item.facts?.price || "") ? (item.facts.price.match(/\b[A-Z]{3}\b/) || [""])[0] : "USD");
-    const displayPrice = item => {
-      const value = Number(item.facts?.priceValue) || 0, source = priceCurrency(item);
-      if (source === "USD" && targetCurrency === "INR") return value * usdToInrRate;
-      if (source === "INR" && targetCurrency === "USD") return value / usdToInrRate;
-      return value;
-    };
+    const priceCurrency = item => item.facts?.priceCurrency || currency.detect(item.facts?.price) || "USD";
+    const displayPrice = item => currency.convert(Number(item.facts?.priceValue) || 0, priceCurrency(item), targetCurrency, prefs);
     const libraryValue = items.reduce((sum, item) => sum + displayPrice(item), 0);
     const missingFacts = items.filter(item => item.metadataSource && item.providerId && !item.facts?.fetchedAt).length;
     const missingHours = items.filter(item => lengthOf(item) === 0 && (item.metadataSource || item.title)).length;
