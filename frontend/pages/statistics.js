@@ -90,7 +90,7 @@
     }).join("");
     const hoursValue = value => humanReadable ? formatHours(value) : `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10}`;
     const pace = remainingHours <= 0 ? "" : remainingHours <= 14 ? `About ${plural(Math.ceil(remainingHours), "day")} left at 1 hour a day.` : `About ${plural(Math.round(remainingHours / 7), "week")} left at 1 hour a day.`;
-    const note = !items.length ? "Add games to see play time and totals here." : !known.length ? "No game has play-time data yet. Use the button below to look it up." : [remainingHours <= 0 && !unknownOpen.length ? "Nothing left to play. 🎉" : pace, unknownOpen.length ? `${plural(unknownOpen.length, "unfinished game")} ${unknownOpen.length === 1 ? "has" : "have"} no play-time data, so ${unknownOpen.length === 1 ? "it isn't" : "they aren't"} counted in “Left to play”.` : ""].filter(Boolean).join(" ");
+    const note = !items.length ? "Add games to see play time and totals here." : !known.length ? "No game has play-time data yet. Use the button below to look it up." : [remainingHours <= 0 && !unknownOpen.length ? "Nothing left to play. 🎉" : pace, unknownOpen.length ? `${plural(unknownOpen.length, "unfinished game")} ${unknownOpen.length === 1 ? "has" : "have"} no play-time data, so ${unknownOpen.length === 1 ? "it isn't" : "they aren't"} counted in the time left.` : ""].filter(Boolean).join(" ");
     // Play time and money split by status so each number answers one question.
     const inStatus = name => items.filter(item => String(item.status).toLowerCase() === name.toLowerCase());
     const sumOf = (list, fn) => list.reduce((sum, item) => sum + fn(item), 0);
