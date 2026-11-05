@@ -11,6 +11,7 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Statistics → Play time is now split by status: Completed (time spent), Dropped (time spent and time saved), Playing and On Hold (time spent and time left), Backlog and Upcoming (games and money only), each with the money value of its games.
 - Statistics → Ratings: a Clear all button that removes every rating (with a confirmation).
 - Settings → Backups → Export opens an Export page: pick JSON, TXT or CSV, then tick what to include (names always, ratings, reviews). Import List also accepts `.txt` and `.csv` lists (a CSV `Rating` column is read), which are then synced from your sources.
+- Home: a share button on each group header (e.g. Playing) opens a popup to share names as text, or as images — pages of 15 names with pagination, or one long picture — then Save or Share.
 - Metadata sync pauses while the app is in the background and resumes when you return (Settings → Metadata → Pause Sync In Background).
 - Play time: Backlog shows time needed; the "games with data" chip sits beside the fetch buttons; Statistics sub-pages use an icon (following Icon style) instead of a text badge.
 - Status chip rows on Add and Details fade at the scrolling edge, show a swipe hint on Add, and start scrolled to the selected status.

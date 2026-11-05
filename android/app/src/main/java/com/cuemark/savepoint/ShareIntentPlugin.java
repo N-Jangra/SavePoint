@@ -75,6 +75,20 @@ public class ShareIntentPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void shareText(PluginCall call) {
+        String text = call.getString("text", "");
+        String title = call.getString("title", "Share");
+        if (text.isEmpty()) { call.reject("Nothing to share."); return; }
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_TEXT, text);
+        Intent chooser = Intent.createChooser(send, title);
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getActivity().startActivity(chooser);
+        call.resolve();
+    }
+
+    @PluginMethod
     public void shareImage(PluginCall call) { withImage(call, "share"); }
 
     @PluginMethod
