@@ -3195,14 +3195,18 @@
     if (event.target.closest("[data-custom-source-test]")) { testCustomSourceForm(); return; }
     if (event.target.closest("[data-custom-source-delete]")) { deleteCustomSource(); return; }
     const rangeButton = event.target.closest("[data-stats-range]");
-    if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; statsActivityDate = ""; render(); return; }
+    if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; statsActivityDate = ""; statsLimits = { ...statsLimits, pages: { ...(statsLimits.pages || {}), act: 0 } }; render(); return; }
     const activityDay = event.target.closest("[data-stats-activity-date]");
-    if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; render(); return; }
+    if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; statsLimits = { ...statsLimits, pages: { ...(statsLimits.pages || {}), act: 0 } }; render(); return; }
     const statsGroup = event.target.closest("[data-stats-group]");
     if (statsGroup) { const score = statsGroup.dataset.statsGroup; const wasOpen = statsGroup.getAttribute("aria-expanded") === "true"; statsLimits = { ...statsLimits, open: { ...(statsLimits.open || {}), [score]: !wasOpen } }; render(); return; }
     const statsMore = event.target.closest("[data-stats-more]");
     if (statsMore) { const kind = statsMore.dataset.statsMore === "rated" ? "rated" : "quick"; statsLimits = { ...statsLimits, [kind]: statsLimits[kind] + (kind === "rated" ? 15 : 10) }; render(); return; }
     if (event.target.closest("[data-clear-all-ratings]")) { clearAllRatings(); return; }
+    const pgBtn = event.target.closest("[data-stats-pg]");
+    if (pgBtn) { const [key, dir] = pgBtn.dataset.statsPg.split("|"); const pages = { ...(statsLimits.pages || {}) }; pages[key] = Math.max(0, (pages[key] || 0) + (dir === "next" ? 1 : -1)); statsLimits = { ...statsLimits, pages }; render(); return; }
+    const libSummary = event.target.closest("details[data-stats-lib] > summary");
+    if (libSummary) { event.preventDefault(); const k2 = libSummary.parentElement.dataset.statsLib; statsLimits = { ...statsLimits, libOpen: { ...(statsLimits.libOpen || {}), [k2]: !(statsLimits.libOpen || {})[k2] } }; render(); return; }
     const ptBtn = event.target.closest("[data-stats-pt]");
     if (ptBtn) { statsLimits = { ...statsLimits, playtimePage: Math.max(0, (statsLimits.playtimePage || 0) + (ptBtn.dataset.statsPt === "next" ? 1 : -1)) }; render(); return; }
     const statsRating = event.target.closest("[data-stats-rating]");
