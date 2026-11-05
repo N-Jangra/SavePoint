@@ -2369,3 +2369,18 @@ body[data-theme="dark"] .ios-action-group .warning{color:#fbbf24 !important}
 body[data-theme="dark"] .ios-action-group .danger,body[data-theme="dark"] .ios-action-group button[data-sheet-action=remove]{color:#fb7185 !important}
 body[data-theme="dark"] .ios-action-group button[data-sheet-action=favorite]{color:#fb7185}
 .ios-action-group button{justify-content:center !important}
+
+/* 0.1.2+: ⋮ menu colours are fixed per action so they stay distinct with any Main color or theme */
+.ios-action-group button[data-sheet-action=edit]{color:#2563eb !important}
+.ios-action-group button[data-sheet-action=details]{color:#0891b2 !important}
+.ios-action-group button[data-sheet-action=favorite]{color:#db2777 !important}
+.ios-action-group button[data-sheet-action=Upcoming]{color:#7c3aed !important}
+.ios-action-group button[data-sheet-action=Dropped]{color:#ea580c !important}
+.ios-action-group button[data-sheet-action=remove]{color:#dc2626 !important}
+body[data-theme="dark"] .ios-action-group button[data-sheet-action=edit],body[data-theme="amoled"] .ios-action-group button[data-sheet-action=edit]{color:#60a5fa !important}
+body[data-theme="dark"] .ios-action-group button[data-sheet-action=details],body[data-theme="amoled"] .ios-action-group button[data-sheet-action=details]{color:#22d3ee !important}
+body[data-theme="dark"] .ios-action-group button[data-sheet-action=favorite],body[data-theme="amoled"] .ios-action-group button[data-sheet-action=favorite]{color:#f472b6 !important}
+body[data-theme="dark"] .ios-action-group button[data-sheet-action=Upcoming],body[data-theme="amoled"] .ios-action-group button[data-sheet-action=Upcoming]{color:#a78bfa !important}
+body[data-theme="dark"] .ios-action-group button[data-sheet-action=Dropped],body[data-theme="amoled"] .ios-action-group button[data-sheet-action=Dropped]{color:#fb923c !important}
+body[data-theme="dark"] .ios-action-group button[data-sheet-action=remove],body[data-theme="amoled"] .ios-action-group button[data-sheet-action=remove]{color:#f87171 !important}
+body[data-theme="amoled"] .ios-action-group .neutral,body[data-theme="amoled"] .ios-action-group .success,body[data-theme="amoled"] .ios-action-group .warning{filter:none}
