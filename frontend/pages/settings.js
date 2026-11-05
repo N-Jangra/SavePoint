@@ -273,7 +273,6 @@ ${native ? "" : `<p class="source-note source-capability-note"><i data-lucide="i
       const metaMode = prefs.metadataMode === "offline" ? "Offline" : "Online";
       return `<section class="settings-page settings-detail-page app-info-page ai-page">${pageHeader("App Info", "info")}
         <section class="ai-hero"><img class="ai-logo" src="icons/controller.svg" alt=""><h2>${esc(config.name)}</h2><span class="ai-version">Version ${esc(window.APP_INSTALLED_VERSION || config.version || "1.0.0")}</span><p>${esc(config.tagline || "Keep track of your games.")}</p></section>
-        <div class="ai-tiles">${tile("library", String(items.length), items.length === 1 ? "Game" : "Games")}${tile("database", `${enabled}/${providers.length}`, "Sources")}${tile("hard-drive", used, "Library data")}</div>
         <h3 class="ai-heading">Details</h3>
         <section class="ai-list">${row("smartphone", "Platform", native ? "Android app" : "Web preview")}${row("wifi", "Metadata mode", metaMode)}${row("lock", "Data location", "Stored on this device")}${row("tag", "Version", window.APP_INSTALLED_VERSION || config.version || "1.0.0")}</section>
         <h3 class="ai-heading">About</h3>
@@ -281,9 +280,19 @@ ${native ? "" : `<p class="source-note source-capability-note"><i data-lucide="i
       </section>`;
     }
 
+    function formatLogTime(value) {
+      // Entries hold an absolute instant (ISO string or epoch ms); show it in the device's own time zone with seconds.
+      const stamp = typeof value === "number" ? value : Date.parse(value);
+      if (!Number.isFinite(stamp)) return "Unknown time";
+      const when = new Date(stamp), now = new Date();
+      const sameDay = when.toDateString() === now.toDateString();
+      const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      return sameDay ? `Today, ${time}` : `${window.SplitAppDates?.date(when) || when.toLocaleDateString()}, ${time}`;
+    }
+
     function renderLogcat() {
-      const rows = logEntries.map(entry => {
-        const level = String(entry.level || "info"), when = entry.at ? new Date(entry.at).toLocaleString() : "Unknown time";
+      const rows = [...logEntries].sort((a, b) => (Date.parse(b.at) || Number(b.at) || 0) - (Date.parse(a.at) || Number(a.at) || 0)).map(entry => {
+        const level = String(entry.level || "info"), when = formatLogTime(entry.at);
         return `<article class="logcat-entry logcat-entry-${esc(level)}"><div class="logcat-entry-meta"><strong class="logcat-level logcat-level-${esc(level)}">${esc(level)}</strong><time>${esc(when)}</time></div><p>${esc(entry.message || "")}</p></article>`;
       }).join("");
       const errors = logEntries.filter(entry => entry.level === "error").length, warnings = logEntries.filter(entry => entry.level === "warn" || entry.level === "warning").length;
