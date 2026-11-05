@@ -35,3 +35,8 @@ The JSON and TAR exports include preferences, which can contain configured API k
 ## Scope
 
 The key and cache names are app-specific to SavePoint. This local storage model does not provide account sync or remote backup by itself. See [database analysis](database-analysis.md) for the data model and read/write sequence.
+
+
+## Logcat and library history files (0.1.3)
+
+Next to `games/`, `.nomedia` and `database.json`, `savepoint-db/` holds `logcat.json` and `library-history.json`: the full history, newest first (capped at 20,000 entries each). The device keeps only the latest 200 logcat entries and 400 history entries for quick display; the Logcat and Library history pages load the full files and can search all of it. Clear them from either page or from Settings → Storage ("Clear logcat", "Clear library history"), which empties the files too. Without a chosen storage folder, only the recent local copy exists.

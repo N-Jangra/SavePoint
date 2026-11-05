@@ -47,3 +47,4 @@ Settings provides export and restore flows. JSON exports can include library ite
 - **Time to beat:** the details page shows HowLongToBeat main / extras / completionist hours; tap one to set your goal (an automatic goal updates until you choose your own).
 - **Library history:** Settings → Library history lists adds, removals, merges, imports and bulk edits, and flags games that went missing without a recorded removal.
 - **Covers in Screenshots:** covers from all matched sources are saved in the Screenshots gallery as well as offered in Change cover.
+- **History and logs:** Logcat and Library history search through everything saved in `savepoint-db/`; clear them from their pages or Settings → Storage.
