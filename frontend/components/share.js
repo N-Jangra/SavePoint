@@ -15,7 +15,7 @@
 
   async function drawSheet({ title, entries, start, total, page, pages, showHead, getImage }) {
     const withTimeout = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(null), ms))]);
-    const images = await Promise.all(entries.map(entry => withTimeout(getImage(entry), 5000).catch(() => null)));
+    const images = await Promise.all(entries.map(entry => withTimeout(getImage(entry), 3500).catch(() => null)));
     const head = showHead ? HEAD : 24, rows = entries.length;
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = head + rows * ROW + FOOT;
@@ -84,7 +84,7 @@
     throw new Error("Sharing images isn't available here — use Save instead.");
   }
 
-  function open({ title, entries, getImage }, { showPopup, closePopup, toast, esc }) {
+  function open({ title, entries, getImage }, { showPopup, closePopup, toast, esc, cacheGet, cachePut }) {
     document.getElementById("share-dialog")?.remove();
     const dialog = document.createElement("dialog");
     dialog.id = "share-dialog"; dialog.className = "choice-dialog share-dialog";
@@ -97,11 +97,24 @@
       <footer class="share-footer"><p class="share-status" data-share-status role="status" aria-live="polite" hidden></p><div class="share-actions"><button type="button" class="button secondary" data-share-save>Save</button><button type="button" class="button primary" data-share-send>Share</button></div><button type="button" class="button ghost share-save-all" data-share-save-all hidden>Save all pages</button></footer>`;
     document.body.appendChild(dialog);
     const q = sel => dialog.querySelector(sel);
-    const render = async index => {
+    // Rendered pages live in IndexedDB (keyed by the page's content), so reopening a group is instant.
+    const hash = text => { let h = 5381; for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+    const blobToDataUrl = blob => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob); });
+    const pageSig = d => "v2:" + hash(JSON.stringify([title, count, d.index, d.pages, d.group.map(e => [e.id, e.title, e.subtitle, e.rating, e.status])]));
+    const render = index => {
       const key = `${mode}:${index}`;
-      if (!cache.has(key)) { const d = images[index]; cache.set(key, drawSheet({ title, entries: d.group, start: d.start, total: count, page: index + 1, pages: d.pages, showHead: index === 0, getImage })); }
+      if (!cache.has(key)) {
+        const d = images[index], idbKey = `share:${slug(title)}:${mode}:${index}`, sig = pageSig(d);
+        cache.set(key, (async () => {
+          try { const blob = cacheGet && await cacheGet(idbKey, sig); if (blob) return await blobToDataUrl(blob); } catch (_) {}
+          const url = await drawSheet({ title, entries: d.group, start: d.start, total: count, page: index + 1, pages: d.pages, showHead: index === 0, getImage });
+          try { if (cachePut) cachePut(idbKey, sig, await (await fetch(url)).blob()); } catch (_) {}
+          return url;
+        })());
+      }
       return cache.get(key);
     };
+    const prefetch = index => { if (index >= 0 && index < images.length) setTimeout(() => { if (dialog.isConnected) render(index); }, 400); };
     const paint = async () => {
       const mine = ++token;
       page = Math.min(page, images.length - 1);
@@ -112,7 +125,7 @@
       q("[data-share-pager]").hidden = images.length < 2;
       const all = q("[data-share-save-all]"); all.hidden = images.length < 2; all.textContent = `Save all ${images.length} images`;
       const url = await render(page);
-      if (mine === token) preview.innerHTML = `<img alt="Preview of ${esc(title)}" src="${url}">`;
+      if (mine === token) { preview.innerHTML = `<img alt="Preview of ${esc(title)}" src="${url}">`; prefetch(page + 1); }
     };
     const setMode = next => {
       mode = next; page = 0; cache = new Map(); images = buildImages(entries, mode);

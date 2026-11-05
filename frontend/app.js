@@ -1310,6 +1310,8 @@
     const genre = show(item.facts?.genres || item.cachedDetails?.genres || item.cachedDetails?.genre || fieldValue(/^(genre|genres)$/i));
     return { id: item.id, title: item.title, subtitle: [dev, genre].filter(Boolean).join(" · "), status: item.status, rating: Number(item.rating) ? `★ ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}` : "" };
   }
+  const shareCacheGet = async (key, sig) => { const hit = await window.SplitAppIDB?.getThumbs?.([[key, sig]]); return hit?.[0]?.[1] || null; };
+  const shareCachePut = (key, sig, blob) => window.SplitAppIDB?.putThumbs?.([[key, sig, blob]]).catch(() => {});
   // Same-origin sources only (local data, device cache, or a fetched blob) so the canvas can be exported.
   async function shareImageFor(entry) {
     const item = itemById(String(entry.id)); if (!item) return null;
@@ -1320,7 +1322,11 @@
     const remote = item.image || item.cachedDetails?.portraitImage;
     if (/^https?:/i.test(remote || "")) {
       const response = await requestTimelineImage(remote);
-      if (response) { const blob = await response.blob(); const url = URL.createObjectURL(blob); const img = await load(url); setTimeout(() => URL.revokeObjectURL(url), 30000); return img; }
+      if (response) {
+        const blob = await response.blob(); const url = URL.createObjectURL(blob); const img = await load(url); setTimeout(() => URL.revokeObjectURL(url), 30000);
+        if (img) { try { const c = document.createElement("canvas"), k = Math.min(1, 240 / img.width); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); cacheThumbFromItem(item, c.toDataURL("image/jpeg", .8)); } catch (_) {} }
+        return img;
+      }
     }
     return null;
   }
@@ -3178,7 +3184,7 @@
     if (shareGroup) {
       const key = shareGroup.dataset.shareGroup, by = prefs.dashboardGroupBy || "status";
       const list = dashboardSortedItems().filter(item => by === "status" ? item.status === key : by === "category" ? String(item.category || "other") === key : by === "none" ? true : String(item.year || "Unknown release date") === key);
-      window.SplitAppShare.open({ title: by === "none" ? "All games" : key, entries: list.map(shareEntry), getImage: shareImageFor }, { showPopup, closePopup, toast, esc });
+      window.SplitAppShare.open({ title: by === "none" ? "All games" : key, entries: list.map(shareEntry), getImage: shareImageFor }, { showPopup, closePopup, toast, esc, cacheGet: shareCacheGet, cachePut: shareCachePut });
       return;
     }
     const itemCard = event.target.closest(".item-card[data-item]");
