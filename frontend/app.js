@@ -1373,7 +1373,7 @@
   }
   // Sideways chip rows: fade the edge that still has content and bring the selected chip into view.
   function setupScrollRows(root) {
-    root.querySelectorAll(".entry-status-options, .detail-status-pills").forEach(row => {
+    root.querySelectorAll(".entry-status-options, .detail-status-pills, .collection-status-pills").forEach(row => {
       const update = () => {
         row.classList.toggle("can-scroll-right", row.scrollLeft + row.clientWidth < row.scrollWidth - 4);
         row.classList.toggle("can-scroll-left", row.scrollLeft > 4);

@@ -228,7 +228,7 @@
       }
       const C = themeColors();
       say("Building PDF…", "busy");
-      const { bytes } = await window.SplitAppListPdf.build({ title, entries: entries.map(e => ({ title: e.title, tags: e.tagsText || e.subtitle, rating: e.rating ? e.rating.replace("★", "").trim() : "", hours: e.progressText })), covers, theme: { page: C.page, text: C.text, muted: C.muted, line: C.line, accent: C.accent, card2: C.card2 }, onProgress: (n, total) => say(`Building PDF… ${n} of ${total}`, "busy") });
+      const { bytes } = await window.SplitAppListPdf.build({ title, entries: entries.map(e => ({ title: e.title, tags: e.tagsText || e.subtitle, rating: e.rating ? e.rating.replace("★", "").trim() : "", hours: e.progressText })), covers, theme: { page: C.page, text: C.text, muted: C.muted, line: C.line, accent: C.accent, card2: C.card2 }, onProgress: info => say(`Building PDF… ${info.pct}%${info.etaMs > 2500 ? ` · about ${Math.ceil(info.etaMs / 1000)} s left` : ""}${info.note ? ` · ${info.note}` : ""}`, "busy") });
       pdfCache = bytes; return bytes;
     };
     const setMode = next => {

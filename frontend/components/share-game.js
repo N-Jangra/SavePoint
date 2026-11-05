@@ -4,6 +4,7 @@
   const h = () => window.SplitAppShare.helpers;
   const native = () => window.Capacitor?.Plugins?.ShareIntent;
   const norm = s => String(s || "").toLowerCase();
+  const perf = window.SplitAppPerf;
 
   function wrap(ctx, text, maxWidth) {
     const lines = [];
@@ -39,7 +40,8 @@
     const C = themeColors();
     const font = getComputedStyle(document.body).fontFamily || "sans-serif";
     const tall = document.createElement("canvas"); tall.width = W; tall.height = 7000 + Math.ceil((opts.screenshots ? (game.shots || []).length : 0) / 2) * 360 + 400;
-    const ctx = tall.getContext("2d");
+    const drawStart = performance.now();
+    const ctx = perf.ctx2d(tall);
     ctx.fillStyle = C.page; ctx.fillRect(0, 0, W, tall.height);
     const inner = W - M * 2;
     const g = groupFields(game.fields);
@@ -197,7 +199,8 @@
     if (!paged) { y += 30; ctx.textBaseline = "middle"; ctx.fillStyle = C.muted; ctx.font = `600 26px ${font}`; ctx.textAlign = "left"; ctx.fillText("Shared from SavePoint", M, y + 30); }
     const height = Math.min(tall.height, Math.round(y + (paged ? 28 : 80)));
     const out = document.createElement("canvas"); out.width = W; out.height = height;
-    out.getContext("2d").drawImage(tall, 0, 0, W, height, 0, 0, W, height);
+    perf.ctx2d(out).drawImage(tall, 0, 0, W, height, 0, 0, W, height);
+    out.drawMs = performance.now() - drawStart;
     out.pageBackground = C.page;
     return out;
   }
@@ -206,7 +209,7 @@
   const blobOf = (canvas, q) => new Promise(r => canvas.toBlob(r, "image/jpeg", q));
 
   // Minimal PDF: each A4-high slice of the sheet is a JPEG on its own page.
-  async function makePdf(canvas) {
+  async function makePdf(canvas, onProgress) {
     const PW = 595.28, scale = PW / canvas.width, sliceH = PH;
     const enc = new TextEncoder(), parts = [], offsets = [];
     let length = 0;
@@ -214,16 +217,23 @@
     const obj = (id, body) => { offsets[id] = length; push(`${id} 0 obj\n`); if (typeof body === "string") push(body); else body.forEach(x => push(x)); push("\nendobj\n"); };
     const slices = Math.ceil(canvas.height / sliceH), pageIds = [], pageObjs = [];
     let next = 3;
+    // A CPU-backed copy avoids reading the big canvas back from the GPU for every page.
+    const cpuCopy = c => { const k = document.createElement("canvas"); k.width = c.width; k.height = c.height; k.pageBackground = c.pageBackground; perf.ctx2d(k).drawImage(c, 0, 0); return k; };
+    let source = perf.state.level >= 1 ? cpuCopy(canvas) : canvas;
+    const track = perf.tracker(slices, { slowStepMs: 1200, slowTotalMs: 9000, onUpdate: onProgress });
     for (let i = 0; i < slices; i++) {
-      const sy = i * sliceH, sh = Math.min(sliceH, canvas.height - sy);
-      const piece = document.createElement("canvas"); piece.width = canvas.width; piece.height = PH;
-      const pctx = piece.getContext("2d"); pctx.fillStyle = canvas.pageBackground || "#fff"; pctx.fillRect(0, 0, piece.width, PH);
-      pctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
-      const jpeg = new Uint8Array(await (await blobOf(piece, .84)).arrayBuffer());
+      const t0 = performance.now();
+      const sy = i * sliceH, sh = Math.min(sliceH, canvas.height - sy), k = perf.scale();
+      const piece = document.createElement("canvas"); piece.width = Math.round(canvas.width * k); piece.height = Math.round(PH * k);
+      const pctx = perf.ctx2d(piece); pctx.fillStyle = canvas.pageBackground || "#fff"; pctx.fillRect(0, 0, piece.width, piece.height);
+      pctx.drawImage(source, 0, sy, canvas.width, sh, 0, 0, piece.width, Math.round(sh * k));
+      const jpeg = await perf.jpegBytes(piece, perf.quality(.84));
+      track.step(performance.now() - t0);
+      if (track.shouldSwitch() && perf.escalate(level => track.switched(level)) && perf.state.level === 1) source = cpuCopy(canvas);
       const pageId = next++, imgId = next++, contentId = next++;
       pageIds.push(pageId);
       const ph = PH * scale, content = `q ${PW.toFixed(2)} 0 0 ${ph.toFixed(2)} 0 0 cm /Im0 Do Q`;
-      pageObjs.push({ pageId, imgId, contentId, ph, content, jpeg, w: canvas.width, h: PH });
+      pageObjs.push({ pageId, imgId, contentId, ph, content, jpeg, w: piece.width, h: piece.height });
     }
     push("%PDF-1.4\n");
     obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
@@ -269,8 +279,11 @@
     const say = (text, tone = "") => { const el = dialog.querySelector("[data-share-status]"); el.hidden = !text; el.textContent = text; el.dataset.tone = tone; };
 
     // Images start loading the moment the popup opens, and the sheet is drawn ahead of the tap.
-    const shotsPromise = Promise.all(game.shotUrls.map(u => loadImage(u).catch(() => null)));
+    let shotsLoaded = 0;
+    const shotsPromise = Promise.all(game.shotUrls.map(u => loadImage(u).catch(() => null).then(img => { shotsLoaded += 1; return img; })));
     const cache = new Map();
+    let progress = { pct: 0, etaMs: 0, note: "" };
+    const progressText = () => progress.pct === 0 && game.shotUrls.length && shotsLoaded < game.shotUrls.length ? `Loading screenshots ${shotsLoaded} of ${game.shotUrls.length}…` : `Preparing… ${progress.pct}%${progress.etaMs > 2500 ? ` · about ${Math.ceil(progress.etaMs / 1000)} s left` : ""}${progress.note ? ` · ${progress.note}` : ""}`;
     const optsKey = () => JSON.stringify([state.format, ...Object.keys(has).map(k => has[k] && state[k])]);
     const build = () => {
       const key = optsKey();
@@ -278,8 +291,13 @@
         const shots = state.screenshots && has.screenshots ? await shotsPromise : [];
         const o = Object.fromEntries(Object.keys(has).map(k => [k, has[k] && state[k]]));
         const cover = await game.coverPromise;
+        progress = { pct: 5, etaMs: 0, note: "" };
         const canvas = await draw({ ...game, cover, shots }, o, state.format === "pdf");
-        const bytes = state.format === "pdf" ? await makePdf(canvas) : await encodeImage(canvas);
+        progress = { pct: 35, etaMs: 0, note: "" };
+        // A slow layout step means a slow canvas: use the faster method from the next build on.
+        if (canvas.drawMs > 5000 && perf.state.level === 0) perf.escalate();
+        const bytes = state.format === "pdf" ? await makePdf(canvas, info => { progress = { pct: 35 + Math.round(info.pct * .65), etaMs: info.etaMs, note: info.note }; }) : await encodeImage(canvas);
+        progress = { pct: 100, etaMs: 0, note: "" };
         return { bytes, pages: state.format === "pdf" ? Math.ceil(canvas.height / PH) : 1 };
       })());
       return cache.get(key);
@@ -297,8 +315,10 @@
       if (!wantSave && !wantShare) return;
       const buttons = dialog.querySelectorAll(".share-footer button"); buttons.forEach(b => { b.disabled = true; });
       try {
-        say("Preparing…", "busy");
-        const { bytes } = await build();
+        say(progressText(), "busy");
+        const ticker = setInterval(() => say(progressText(), "busy"), 250);
+        let built; try { built = await build(); } finally { clearInterval(ticker); }
+        const { bytes } = built;
         const name = game.title.normalize("NFKD").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "game";
         const pdf = state.format === "pdf";
         const mime = pdf ? "application/pdf" : "image/jpeg", ext = pdf ? "pdf" : "jpg";
@@ -312,14 +332,14 @@
   }
 
   async function encodeImage(canvas) {
-    let q = .9, source = canvas, blob = await blobOf(source, q);
+    let q = .9, source = canvas, bytes = await perf.jpegBytes(source, perf.quality(q));
     const LIMIT = 700000;
-    for (let guard = 0; blob.size > LIMIT && guard < 10; guard++) {
+    for (let guard = 0; bytes.length > LIMIT && guard < 10; guard++) {
       if (q > .62) q -= .07;
-      else { const next = document.createElement("canvas"); next.width = Math.round(source.width * .85); next.height = Math.round(source.height * .85); next.getContext("2d").drawImage(source, 0, 0, next.width, next.height); source = next; }
-      blob = await blobOf(source, q);
+      else { const next = document.createElement("canvas"); next.width = Math.round(source.width * .85); next.height = Math.round(source.height * .85); perf.ctx2d(next).drawImage(source, 0, 0, next.width, next.height); source = next; }
+      bytes = await perf.jpegBytes(source, perf.quality(q));
     }
-    return new Uint8Array(await blob.arrayBuffer());
+    return bytes;
   }
 
   window.SplitAppShareGame = Object.freeze({ open });

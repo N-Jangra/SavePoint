@@ -46,6 +46,7 @@
     return d + "h\n";
   }
 
+  const perf = window.SplitAppPerf;
   const measure = document.createElement("canvas").getContext("2d");
   const widthOf = (text, size, bold) => { measure.font = `${bold ? "bold " : ""}${size}px Helvetica, Arial, sans-serif`; return measure.measureText(text).width; };
   const fitText = (text, size, bold, max) => {
@@ -57,11 +58,11 @@
 
   const blobOf = (canvas, q) => new Promise(r => canvas.toBlob(r, "image/jpeg", q));
   async function coverJpeg(img) {
-    const c = document.createElement("canvas"); c.width = 84; c.height = 114;
-    const ctx = c.getContext("2d");
+    const k = perf.scale(), c = document.createElement("canvas"); c.width = Math.round(84 * k); c.height = Math.round(114 * k);
+    const ctx = perf.ctx2d(c);
     const sc = Math.max(c.width / img.width, c.height / img.height), dw = img.width * sc, dh = img.height * sc;
     ctx.drawImage(img, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
-    return { bytes: new Uint8Array(await (await blobOf(c, .8)).arrayBuffer()), w: c.width, h: c.height };
+    return { bytes: await perf.jpegBytes(c, perf.quality(.8)), w: c.width, h: c.height };
   }
   // Text Helvetica can't draw (CJK, emoji…) becomes a small image on the page colour.
   async function textJpeg(text, sizePt, bold, color, bg, maxPt) {
@@ -69,17 +70,20 @@
     measure.font = font;
     const wPx = Math.min(Math.ceil(measure.measureText(text).width) + 4, Math.round(maxPt * k)), hPx = Math.round(sizePt * k * 1.35);
     const c = document.createElement("canvas"); c.width = wPx; c.height = hPx;
-    const ctx = c.getContext("2d");
+    const ctx = perf.ctx2d(c);
     ctx.fillStyle = `rgb(${bg.map(v => Math.round(v * 255)).join(",")})`; ctx.fillRect(0, 0, wPx, hPx);
     ctx.fillStyle = `rgb(${color.map(v => Math.round(v * 255)).join(",")})`; ctx.font = font; ctx.textBaseline = "middle";
     ctx.fillText(text, 0, hPx / 2 + 1);
-    return { bytes: new Uint8Array(await (await blobOf(c, .85)).arrayBuffer()), w: wPx, h: hPx, ptW: wPx / k, ptH: hPx / k };
+    return { bytes: await perf.jpegBytes(c, perf.quality(.85)), w: wPx, h: hPx, ptW: wPx / k, ptH: hPx / k };
   }
 
   // entries: [{ title, tags, rating, hours }]; covers: array of Image/ImageBitmap/null; theme: { page, text, muted, line, accent, card2 }
   async function build({ title, entries, covers, theme, onProgress }) {
     const bg = rgb(theme.page, [1, 1, 1]), text = rgb(theme.text, [.1, .1, .15]), muted = rgb(theme.muted, [.45, .47, .55]);
     const line = rgb(theme.line, mix(bg, text, .12), bg), accent = rgb(theme.accent, [.39, .33, .96]), card2 = rgb(theme.card2, mix(bg, text, .06), bg);
+    const track = perf.tracker(entries.length, { slowStepMs: 150, slowTotalMs: 12000, onUpdate: info => onProgress?.(info) });
+    const jobs = new Map();
+    const jpegFor = n => { if (!jobs.has(n)) jobs.set(n, coverJpeg(covers[n])); return jobs.get(n); };
     const images = [];            // { bytes, w, h }
     const addImage = img => { images.push(img); return images.length; };
     const pages = [];
@@ -101,7 +105,6 @@
     const textCol = MX + 26 + TW + 10, rightW = 96, colW = PW - MX - rightW - textCol;
     for (let i = 0; i < entries.length; i++) {
       if (y - ROW < MB) newPage(false);
-      if (i % 12 === 0) onProgress?.(i, entries.length);
       const e = entries[i], top = y, mid = top - ROW / 2;
       // index
       const idx = String(i + 1);
@@ -110,8 +113,15 @@
       const tx = MX + 26, ty = top - (ROW - TH) / 2 - TH;
       ops += "q\n" + roundRect(tx, ty, TW, TH, 4) + "W n\n";
       const cover = covers[i];
-      if (cover) { const jpg = await coverJpeg(cover); const id = addImage(jpg); ops += `${num(TW)} 0 0 ${num(TH)} ${num(tx)} ${num(ty)} cm /Im${id} Do\n`; }
-      else {
+      if (cover) {
+        const t0 = performance.now();
+        // Faster modes encode the next covers in parallel batches.
+        if (perf.state.level >= 1) for (let n = i; n < Math.min(entries.length, i + 12); n++) if (covers[n]) jpegFor(n);
+        const jpg = await jpegFor(i); track.step(performance.now() - t0);
+        if (track.shouldSwitch()) perf.escalate(level => track.switched(level));
+        const id = addImage(jpg); ops += `${num(TW)} 0 0 ${num(TH)} ${num(tx)} ${num(ty)} cm /Im${id} Do\n`;
+      } else {
+        track.advance();
         // No cover: a soft accent tile with the game's first letter, so the row never looks empty.
         ops += fill(mix(bg, accent, .16)) + `${num(tx)} ${num(ty)} ${num(TW)} ${num(TH)} re f\n`;
         const letter = winAnsi(String(e.title || "?").trim().charAt(0).toUpperCase() || "?");
