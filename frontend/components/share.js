@@ -1,6 +1,6 @@
 // Share a Home group: names as text, or as images (pages of 15 names, or one long picture).
 (() => {
-  const PER_PAGE = 15, LONG_CHUNK = 250, W = 1080, ROW = 72, HEAD = 200, FOOT = 84, PAD = 48;
+  const PER_PAGE = 15, LONG_CHUNK = 400, W = 1080, ROW = 72, HEAD = 200, FOOT = 84, PAD = 48;
   const native = () => window.Capacitor?.Plugins?.ShareIntent;
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
