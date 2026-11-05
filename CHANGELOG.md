@@ -16,8 +16,13 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Per-game source index (which source matched under which ID): later syncs fetch by ID, a Mix game never shrinks back to one source, and a source switched off keeps its saved data.
 - Games added from Discover, Mix fetch or by hand now run through the Sync page with progress.
 
+- Game details: a **Time to beat** card (main story, main + extras, completionist from HowLongToBeat). Tap one to use it as your goal; games with no goal get their main-story hours automatically and keep following later updates until you pick your own.
+- Settings → **Library history** records adds, removals, merges, imports, bulk edits and undos, and flags games that disappeared without a recorded reason.
+- Covers from every source (not only the one used as the cover) are now saved into the Screenshots gallery.
+
 ### Changed
 
+- Selected cards in select mode have a rounded frame.
 - Pull-to-refresh on Home syncs only games that need it (never fetched, a newly enabled source not yet tried, older than the refresh interval, or a failed lookup); pull again within 20 seconds to re-check everything.
 - A game saved from HowLongToBeat (or any source) stays led by that source; Steam can no longer overwrite it when a sync runs.
 - Mix and "All sources" search wait longer for HowLongToBeat and merge the same game from Steam and HowLongToBeat into one row; exact title matches are listed first.

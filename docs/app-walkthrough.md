@@ -44,3 +44,6 @@ Settings provides export and restore flows. JSON exports can include library ite
 - **Fix match / Change cover:** on a game's details page, link or unlink a source or search a source for the right entry, and pick a different cover.
 - **Sync page:** failed games have Retry and Ignore. Pull-to-refresh on Home syncs only games that need it; pull again within 20 seconds to re-check all.
 - **Import List:** near-duplicates are listed under "Looks like duplicates" so you can skip or keep them.
+- **Time to beat:** the details page shows HowLongToBeat main / extras / completionist hours; tap one to set your goal (an automatic goal updates until you choose your own).
+- **Library history:** Settings → Library history lists adds, removals, merges, imports and bulk edits, and flags games that went missing without a recorded removal.
+- **Covers in Screenshots:** covers from all matched sources are saved in the Screenshots gallery as well as offered in Change cover.
