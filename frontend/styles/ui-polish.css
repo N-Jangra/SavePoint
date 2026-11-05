@@ -2332,3 +2332,10 @@ dialog.share-dialog[open]{display:flex;flex-direction:column;max-height:92dvh}
 .share-status{margin:0;padding:8px 12px;border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:.8rem;font-weight:600;text-align:center}
 .share-status[data-tone=ok]{background:color-mix(in srgb,#16a34a 14%,var(--surface));color:#15803d}
 .share-status[data-tone=error]{background:color-mix(in srgb,#dc2626 12%,var(--surface));color:#b91c1c}
+
+/* 0.1.2+: tighter Home pills — label and count sit close together */
+.home-collection-page .collection-status-pills > button{gap:4px;padding-inline:11px;letter-spacing:0;word-spacing:0}
+.home-collection-page .collection-status-pills > button .collection-status-pill-label{margin:0;padding:0;letter-spacing:0}
+.home-collection-page .collection-status-pills > button .collection-status-pill-count{margin:0;min-width:0;padding:2px 6px;letter-spacing:0}
+.home-collection-page .collection-status-pills > button.fav-pill{gap:4px}
+.home-collection-page .collection-status-pills > button.fav-pill svg{margin-right:2px}
