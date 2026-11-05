@@ -810,3 +810,5 @@ body[data-page="sync"] .topbar { display:none; }
 .select-mode .item-card.is-selected { box-shadow:none !important; background:color-mix(in srgb,var(--accent,#6355f5) 7%,var(--surface,#fff)) !important; }
 .select-mode .item-card.is-selected::before { content:""; position:absolute; inset:3px; border:2px solid var(--accent,#6355f5); border-radius:16px; pointer-events:none; z-index:2; }
 .select-mode .item-list .item-card.is-selected, .select-mode .item-card.is-selected { box-shadow:none !important; outline:none !important; border-color:transparent !important; }
+.log-search { margin:0 0 12px; min-height:46px; }
+.log-more { margin:0 0 10px; color:var(--muted); font-size:.8rem; }

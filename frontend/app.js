@@ -297,8 +297,10 @@
     try {
       const key = `${storageKey}_log`;
       const entries = JSON.parse(localStorage.getItem(key) || "[]");
-      entries.unshift({ level, message: String(message), at: new Date().toISOString() });
+      const entry = { level, message: String(message), at: new Date().toISOString() };
+      entries.unshift(entry);
       localStorage.setItem(key, JSON.stringify(entries.slice(0, 200)));
+      window.SplitAppBackend?.appendLog?.("logcat", entry);
     } catch (_) {}
   }
   async function runWithConcurrency(values, requestedWorkers, task) {
@@ -518,9 +520,13 @@
   }
   function pageContext() {
     let logEntries = [], changeLog = [];
+    const onLogPage = page === "settings" && (settingsGroup === "logcat" || settingsGroup === "history");
+    if (onLogPage) loadFullLog(settingsGroup);
     try { const savedChanges = JSON.parse(localStorage.getItem(changeKey) || "[]"); if (Array.isArray(savedChanges)) changeLog = savedChanges; } catch (_) {}
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    if (fullLogs.logcat && settingsGroup === "logcat") logEntries = fullLogs.logcat;
+    if (fullLogs.history && settingsGroup === "history") changeLog = fullLogs.history;
+    return { logQuery, changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
@@ -1272,8 +1278,8 @@
     }));
     content.querySelectorAll("[data-log-action]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
-      if (button.dataset.logAction === "clear-changes") { localStorage.removeItem(changeKey); render(); toast("History cleared."); return; }
-      if (button.dataset.logAction === "clear") { localStorage.removeItem(`${storageKey}_log`); render(); toast("Logs cleared."); }
+      if (button.dataset.logAction === "clear-changes") { clearLogKind("history").then(() => { render(); toast("History cleared."); }); return; }
+      if (button.dataset.logAction === "clear") { clearLogKind("logcat").then(() => { render(); toast("Logs cleared."); }); }
     }));
     content.querySelectorAll("[data-setting-action]").forEach(button => button.addEventListener("click", event => {
       if (button.type === "file") return; // let the file picker open
@@ -1557,6 +1563,11 @@
   async function runStorageAction(action) {
     if (action === "metadata" || action === "images" || action === "temporary") {
       await clearAppCaches(action); render(); toast("Temporary cache cleared."); return;
+    }
+    if (action === "clear-logcat" || action === "clear-history") {
+      const label = action === "clear-logcat" ? "logcat" : "library history";
+      if (!(await appConfirm(`Delete the whole ${label}, including older entries saved in your storage folder?`, { title: `Clear ${label}`, confirmLabel: "Clear", danger: true }))) return;
+      await clearLogKind(action === "clear-logcat" ? "logcat" : "history"); render(); toast(`${label[0].toUpperCase()}${label.slice(1)} cleared.`); return;
     }
     if (action === "clear-data") {
       if (!(await appConfirm("Clear all tracked games and activity history from this device?", { title: "Clear tracked data", confirmLabel: "Clear", danger: true }))) return;
@@ -3629,6 +3640,7 @@
       if (globalResults) globalResults.hidden = !hasGlobalMatch;
       return;
     }
+    if (event.target.matches?.("[data-log-search]")) { logQuery = event.target.value; render(); return; }
     if (event.target.id === "explore-source-search") {
       const query = event.target.value.trim().toLowerCase();
       const rows = $$("[data-explore-search]");
@@ -3799,11 +3811,27 @@
   function logChange(action, detail, ids = []) {
     try {
       const list = JSON.parse(localStorage.getItem(changeKey) || "[]");
-      list.unshift({ at: Date.now(), action, detail: String(detail || "").slice(0, 400), ids: ids.slice(0, 60).map(String) });
+      const entry = { at: Date.now(), action, detail: String(detail || "").slice(0, 400), ids: ids.slice(0, 60).map(String) };
+      list.unshift(entry);
       localStorage.setItem(changeKey, JSON.stringify(list.slice(0, 400)));
+      window.SplitAppBackend?.appendLog?.("history", entry);
     } catch (_) {}
   }
   const titlesOf = list => { const names = list.map(entry => entry.title || entry).filter(Boolean); return names.slice(0, 6).join(", ") + (names.length > 6 ? ` and ${names.length - 6} more` : ""); };
+  // Full logs come from savepoint-db/ (all history); the page shows the recent local copy first and swaps in the full list when it arrives.
+  const fullLogs = { logcat: null, history: null }, fullLogLoading = new Set();
+  let logQuery = "";
+  function loadFullLog(kind) {
+    const read = window.SplitAppBackend?.readLog;
+    if (!read || fullLogs[kind] || fullLogLoading.has(kind)) return;
+    fullLogLoading.add(kind);
+    read(kind).then(list => { fullLogs[kind] = Array.isArray(list) ? list : []; }).catch(() => {}).finally(() => { fullLogLoading.delete(kind); if (page === "settings" && settingsGroup === kind) render(); });
+  }
+  async function clearLogKind(kind) {
+    fullLogs[kind] = null;
+    await window.SplitAppBackend?.clearLog?.(kind);
+    if (!window.SplitAppBackend?.clearLog) localStorage.removeItem(kind === "logcat" ? `${storageKey}_log` : changeKey);
+  }
   let snapshotTimer = 0;
   function saveLibrarySnapshot() {
     clearTimeout(snapshotTimer);
