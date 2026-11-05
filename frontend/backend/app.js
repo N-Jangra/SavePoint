@@ -977,11 +977,7 @@
   async function exportTextFile({ fileName, mimeType = "text/plain", content }) {
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
     if (!plugin?.writeDocumentChunk || !plugin?.createDocument) throw new Error("This build cannot save files. Update the app.");
-    const opened = await plugin.createDocument({ fileName, mimeType });
-    try {
-      const CHUNK = 256 * 1024;
-      for (let offset = 0; offset < content.length; offset += CHUNK) await plugin.writeDocumentChunk({ content: content.slice(offset, offset + CHUNK) });
-    } finally { await plugin.closeDocument().catch(() => {}); }
+    const opened = await plugin.createDocument({ fileName, mimeType, content });
     return { fileName, uri: opened?.uri || "" };
   }
 
