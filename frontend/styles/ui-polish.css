@@ -2172,3 +2172,8 @@ body[data-dashboard-view="compact-grid"] .dashboard-card .item-copy h3 { font-si
 .item-card[data-item],.discover-card[data-discover-details]{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .ios-action-sheet .favorite-on{color:#e0245e}.ios-action-sheet .favorite-on svg{fill:currentColor;stroke:currentColor}
 .discover-status-banner:has(.discover-message:empty){display:none}
+
+/* 0.1.2: Add/Edit status chips scroll sideways in one row like the Home pills */
+.entry-status-options{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 -4px;padding:4px 4px 8px;scroll-snap-type:x proximity;touch-action:pan-x pan-y}
+.entry-status-options::-webkit-scrollbar{display:none}
+.entry-status-options .entry-status-option{flex:none;white-space:nowrap;scroll-snap-align:start}
