@@ -46,3 +46,10 @@ Field paths support dot notation and array indexes. Custom endpoints are fetched
 Per-source settings can override the source domain and configure request headers/cookies where the platform allows them. Browser security prevents JavaScript from setting some restricted headers; the local preview proxy and Android request paths handle supported source-specific headers.
 
 Mix fetch is an experimental combined search. It retains each result's source identity and merges provider detail fields when a matching game is previewed or added. See [metadata analysis](metadata-analysis.md) for request, cache, and failure behavior.
+
+
+## Source index and fixing matches (0.1.3)
+
+Each saved game keeps `sourceIds` (source key to provider ID) alongside `mixPrimary` (the source it was first saved from) and optional `mixPins` and `mixSkip`. Syncs fetch known sources by ID instead of searching by title. A source that matched before must answer again, otherwise the saved data is kept, so a Mix game never falls back to a single source. A source that is switched off keeps its data. A timeout or block is not recorded as checked and is retried on the next refresh (`mixCheckedSources` lists only sources that gave a definite answer).
+
+On a game's details, **Fix match** shows each source's linked ID, lets you unlink a source (`mixSkip`) or search a source and link the right entry, and **Change cover** stores `customCover`, which syncs never replace. Dragging one Home card onto another merges them into a Mix game using both cards' provider IDs.

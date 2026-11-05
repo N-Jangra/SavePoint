@@ -12,7 +12,8 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 | Game tracking | Set Backlog, Upcoming, Playing, On Hold, Dropped, or Completed; log playtime, set a goal, and rate games. |
 | Game details | View and cache provider descriptions, portrait covers, screenshots, tags, links, requirements, playtime estimates, and other available details. Steam trailers play inline in the details page. |
 | Discover | Browse suggestions and search a single catalog or enabled sources together; add games directly to the library. |
-| Mix fetch | Experimental combined search that merges matching metadata from enabled sources into one saved game. |
+| Mix fetch | Experimental combined search that merges matching metadata from enabled sources into one saved game. A per-game source index keeps every matched source, so syncs never shrink a Mix game. |
+| Library tools | Multi-select on Home, undo toasts, drag-to-merge, Fix match, Change cover, import duplicate detection, and per-game Retry/Ignore on the Sync page. |
 | Timeline and statistics | Review status changes by day on the Timeline, and explore a Statistics overview with Play time (split by status: time spent, time saved on dropped games, time left on playing and on-hold games, and money per status), Library breakdown, Activity and Ratings sub-pages (grouped ratings and quick rate). |
 | Sharing | Share a Home group as themed images (choose games per page and how many pages) or as a PDF list, and share any game's details page as a PDF or image with its saved metadata and screenshots; every share can be saved to Downloads or sent through Android's share sheet. |
 | Favorites | Heart a game from its details or the ⋮ menu and filter Home to favorites. |
@@ -96,9 +97,9 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.2` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.3` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
 
-The current 0.1.2 release APK is packaged as `dist/savepoint-0.1.2-release.apk` after a signed release build.
+The current 0.1.3 release APK is packaged as `dist/savepoint-0.1.3-release.apk` after a signed release build.
 
 ## Repository layout
 
@@ -142,7 +143,7 @@ SavePoint/
 | Property | Value |
 |---|---|
 | Package | `savepoint` |
-| Version | `0.1.2` |
+| Version | `0.1.3` |
 | Capacitor / Android application ID | `com.cuemark.savepoint` |
 | Capacitor web directory | `frontend/` |
 | Browser state key | `splitapp_savepoint_v1` |

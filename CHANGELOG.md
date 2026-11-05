@@ -2,6 +2,37 @@
 
 Notable SavePoint changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/) (`0.x` while the app is evolving).
 
+## [0.1.3] — 2026-11-06
+
+### Added
+
+- Home multi-select: a select button (or hold a card and release in place) lets you tick several games, then change status, favorite or delete them in one go.
+- Undo toasts for removing games, bulk actions, merges and imports, plus an automatic backup before bulk changes (follows "Backup before destructive actions").
+- Drag one Home card onto another (long-press first) to merge two games into one Mix game that fetches from both sources; progress shows on the Sync page.
+- Fix match on a game's details: see each source's linked ID, unlink a source, or search any source and pick the right entry.
+- Change cover on a game's details: choose from Steam portrait art, source images and screenshots; the choice survives syncs.
+- Sync page: Retry and Ignore buttons for each failed game.
+- Import List shows near-duplicates (edition names, missing years) under "Looks like duplicates" so you can skip or keep them; imports can be undone.
+- Per-game source index (which source matched under which ID): later syncs fetch by ID, a Mix game never shrinks back to one source, and a source switched off keeps its saved data.
+- Games added from Discover, Mix fetch or by hand now run through the Sync page with progress.
+
+### Changed
+
+- Pull-to-refresh on Home syncs only games that need it (never fetched, a newly enabled source not yet tried, older than the refresh interval, or a failed lookup); pull again within 20 seconds to re-check everything.
+- A game saved from HowLongToBeat (or any source) stays led by that source; Steam can no longer overwrite it when a sync runs.
+- Mix and "All sources" search wait longer for HowLongToBeat and merge the same game from Steam and HowLongToBeat into one row; exact title matches are listed first.
+- Steam covers use the portrait library art when the game has it instead of the cropped wide banner.
+- Going Back from a Settings sub-page returns to the position you left instead of the top.
+- The floating sync button hides on the Add page and disappears shortly after a sync finishes.
+- Explore no longer has a search box for the three metadata sources.
+
+### Fixed
+
+- Home share dialog error "PER_PAGE is not defined".
+- Games added a moment after a sync finished could stay on "Waiting" forever.
+- Control matched "Control Resonant" because titles only had to contain each other; matching now requires the same title or a real edition subtitle.
+- A source that timed out or was blocked is retried on the next refresh instead of being recorded as already checked.
+
 ## [0.1.2] — 2026-11-05
 
 ### Added
