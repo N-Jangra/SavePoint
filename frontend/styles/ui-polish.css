@@ -2171,3 +2171,4 @@ body[data-dashboard-view="compact-grid"] .dashboard-card .item-copy h3 { font-si
 /* 0.1.2: whole cards open details */
 .item-card[data-item],.discover-card[data-discover-details]{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .ios-action-sheet .favorite-on{color:#e0245e}.ios-action-sheet .favorite-on svg{fill:currentColor;stroke:currentColor}
+.discover-status-banner:has(.discover-message:empty){display:none}

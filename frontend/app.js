@@ -1687,14 +1687,30 @@
     const hasImage = Boolean(image);
     return `<div class="discover-card-art">${hasImage ? `<img data-deferred-image data-lazy-src="${esc(image)}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="discover-art-fallback" aria-hidden="true"${hasImage ? " hidden" : ""}><i data-lucide="gamepad-2"></i></span></div>`;
   }
+  const normalizeLibraryTitle = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  // Keys that identify the catalog entry a game was added from. Enrichment can later rename the game or change
+  // its year, so matching on the live title alone would show "+ Add" again for a game that is already saved.
+  function libraryOriginKeys(result) {
+    const keys = [];
+    const source = result?.source || result?.metadataSource, id = result?.providerId;
+    if (source && id) keys.push(`id:${source}:${id}`);
+    const title = normalizeLibraryTitle(result?.title);
+    if (title) keys.push(`t:${title}`);
+    return keys;
+  }
   function findLibraryMatch(result) {
     if (!result?.title) return null;
-    const normalize = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const keys = libraryOriginKeys(result);
+    const sourceKey = keys.find(key => key.startsWith("id:"));
+    if (sourceKey) {
+      const byId = items.find(item => (item.originKeys || []).includes(sourceKey) || (item.providerId && item.providerId === result.providerId && (item.metadataSource || item.source) === (result.source || result.metadataSource)));
+      if (byId) return byId;
+    }
     const yearOf = value => String(value || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
-    const title = normalize(result.title);
-    const matches = items.filter(item => item.category === result.category && normalize(item.title) === title);
+    const title = normalizeLibraryTitle(result.title);
+    const matches = items.filter(item => (!result.category || item.category === result.category) && (normalizeLibraryTitle(item.title) === title || (item.originKeys || []).includes(`t:${title}`)));
     const year = yearOf(result.year);
-    if (year) return matches.find(item => yearOf(item.year) === year) || (matches.length === 1 && !yearOf(matches[0].year) ? matches[0] : null);
+    if (year) return matches.find(item => yearOf(item.year) === year) || (matches.length === 1 && !yearOf(matches[0].year) ? matches[0] : null) || matches.find(item => (item.originKeys || []).includes(`t:${title}`) && item.originYear === year) || null;
     return matches.length === 1 ? matches[0] : null;
   }
   function discoverAddButton(result, index) {
@@ -1919,7 +1935,7 @@
     let item = findLibraryMatch(result);
     const wasSaved = Boolean(item);
     if (!item) {
-      item = { ...result, metadataSource: result.source || result.metadataSource || "", id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
+      item = { ...result, originKeys: libraryOriginKeys(result), originYear: String(result.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", metadataSource: result.source || result.metadataSource || "", id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
       applyMixIdentity(item, result);
       items.unshift(item);
       if (["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
