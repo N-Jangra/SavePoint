@@ -191,7 +191,7 @@
   let localMutationRevision = 0;
   const mixEnrichmentByItem = new Map();
   const detailRefreshByItem = new Map();
-  let discoverCache = null;
+  let discoverCache = null, discoverSubmitted = "", discoverSubmittedAt = 0;
   let timelineThumbnailLookup = null;
   const timelineLocalThumbnailChecked = new Set();
   const timelineOnlineThumbnailRequested = new Set();
@@ -438,7 +438,7 @@
     if (page === "details" && nextPage !== "details") { detailRequest++; detailLoading = false; }
     page = nextPage in titles ? nextPage : "dashboard";
     statsSubpage = page === "statistics" && statsSections.includes(nextSection) ? normalizeStatsSection(nextSection) : "";
-    if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverRequestId++; discoverCache = null; }
+    if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverSubmitted = ""; discoverRequestId++; discoverCache = null; }
     if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
     if (page !== "settings") settingsGroup = null;
     if (updateHistory) historyPush();
@@ -984,7 +984,8 @@
     if (keepScrollY) window.scrollTo({ top: keepScrollY, behavior: "auto" });
     if (topbarActions) window.lucide?.createIcons({ root: topbarActions, attrs: { "aria-hidden": "true" } });
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
-    else if (page === "discover" && !discoverQuery) loadDiscoverSuggestions();
+    else if (page === "discover" && discoverQuery.trim() && discoverQuery === discoverSubmitted) discover();
+    else if (page === "discover") loadDiscoverSuggestions();
     if (page === "mix") paintMixResults();
     if (page === "statistics") { const chart = $(".stats-activity-chart-month"); if (chart) chart.scrollLeft = chart.scrollWidth; }
     if (preservePageState) {
@@ -1064,10 +1065,12 @@
     content.querySelectorAll("[data-save-item]").forEach(saveButton => saveButton.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); saveAddForm($("#item-form")); }));
     content.querySelector("[data-discover-submit]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); submitDiscover(); });
     content.querySelector("#discover-query")?.addEventListener("keydown", event => {
-      if (event.key !== "Enter") return;
+      // Android soft keyboards can report Enter as keyCode 13 with an "Unidentified" key.
+      if (event.key !== "Enter" && event.keyCode !== 13) return;
       event.preventDefault(); event.stopPropagation();
       submitDiscover();
     });
+    content.querySelector("#discover-query")?.addEventListener("search", event => { event.stopPropagation(); submitDiscover(); });
     content.querySelector("#discover-query")?.addEventListener("input", event => {
       discoverQuery = event.target.value;
       const clearButton = content.querySelector("[data-clear-discover]");
@@ -1075,7 +1078,7 @@
     });
     content.querySelector("[data-clear-discover]")?.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
-      discoverQuery = ""; discoverRequestId++; discoverCache = null;
+      discoverQuery = ""; discoverSubmitted = ""; discoverRequestId++; discoverCache = null;
       const input = content.querySelector("#discover-query");
       if (input) { input.value = ""; input.focus(); }
       const clearButton = content.querySelector("[data-clear-discover]");
@@ -1669,6 +1672,9 @@
   function submitDiscover() {
     const input = $("#discover-query");
     if (input) discoverQuery = input.value;
+    // Enter fires keydown and "search" together on some keyboards; run the request once.
+    if (discoverQuery === discoverSubmitted && Date.now() - discoverSubmittedAt < 500) return;
+    discoverSubmitted = discoverQuery; discoverSubmittedAt = Date.now();
     discover();
   }
   function setDiscoverEmptyState(title, description = "", retryLabel = "") {
@@ -1786,7 +1792,7 @@
       } finally { clearTimeout(suggestionsTimeout); }
       suggestionsCache = { key: cacheKey, sections };
     }
-    if (requestId !== suggestionsRequest || page !== "discover" || discoverQuery || $("#discover-query")?.value.trim()) return;
+    if (requestId !== suggestionsRequest || page !== "discover" || (discoverQuery.trim() && discoverQuery === discoverSubmitted)) return;
     const flat = [];
     const html = sections.map(section => `<section class="discover-suggest"><h2>${esc(section.title)}</h2><div class="discover-rail">${section.items.map(result => {
       const index = flat.push(result) - 1;
@@ -3479,7 +3485,7 @@
     if (!(next in titles)) return;
     const previousPage = page;
     if (previousPage === "details" && next !== "details") { detailRequest++; detailLoading = false; }
-    if (next !== "discover") { discoverQuery = ""; discoverRequestId++; }
+    if (next !== "discover") { discoverQuery = ""; discoverSubmitted = ""; discoverRequestId++; }
     if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
     else if (previousPage !== "add") { entryDraftId = null; addMetadataQuery = ""; } // opening Add from a link/back is a new entry
     const previousDiscoverSource = discoverSource;
