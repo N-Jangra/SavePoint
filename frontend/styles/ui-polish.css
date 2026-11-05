@@ -2167,3 +2167,7 @@ body[data-dashboard-view="compact-grid"] .dashboard-card .item-copy h3 { font-si
 .stats-activity-feed > .button, .stats-time-actions .button { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:46px; margin-top:12px; padding:0 16px; border:1px solid var(--line); border-radius:14px; background:var(--accent-soft); color:var(--accent-text,var(--accent)); font-size:.84rem; font-weight:700; }
 .stats-time-actions { display:grid; gap:0; }
 .stats-activity-feed > .button:active, .stats-time-actions .button:active { transform:scale(.98); }
+
+/* 0.1.2: whole cards open details */
+.item-card[data-item],.discover-card[data-discover-details]{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ios-action-sheet .favorite-on{color:#e0245e}.ios-action-sheet .favorite-on svg{fill:currentColor;stroke:currentColor}

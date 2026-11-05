@@ -1729,7 +1729,7 @@
       ? results.length + " results found" + (sourceName ? " from " + sourceName : "") + partialMessage
       : "No results found" + (sourceName ? " from " + sourceName : "") + ".";
     setDiscoverStatusState(warnings.length ? "warning" : results.length ? "success" : "neutral");
-    box.innerHTML = results.slice(0, 12).map((result, index) => `<article class="discover-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button>${discoverAddButton(result, index)}</div></div></article>`).join("");
+    box.innerHTML = results.slice(0, 12).map((result, index) => `<article class="discover-card" data-discover-details="${index}">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button>${discoverAddButton(result, index)}</div></div></article>`).join("");
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
     empty.hidden = results.length > 0;
     if (!results.length) setDiscoverEmptyState(
@@ -1789,7 +1789,7 @@
     const flat = [];
     const html = sections.map(section => `<section class="discover-suggest"><h2>${esc(section.title)}</h2><div class="discover-rail">${section.items.map(result => {
       const index = flat.push(result) - 1;
-      return `<article class="discover-card discover-suggest-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.subtitle || result.year || "")}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button>${discoverAddButton(result, index)}</div></div></article>`;
+      return `<article class="discover-card discover-suggest-card" data-discover-details="${flat.length - 1}">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.subtitle || result.year || "")}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button>${discoverAddButton(result, index)}</div></div></article>`;
     }).join("")}</div></section>`).join("");
     box.setAttribute("aria-busy", "false");
     box.innerHTML = html || ""; box._results = flat;
@@ -2300,7 +2300,7 @@
       });
     }
     dialog.dataset.itemId = id;
-    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p>${statusActions}<button type="button" data-sheet-action="favorite"><i data-lucide="heart"></i>${item.favorite ? "Remove from favorites" : "Add to favorites"}</button><button type="button" data-sheet-action="edit"><i data-lucide="pencil"></i>Edit entry</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
+    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p><button type="button" data-sheet-action="edit"><i data-lucide="pencil"></i>Edit entry</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" class="${item.favorite ? "favorite-on" : ""}" data-sheet-action="favorite"><i data-lucide="heart"></i>${item.favorite ? "Remove from favorites" : "Add to favorites"}</button>${statusActions}<button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
   }
@@ -2995,6 +2995,8 @@
       }
       return;
     }
+    const itemCard = event.target.closest(".item-card[data-item]");
+    if (itemCard && !event.target.closest("button,a,input,select,textarea,label")) { openDetails(itemCard.dataset.item); return; }
     const itemMenu = event.target.closest("[data-open-item-actions]");
     if (itemMenu) { openItemActions(itemMenu.dataset.openItemActions); return; }
     const dashboardViewChoice = event.target.closest("button[data-dashboard-view]");
@@ -3164,8 +3166,9 @@
     if (event.target.closest("[data-sync-dismiss]")) { if (syncJob?.finished) { syncJob = null; updateSyncUI(); goto("dashboard"); } return; }
     if (event.target.closest("[data-continue-import]")) { continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not restore this library."; render(); } }); return; }
     if (event.target.closest("[data-cancel-import]")) { importState = null; settingsGroup = "backups"; goto("settings"); return; }
-    const sourceDetails = event.target.closest("[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
     const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { await addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); return; }
+    if (event.target.closest("[data-discover-row-add]")) return;
+    const sourceDetails = event.target.closest("[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
   });
   document.addEventListener("change", event => {
     const input = event.target;
