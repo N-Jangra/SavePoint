@@ -96,7 +96,7 @@
     const sumOf = (list, fn) => list.reduce((sum, item) => sum + fn(item), 0);
     const statusTimeSpec = [
       { status: "Completed", icon: "circle-check", tone: "completed", blurb: "Finished games", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))]] },
-      { status: "Dropped", icon: "circle-minus", tone: "dropped", blurb: "Stopped early — the rest of the time is saved", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["Time saved", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
+      { status: "Dropped", icon: "circle-minus", tone: "dropped", blurb: "Stopped early — time saved", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["Time saved", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
       { status: "Playing", icon: "gamepad-2", tone: "playing", blurb: "In progress right now", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["To finish", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
       { status: "On Hold", icon: "pause-circle", tone: "on-hold", blurb: "Paused for later", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["Time needed", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
       { status: "Backlog", icon: "bookmark", tone: "backlog", blurb: "Not started — no time counted", stats: () => [] },
