@@ -252,4 +252,5 @@ body[data-theme="light"] .episode-toggle.is-watched { color: #15803d; }
 
 /* 0.1.2: rotate a screenshot to landscape inside the viewer only */
 .detail-image-modal.is-rotated figure img { position:absolute; top:50%; left:50%; translate:-50% -50%; rotate:90deg; max-width:calc(100dvh - 150px); max-height:calc(100vw - 24px); }
+.detail-image-modal[data-rotate="ccw"] figure img { rotate:-90deg; }
 .detail-image-modal figure img { transition:opacity .2s ease,transform .22s ease,rotate .22s ease; }
