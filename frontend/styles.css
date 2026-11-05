@@ -796,3 +796,17 @@ body[data-page="sync"] .topbar { display:none; }
 .select-mode .dashboard-card { content-visibility:visible; }
 .detail-tools { gap:6px !important; flex-wrap:nowrap !important; }
 .detail-tools .detail-tool-chip { padding:5px 10px !important; font-size:.74rem !important; line-height:1.2; white-space:nowrap; }
+.select-mode .item-card.is-selected { border-radius:16px !important; }
+.select-mode .item-list .item-card.is-selected, .select-mode .item-card.is-selected { box-shadow:inset 0 0 0 2px var(--accent,#6355f5) !important; background-clip:padding-box; }
+.detail-ttb { margin-top:12px; padding:14px 16px; border:1px solid var(--line); border-radius:var(--card-radius,18px); background:var(--surface); }
+.detail-ttb-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.detail-ttb-head span { font-weight:800; font-size:.8rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.detail-ttb-head small { color:var(--muted); font-size:.74rem; text-align:right; }
+.detail-ttb-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.detail-ttb-chip { display:grid; gap:2px; padding:10px 6px; border:1px solid var(--line); border-radius:14px; background:var(--surface-2); color:inherit; text-align:center; font:inherit; }
+.detail-ttb-chip strong { font-size:1.05rem; }
+.detail-ttb-chip span { font-size:.7rem; color:var(--muted); }
+.detail-ttb-chip.is-goal { border-color:var(--accent,#6355f5); background:color-mix(in srgb,var(--accent,#6355f5) 12%,var(--surface)); }
+.select-mode .item-card.is-selected { box-shadow:none !important; background:color-mix(in srgb,var(--accent,#6355f5) 7%,var(--surface,#fff)) !important; }
+.select-mode .item-card.is-selected::before { content:""; position:absolute; inset:3px; border:2px solid var(--accent,#6355f5); border-radius:16px; pointer-events:none; z-index:2; }
+.select-mode .item-list .item-card.is-selected, .select-mode .item-card.is-selected { box-shadow:none !important; outline:none !important; border-color:transparent !important; }

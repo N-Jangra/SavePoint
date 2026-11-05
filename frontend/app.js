@@ -285,6 +285,7 @@
     clearTimeout(persistTimer); persistTimer = 0;
     const waiters = persistWaiters; persistWaiters = [];
     if (!waiters.length) return;
+    saveLibrarySnapshot();
     const scope = persistFull ? { full: true } : { ids: [...persistIds], removed: [...persistRemoved] };
     persistFull = false; persistIds.clear(); persistRemoved.clear();
     const write = window.SplitAppBackend?.save({ items, history, preferences: prefs }, scope);
@@ -516,9 +517,10 @@
     return value;
   }
   function pageContext() {
-    let logEntries = [];
+    let logEntries = [], changeLog = [];
+    try { const savedChanges = JSON.parse(localStorage.getItem(changeKey) || "[]"); if (Array.isArray(savedChanges)) changeLog = savedChanges; } catch (_) {}
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
@@ -1270,6 +1272,7 @@
     }));
     content.querySelectorAll("[data-log-action]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
+      if (button.dataset.logAction === "clear-changes") { localStorage.removeItem(changeKey); render(); toast("History cleared."); return; }
       if (button.dataset.logAction === "clear") { localStorage.removeItem(`${storageKey}_log`); render(); toast("Logs cleared."); }
     }));
     content.querySelectorAll("[data-setting-action]").forEach(button => button.addEventListener("click", event => {
@@ -1557,7 +1560,7 @@
     }
     if (action === "clear-data") {
       if (!(await appConfirm("Clear all tracked games and activity history from this device?", { title: "Clear tracked data", confirmLabel: "Clear", danger: true }))) return;
-      items = []; history = []; persist(); render(); toast("Tracked data cleared."); return;
+      logChange("cleared", `Cleared all tracked data (${items.length} games)`, items.map(item => item.id)); items = []; history = []; persist(); render(); toast("Tracked data cleared."); return;
     }
     if (action === "factory-reset") {
       if (!(await appConfirm("Factory reset SavePoint? This removes your library, settings, and app cache from this device.", { title: "Factory reset", confirmLabel: "Reset", danger: true }))) return;
@@ -1733,7 +1736,7 @@
       else if (entry.goal > 0) { entry.completionTargetHours = entry.goal; entry.progress = Math.max(entry.progress, entry.goal); }
     }
     syncEditedCompletionTarget(entry, old);
-    if (old) items[items.indexOf(old)] = entry; else items.unshift(entry);
+    if (old) items[items.indexOf(old)] = entry; else { items.unshift(entry); logChange("added", `Added ${entry.title}`, []); }
     if (entry.status !== "Backlog" && entry.status !== old?.status) history.unshift({ itemId: entry.id, title: entry.title, action: entry.status, status: entry.status, at: Date.now() });
     await persist({ ids: [entry.id] }); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
     if (!old && key === "game" && !startSyncJob([entry])) enrichLibraryEntryWithMix(entry, { ...entry, source: entry.metadataSource }, "Add Game");
@@ -1755,7 +1758,7 @@
     const exists = id != null && items.some(entry => String(entry.id) === String(id));
     const removedEntry = exists ? items.find(entry => String(entry.id) === String(id)) : null;
     const removedIndex = removedEntry ? items.indexOf(removedEntry) : -1, removedCopy = removedEntry ? cloneJson(removedEntry) : null;
-    if (exists) backupBeforeBulk();
+    if (exists) { backupBeforeBulk(); logChange("removed", `Deleted ${removedEntry?.title || "a game"}`, [id]); }
     if (exists) items = items.filter(entry => String(entry.id) !== String(id));
     const requestedPage = returnPage === "details" ? detailReturnPage : returnPage;
     const destination = requestedPage && requestedPage !== "details" && requestedPage in titles ? requestedPage : "dashboard";
@@ -1764,7 +1767,7 @@
     detailReturnPage = "dashboard";
     if (exists) persist();
     goto(destination);
-    if (exists && removedCopy) toastUndo("Entry deleted.", () => { items.splice(Math.min(removedIndex, items.length), 0, removedCopy); persist({ ids: [removedCopy.id] }); render(); toast("Restored."); });
+    if (exists && removedCopy) toastUndo("Entry deleted.", () => { logChange("restored", `Undo: restored ${removedCopy.title}`, [removedCopy.id]); items.splice(Math.min(removedIndex, items.length), 0, removedCopy); persist({ ids: [removedCopy.id] }); render(); toast("Restored."); });
     else toast(exists ? "Entry deleted." : "This entry was already removed.");
   }
   function redirectHomeIfDetailMissing() {
@@ -2071,7 +2074,7 @@
     if (!item) {
       item = { ...result, originKeys: libraryOriginKeys(result), originYear: String(result.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", metadataSource: result.source || result.metadataSource || "", id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
       applyMixIdentity(item, result);
-      items.unshift(item);
+      items.unshift(item); logChange("added", `Added ${item.title}`, []);
       if (["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     }
     item.updatedAt = Date.now();
@@ -2109,6 +2112,7 @@
     current.url = loaded.url || current.url;
     current.image = current.customCover || current.localThumbnailData || loaded.portraitImage || loaded.image || current.image;
     current.backdrop = loaded.landscapeImage || loaded.backgroundImage || current.backdrop;
+    applyDefaultGoal(current); ensureCoverGallery(current);
     current.updatedAt = Date.now();
   }
   function enrichLibraryEntryWithMix(item, sourceResult = {}, origin = "Library", options = {}) {
@@ -2351,6 +2355,7 @@
           item.image = loaded.portraitImage || loaded.image || item.image;
           item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
           Object.assign(item, tracking);
+          applyDefaultGoal(item); ensureCoverGallery(item);
           item.updatedAt = Date.now();
           persist({ ids: [item.id] });
           window.SplitAppBackend?.loadItemImages?.(item).then(localImageData => {
@@ -2977,7 +2982,9 @@
     importState = null;
     goto("dashboard");
     const started = startSyncJob(fresh.filter(item => !hasSavedMetadata(item)));
+    if (fresh.length) logChange("imported", `Imported ${fresh.length} ${fresh.length === 1 ? "game" : "games"}: ${titlesOf(fresh)}`, []);
     const undoImport = () => {
+      logChange("removed", `Undo import of ${fresh.length} games`, fresh.map(item => item.id));
       const ids = new Set(fresh.map(item => String(item.id)));
       items = items.filter(item => !ids.has(String(item.id))); history = history.filter(entry => !ids.has(String(entry.itemId)));
       if (syncJob) { syncJob.queue = syncJob.queue.filter(item => !ids.has(String(item.id))); syncJob.entries = syncJob.entries.filter(entry => !ids.has(String(entry.id))); }
@@ -3727,6 +3734,7 @@
     history.forEach(entry => { if (String(entry.itemId) === String(from.id)) entry.itemId = to.id; });
     items = items.filter(entry => entry !== from);
     to.updatedAt = Date.now();
+    logChange("merged", `Merged “${from.title}” into “${to.title}”`, [from.id]);
     persist();
     if (!startSyncJob([to])) enrichLibraryEntryWithMix(to, { ...to, source: "mix" }, "Merge");
     render();
@@ -3785,6 +3793,64 @@
   })();
 
   // ================= Library tools: undo, bulk select, fix match, cover picker, import duplicates =================
+
+  // ---- Library history: what was added, removed, merged or restored, plus a drift check for unexplained losses ----
+  const changeKey = `${storageKey}_changes`, snapshotKey = `${storageKey}_snapshot`;
+  function logChange(action, detail, ids = []) {
+    try {
+      const list = JSON.parse(localStorage.getItem(changeKey) || "[]");
+      list.unshift({ at: Date.now(), action, detail: String(detail || "").slice(0, 400), ids: ids.slice(0, 60).map(String) });
+      localStorage.setItem(changeKey, JSON.stringify(list.slice(0, 400)));
+    } catch (_) {}
+  }
+  const titlesOf = list => { const names = list.map(entry => entry.title || entry).filter(Boolean); return names.slice(0, 6).join(", ") + (names.length > 6 ? ` and ${names.length - 6} more` : ""); };
+  let snapshotTimer = 0;
+  function saveLibrarySnapshot() {
+    clearTimeout(snapshotTimer);
+    snapshotTimer = setTimeout(() => { try { localStorage.setItem(snapshotKey, JSON.stringify(Object.fromEntries(items.map(item => [String(item.id), String(item.title || "")])))); } catch (_) {} }, 4000);
+  }
+  // Called after the library finished loading: anything that left since last time without a recorded reason is logged.
+  function checkLibraryDrift() {
+    try {
+      const previous = JSON.parse(localStorage.getItem(snapshotKey) || "null");
+      if (previous && items.length) {
+        const have = new Set(items.map(item => String(item.id)));
+        const explained = new Set(JSON.parse(localStorage.getItem(changeKey) || "[]").flatMap(entry => entry.ids || []));
+        const lost = Object.entries(previous).filter(([id]) => !have.has(id) && !explained.has(id));
+        if (lost.length) logChange("lost", `${lost.length} ${lost.length === 1 ? "game is" : "games are"} missing without a recorded removal: ${titlesOf(lost.map(([, title]) => title))}`, lost.map(([id]) => id));
+      }
+    } catch (_) {}
+    saveLibrarySnapshot();
+    applyDefaultGoals();
+  }
+  // Time-to-beat -> goal: a game with no goal gets its HowLongToBeat main-story hours; an automatic goal follows later updates, a goal you set yourself is never touched.
+  function applyDefaultGoal(item) {
+    const facts = { ...(item?.cachedDetails?.facts || {}), ...(item?.facts || {}) };
+    const hours = Number(facts.mainHours) || Number(facts.extrasHours) || Number(facts.completionistHours) || 0;
+    if (!hours) return false;
+    const goal = Number(item.goal) || 0;
+    if (goal && !(item.goalAutoValue && goal === Number(item.goalAutoValue))) return false;
+    if (goal === hours) return false;
+    item.goal = hours; item.goalAutoValue = hours;
+    return true;
+  }
+  // Covers that came from different sources are kept in the Screenshots gallery too (appended, so saved image indexes stay valid).
+  function ensureCoverGallery(item) {
+    const details = item?.cachedDetails; if (!details || typeof details !== "object") return false;
+    const urls = [...new Set([item.customCover, details.portraitImage, details.image, details.landscapeImage, details.backgroundImage, item.image, item.backdrop].filter(url => /^https?:/i.test(url || "")))];
+    if (!urls.length) return false;
+    if (!Array.isArray(details.sections)) details.sections = [];
+    let section = details.sections.find(entry => entry.kind === "gallery" && /screenshot/i.test(entry.title || "")) || details.sections.find(entry => entry.kind === "gallery");
+    if (!section) { section = { title: "Screenshots", kind: "gallery", items: [] }; details.sections.push(section); }
+    const have = new Set((section.items || []).map(entry => entry.image || entry.url));
+    let added = false;
+    urls.forEach(url => { if (!have.has(url)) { section.items.push({ title: "Cover", image: url, url }); added = true; } });
+    return added;
+  }
+  function applyDefaultGoals() {
+    const changed = items.filter(item => item.category === "game" && (applyDefaultGoal(item) | ensureCoverGallery(item))).map(item => item.id);
+    if (changed.length) persist({ ids: changed });
+  }
   function cloneJson(value) { return JSON.parse(JSON.stringify(value)); }
   // Toast with an Undo button (a few seconds to take the action back).
   function toastUndo(message, undo, ms = 8000) {
@@ -3811,9 +3877,11 @@
     const ids = new Set(removed.map(row => String(row.item.id)));
     items = items.filter(entry => !ids.has(String(entry.id)));
     if (syncJob) { syncJob.queue = syncJob.queue.filter(entry => !ids.has(String(entry.id))); syncJob.entries = syncJob.entries.filter(entry => !ids.has(String(entry.id))); }
+    logChange("removed", `Removed ${titlesOf(removed.map(row => row.item))}`, [...ids]);
     persist({ removed: [...ids] }); render();
     toastUndo(message || `Removed ${removed.length} ${removed.length === 1 ? "game" : "games"}.`, () => {
       removed.sort((a, b) => a.index - b.index).forEach(row => items.splice(Math.min(row.index, items.length), 0, row.item));
+      logChange("restored", `Undo: restored ${titlesOf(removed.map(row => row.item))}`, [...ids]);
       persist({ ids: [...ids] }); render(); toast("Restored.");
     });
   }
@@ -3848,6 +3916,7 @@
       const makeFavorite = list.some(item => !item.favorite);
       const before = list.map(item => [item, Boolean(item.favorite), item.updatedAt]);
       list.forEach(item => { item.favorite = makeFavorite; item.updatedAt = Date.now(); });
+      logChange("favorite", `${makeFavorite ? "Favorited" : "Unfavorited"} ${titlesOf(list)}`, list.map(item => item.id));
       persist({ ids: list.map(item => item.id) }); exitSelectMode(); render();
       toastUndo(makeFavorite ? `Added ${list.length} to favorites.` : `Removed ${list.length} from favorites.`, () => { before.forEach(([item, fav, at]) => { item.favorite = fav; item.updatedAt = at; }); persist({ ids: list.map(item => item.id) }); render(); });
     } else if (act === "delete") {
@@ -3877,6 +3946,7 @@
       if (status === "Completed" && Number(item.goal) > 0) item.progress = Math.max(Number(item.progress) || 0, Number(item.goal));
       if (["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(status)) { const entry = { itemId: item.id, title: item.title, action: status, status, at: Date.now() }; history.unshift(entry); addedHistory.push(entry); }
     });
+    logChange("status", `Marked ${list.length} as ${status}: ${titlesOf(list)}`, list.map(item => item.id));
     persist({ ids: list.map(item => item.id) }); exitSelectMode(); render();
     toastUndo(`Marked ${list.length} as ${status}.`, () => {
       before.forEach(row => { row.item.status = row.status; row.item.progress = row.progress; row.item.updatedAt = row.updatedAt; });
@@ -3967,7 +4037,7 @@
     const steamId = String((item.sourceIds || {}).steamdb || (item.metadataSource === "steamdb" ? item.providerId : "") || "").replace(/^app:/, "");
     if (steamId) urls.push(`https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${steamId}/library_600x900.jpg`, `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamId}/library_600x900.jpg`, `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${steamId}/header.jpg`);
     urls.push(details.portraitImage, details.image, details.landscapeImage, details.backgroundImage, item.image, item.backdrop);
-    (details.sections || []).filter(section => section.kind === "gallery").forEach(section => (section.items || []).slice(0, 6).forEach(entry => urls.push(entry.image)));
+    (details.sections || []).filter(section => section.kind === "gallery").forEach(section => (section.items || []).slice(0, 30).forEach(entry => urls.push(entry.image)));
     return [...new Set(urls.filter(url => /^https?:/i.test(url || "")))];
   }
   function openCoverPicker(id) {
@@ -3990,6 +4060,8 @@
   }
   document.addEventListener("click", event => {
     const fix = event.target.closest?.("[data-fix-match]"); if (fix) { event.preventDefault(); event.stopPropagation(); openFixMatch(fix.dataset.fixMatch); return; }
+    const goalChip = event.target.closest?.("[data-set-goal]");
+    if (goalChip) { event.preventDefault(); event.stopPropagation(); const target = itemById(detailItemId); const hours = Number(goalChip.dataset.setGoal); if (target && hours) { target.goal = hours; delete target.goalAutoValue; target.updatedAt = Date.now(); persist({ ids: [target.id] }); render(); toast(`Goal set to ${hours}h.`); } return; }
     const cover = event.target.closest?.("[data-change-cover]"); if (cover) { event.preventDefault(); event.stopPropagation(); openCoverPicker(cover.dataset.changeCover); return; }
     const retry = event.target.closest?.("[data-sync-retry-one]");
     if (retry) {
@@ -4290,12 +4362,14 @@
       const full = await restoreNativeData();
       if (full === false) finishStartup(false);
       else if (full && libraryStamp() !== before) { applyPreferences(); render(); } // keep scroll position when nothing changed
+      if (full) checkLibraryDrift();
       setTimeout(fillThumbCache, 1500);
       return;
     }
     const full = await restoreNativeData();
     requestAnimationFrame(() => window.SavePointSplash?.ready?.());
     finishStartup(full);
+    if (full) checkLibraryDrift();
     setTimeout(fillThumbCache, 3000);
   });
 })();
