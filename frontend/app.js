@@ -526,7 +526,7 @@
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
     if (fullLogs.logcat && settingsGroup === "logcat") logEntries = fullLogs.logcat;
     if (fullLogs.history && settingsGroup === "history") changeLog = fullLogs.history;
-    return { logQuery, changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { logQuery, logFrom, logTo, changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
@@ -3477,6 +3477,7 @@
     }
     if (event.target.closest("[data-sync-toggle]")) { setSyncPaused(!syncJob?.paused); return; }
     if (event.target.closest("[data-sync-retry]")) { retrySyncFailures(); return; }
+    if (event.target.closest("[data-log-dates-clear]")) { logFrom = ""; logTo = ""; render(); return; }
     const keepSimilar = event.target.closest("[data-import-keep]");
     if (keepSimilar && importState?.similar) { const row = importState.similar[Number(keepSimilar.dataset.importKeep)]; if (row) row.keep = !row.keep; render(); return; }
     if (event.target.closest("[data-sync-dismiss]")) { if (syncJob?.finished) { syncJob = null; updateSyncUI(); goto("dashboard"); } return; }
@@ -3641,6 +3642,8 @@
       return;
     }
     if (event.target.matches?.("[data-log-search]")) { logQuery = event.target.value; render(); return; }
+    if (event.target.matches?.("[data-log-from]")) { logFrom = event.target.value; render(); return; }
+    if (event.target.matches?.("[data-log-to]")) { logTo = event.target.value; render(); return; }
     if (event.target.id === "explore-source-search") {
       const query = event.target.value.trim().toLowerCase();
       const rows = $$("[data-explore-search]");
@@ -3820,7 +3823,7 @@
   const titlesOf = list => { const names = list.map(entry => entry.title || entry).filter(Boolean); return names.slice(0, 6).join(", ") + (names.length > 6 ? ` and ${names.length - 6} more` : ""); };
   // Full logs come from savepoint-db/ (all history); the page shows the recent local copy first and swaps in the full list when it arrives.
   const fullLogs = { logcat: null, history: null }, fullLogLoading = new Set();
-  let logQuery = "";
+  let logQuery = "", logFrom = "", logTo = "";
   function loadFullLog(kind) {
     const read = window.SplitAppBackend?.readLog;
     if (!read || fullLogs[kind] || fullLogLoading.has(kind)) return;
