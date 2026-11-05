@@ -82,7 +82,7 @@
       <div class="share-body"><div class="share-modes" role="group"><button type="button" class="active" data-share-mode="pages">Pages · ${PER_PAGE} games each</button><button type="button" data-share-mode="long">One long picture</button></div>
       <div class="share-preview" data-share-preview><span class="share-loading">Preparing…</span></div>
       <div class="share-pager" data-share-pager><button type="button" data-share-prev aria-label="Previous page">‹</button><span data-share-page></span><button type="button" data-share-next aria-label="Next page">›</button></div></div>
-      <footer class="share-footer"><div class="share-actions"><button type="button" class="button secondary" data-share-save>Save</button><button type="button" class="button primary" data-share-send>Share</button></div><button type="button" class="button ghost share-save-all" data-share-save-all hidden>Save all pages</button></footer>`;
+      <footer class="share-footer"><p class="share-status" data-share-status role="status" aria-live="polite" hidden></p><div class="share-actions"><button type="button" class="button secondary" data-share-save>Save</button><button type="button" class="button primary" data-share-send>Share</button></div><button type="button" class="button ghost share-save-all" data-share-save-all hidden>Save all pages</button></footer>`;
     document.body.appendChild(dialog);
     const q = sel => dialog.querySelector(sel);
     const render = async index => {
@@ -108,16 +108,23 @@
       paint();
     };
     const fileName = index => `${slug(title)}-${mode === "pages" ? "page" : "part"}-${index + 1}`;
-    const guard = async (fn, ok) => { try { const r = await fn(); if (ok) toast(ok(r)); } catch (e) { if (!/cancel|abort/i.test(String(e?.message || e?.name || ""))) toast(e?.message || "Could not complete that."); } };
+    const say = (text, tone = "") => { const el = q("[data-share-status]"); el.hidden = !text; el.textContent = text; el.dataset.tone = tone; };
+    const busy = on => dialog.querySelectorAll(".share-footer button").forEach(b => { b.disabled = on; });
+    const guard = async (fn, ok, working = "Working…") => {
+      say(working, "busy"); busy(true);
+      try { const r = await fn(); say(ok ? ok(r) : "", "ok"); if (ok) toast(ok(r)); }
+      catch (e) { if (/cancel|abort/i.test(String(e?.message || e?.name || ""))) say(""); else say(e?.message || "Could not complete that.", "error"); }
+      finally { busy(false); }
+    };
     dialog.addEventListener("click", event => {
       const t = event.target;
       if (t === dialog || t.closest("[data-share-close]")) return closePopup(dialog);
       const m = t.closest("[data-share-mode]"); if (m) return setMode(m.dataset.shareMode);
       if (t.closest("[data-share-prev]")) { page = Math.max(0, page - 1); return paint(); }
       if (t.closest("[data-share-next]")) { page = Math.min(images.length - 1, page + 1); return paint(); }
-      if (t.closest("[data-share-save]")) return guard(async () => saveImage(await render(page), fileName(page)), r => `Saved to ${r}.`);
-      if (t.closest("[data-share-send]")) return guard(async () => shareImage(await render(page), fileName(page)));
-      if (t.closest("[data-share-save-all]")) return guard(async () => { for (let i = 0; i < images.length; i++) await saveImage(await render(i), fileName(i)); return images.length; }, n => `Saved ${n} images.`);
+      if (t.closest("[data-share-save]")) return guard(async () => saveImage(await render(page), fileName(page)), r => `Saved to ${r}.`, "Saving…");
+      if (t.closest("[data-share-send]")) return guard(async () => shareImage(await render(page), fileName(page)), null, "Opening share…");
+      if (t.closest("[data-share-save-all]")) return guard(async () => { for (let i = 0; i < images.length; i++) await saveImage(await render(i), fileName(i)); return images.length; }, n => `Saved ${n} images to Downloads.`, "Saving all images…");
     });
     dialog.addEventListener("close", () => setTimeout(() => dialog.remove(), 300));
     showPopup(dialog);

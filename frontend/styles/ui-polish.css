@@ -2329,3 +2329,6 @@ dialog.share-dialog[open]{display:flex;flex-direction:column;max-height:92dvh}
 .share-dialog .share-preview{max-height:none;min-height:200px}
 .share-dialog .share-footer{flex:none;display:grid;gap:8px;padding:10px 18px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--surface)}
 .share-dialog .share-loading{color:var(--muted);font-size:.8rem;padding:40px 0}
+.share-status{margin:0;padding:8px 12px;border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:.8rem;font-weight:600;text-align:center}
+.share-status[data-tone=ok]{background:color-mix(in srgb,#16a34a 14%,var(--surface));color:#15803d}
+.share-status[data-tone=error]{background:color-mix(in srgb,#dc2626 12%,var(--surface));color:#b91c1c}
