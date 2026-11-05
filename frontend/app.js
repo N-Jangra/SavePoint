@@ -1302,6 +1302,28 @@
     content.querySelector("[data-detail-image-prev]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showDetailImage(detailImagePosition - 1); });
     content.querySelector("[data-detail-image-next]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showDetailImage(detailImagePosition + 1); });
   }
+  // Share images mirror the Home list: cover, title, developer · genres, rating and status.
+  function shareEntry(item) {
+    const fieldValue = pattern => item.cachedDetails?.fields?.find(field => pattern.test(String(field.label || "")))?.value || "";
+    const show = value => Array.isArray(value) ? value.map(show).filter(Boolean).slice(0, 2).join(", ") : value && typeof value === "object" ? show(value.name || value.title || value.label || value.value) : String(value || "").trim();
+    const dev = show(item.facts?.developers || item.cachedDetails?.developers || item.cachedDetails?.developer || fieldValue(/^(developer|developers|studio|studios)$/i));
+    const genre = show(item.facts?.genres || item.cachedDetails?.genres || item.cachedDetails?.genre || fieldValue(/^(genre|genres)$/i));
+    return { id: item.id, title: item.title, subtitle: [dev, genre].filter(Boolean).join(" · "), status: item.status, rating: Number(item.rating) ? `★ ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}` : "" };
+  }
+  // Same-origin sources only (local data, device cache, or a fetched blob) so the canvas can be exported.
+  async function shareImageFor(entry) {
+    const item = itemById(String(entry.id)); if (!item) return null;
+    const load = url => new Promise(resolve => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = url; });
+    const local = item.localPortraitData || item.localThumbnailData;
+    if (local) { const img = await load(local); if (img) return img; }
+    try { const hit = (await cachedThumbUrls([[thumbKeyOf(item, false), thumbSigOf(item)]])).get(thumbKeyOf(item, false)); if (hit) { const img = await load(hit); if (img) return img; } } catch (_) {}
+    const remote = item.image || item.cachedDetails?.portraitImage;
+    if (/^https?:/i.test(remote || "")) {
+      const response = await requestTimelineImage(remote);
+      if (response) { const blob = await response.blob(); const url = URL.createObjectURL(blob); const img = await load(url); setTimeout(() => URL.revokeObjectURL(url), 30000); return img; }
+    }
+    return null;
+  }
   // Sideways chip rows: fade the edge that still has content and bring the selected chip into view.
   function setupScrollRows(root) {
     root.querySelectorAll(".entry-status-options, .detail-status-pills").forEach(row => {
@@ -3156,7 +3178,7 @@
     if (shareGroup) {
       const key = shareGroup.dataset.shareGroup, by = prefs.dashboardGroupBy || "status";
       const list = dashboardSortedItems().filter(item => by === "status" ? item.status === key : by === "category" ? String(item.category || "other") === key : by === "none" ? true : String(item.year || "Unknown release date") === key);
-      window.SplitAppShare.open({ title: by === "none" ? "All games" : key, names: list.map(item => item.title) }, { showPopup, closePopup, toast, esc });
+      window.SplitAppShare.open({ title: by === "none" ? "All games" : key, entries: list.map(shareEntry), getImage: shareImageFor }, { showPopup, closePopup, toast, esc });
       return;
     }
     const itemCard = event.target.closest(".item-card[data-item]");

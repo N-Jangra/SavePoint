@@ -2322,3 +2322,10 @@ body[data-icon-style=inline] .group-share-btn{border:0;background:transparent}
 .stats-subpage-playtime .stats-panel,.stats-subpage-playtime .stats-status-card{contain:layout paint}
 .stats-subpage-playtime{overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}
 .stats-subpage-playtime .stats-playtime-copy,.stats-subpage-playtime .stats-playtime-track i{transition:none}
+
+/* 0.1.2+: share popup never cuts off its buttons on phones */
+dialog.share-dialog[open]{display:flex;flex-direction:column;max-height:92dvh}
+.share-dialog .share-body{flex:1 1 auto;min-height:0;max-height:none;overflow:auto;padding-bottom:8px}
+.share-dialog .share-preview{max-height:none;min-height:200px}
+.share-dialog .share-footer{flex:none;display:grid;gap:8px;padding:10px 18px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--surface)}
+.share-dialog .share-loading{color:var(--muted);font-size:.8rem;padding:40px 0}
