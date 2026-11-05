@@ -19,7 +19,7 @@ The add/edit flow writes these core fields. Additional source fields are retaine
 | `id` | UUID used as the local item identifier. |
 | `title` | Required game title. |
 | `category` | `game` for every current entry. |
-| `status` | One of the configured game statuses: Backlog, Playing, On Hold, Dropped, or Completed. |
+| `status` | One of the configured game statuses: Backlog, Playing, On Hold, Dropped, Completed, or Upcoming. |
 | `progress` | Nonnegative playtime value, in hours. |
 | `rating` | Numeric rating; the UI uses 1–5 or 1–10 according to the rating preference. Zero means no rating. |
 | `goal` | Nonnegative playtime goal, in hours; zero means no goal. |
@@ -55,6 +55,12 @@ Export format:
 }
 ```
 
-Import accepts either an item array or an object whose `items` property is an array. It validates the title, assigns new IDs and timestamps, normalizes category to the supported `game` category, and skips entries already present with the same category and case-insensitive title. Import currently does not restore the exported history or preferences.
+Import accepts either an item array or an object whose `items` property is an array. It validates the title, assigns new IDs and timestamps, normalizes category to the supported `game` category, and skips entries already present with the same category and case-insensitive title. Import restores history for the games it adds but not preferences. Games already in the library are left as they are, except that blank fields (rating, favorite, progress, goal, source identity, cached details) are filled in from the backup. Games restored with saved details are not fetched again, so their original source (single provider or mix) is kept.
+
+**Ratings and reviews.** The Export page (Settings → Backups → Export) lets you pick JSON, TXT or CSV and whether ratings and reviews are included; for JSON that controls whether manual exports contain `rating`, `ratingExact`, `review`/`reviews` and `notes`. Automatic safety backups always keep everything.
+
+**Names lists.** TXT writes one title per line (optionally with rating/review); CSV writes `Title,Year,Status[,Rating][,Review]`. Import List also accepts these files: a `.txt` line or the first/“Title”/“Name” column of a `.csv` becomes a game with default status (a `Status` column is honoured), and its details are then fetched from the enabled sources.
+
+**Rating scale.** `rating` follows Settings → Dashboard → Rating Format. Switching between 5 stars and 10 points rescales saved ratings (×2 up, ÷2 rounded down); the exact 10-point score is kept in `ratingExact` so switching back restores it.
 
 See [database analysis](database-analysis.md) for how this shape is read and written and [storage](storage.md) for browser/native persistence details.

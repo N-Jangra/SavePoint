@@ -973,8 +973,17 @@
     return { fileName, uri: opened?.uri || "" };
   }
 
+  // Plain-text exports (names lists): same Android "Save as" flow as the JSON backup.
+  async function exportTextFile({ fileName, mimeType = "text/plain", content }) {
+    const plugin = window.Capacitor?.Plugins?.BackupFolder;
+    if (!plugin?.writeDocumentChunk || !plugin?.createDocument) throw new Error("This build cannot save files. Update the app.");
+    const opened = await plugin.createDocument({ fileName, mimeType, content });
+    return { fileName, uri: opened?.uri || "" };
+  }
+
   window.SplitAppBackend = Object.freeze({
     exportLibrary,
+    exportTextFile,
     name: app.name,
     key: app.key,
     categories: app.categories.map(category => ({ ...category })),

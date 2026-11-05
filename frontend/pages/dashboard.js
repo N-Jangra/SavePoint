@@ -9,7 +9,7 @@
     const view = prefs.dashboardView || "list";
     const gridViews = new Set(["grid", "detailed-grid", "compact-grid", "large-grid"]);
     const listClass = gridViews.has(view) ? "item-grid" : "item-list";
-    const statusOrder = ["Playing", "Backlog", "Completed", "On Hold", "Dropped"];
+    const statusOrder = ["Playing", "Backlog", "Upcoming", "Completed", "On Hold", "Dropped"];
     const statuses = [...statusOrder.filter(status => config.categories[0]?.statuses?.includes(status)), ...(config.categories[0]?.statuses || []).filter(status => !statusOrder.includes(status))];
     const collectionItems = items.filter(item => (activeCategory === "all" || item.category === activeCategory) && (!prefs.favoritesOnly || item.favorite) && matchesPlatform(item));
     const statusCounts = collectionItems.reduce((counts, item) => {
@@ -62,7 +62,7 @@
       const initialCount = Math.max(initialCounts[groupIndex], restored);
       const visibleGames = group.games.slice(0, initialCount);
       const safeKey = esc(group.key);
-      return `<section class="library-group dashboard-status-group" data-dashboard-status-group="${safeKey}"><h2>${esc(group.title)} <span>${group.games.length}</span></h2><div class="${listClass}" data-dashboard-items="${safeKey}" data-total-count="${group.games.length}" data-rendered-count="${visibleGames.length}">${visibleGames.map(card).join("")}</div>${group.games.length > initialCount ? `<button type="button" class="dashboard-load-more" data-dashboard-load-more="${safeKey}" data-offset="${initialCount}" aria-label="Load more ${esc(group.title)} games">Load more · ${group.games.length - initialCount} remaining</button>` : ""}</section>`;
+      return `<section class="library-group dashboard-status-group" data-dashboard-status-group="${safeKey}"><h2>${esc(group.title)} <span>${group.games.length}</span><button type="button" class="group-share-btn" data-share-group="${safeKey}" aria-label="Share ${esc(group.title)}" title="Share ${esc(group.title)}"><i data-lucide="share-2" aria-hidden="true"></i></button></h2><div class="${listClass}" data-dashboard-items="${safeKey}" data-total-count="${group.games.length}" data-rendered-count="${visibleGames.length}">${visibleGames.map(card).join("")}</div>${group.games.length > initialCount ? `<button type="button" class="dashboard-load-more" data-dashboard-load-more="${safeKey}" data-offset="${initialCount}" aria-label="Load more ${esc(group.title)} games">Load more · ${group.games.length - initialCount} remaining</button>` : ""}</section>`;
     }).join("");
     const views = [["list", "List"], ["detailed-grid", "Detailed"], ["compact-grid", "Compact"], ["large-grid", "Poster"]];
     
@@ -85,7 +85,7 @@
     const filteredStatusCount = status => countItems(status === "all" ? null : status, libraryQuery, matchesPlatform);
     const sortIcons = { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "rating-desc": "star", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-wide-narrow", "alphabetical-desc": "arrow-up-wide-narrow" };
     const sortPills = `<div class="ios-pills dashboard-sort-grid"><input type="hidden" name="sort" value="${esc(prefs.dashboardSort)}">${sortList.map(([key, label]) => `<button type="button" class="dashboard-sort-option${prefs.dashboardSort === key ? " active" : ""}" data-pill-name="sort" data-pill-value="${esc(key)}" aria-pressed="${prefs.dashboardSort === key}"><i data-lucide="${sortIcons[key]}" aria-hidden="true"></i><span>${esc(label)}</span><i class="dashboard-sort-check" data-lucide="check" aria-hidden="true"></i></button>`).join("")}</div>`;
-    const statusColors = { all: "var(--accent)", Playing: "var(--status-color-playing)", Backlog: "var(--status-color-backlog)", Completed: "var(--status-color-completed)", "On Hold": "var(--status-color-on-hold)", Dropped: "var(--status-color-dropped)" };
+    const statusColors = { all: "var(--accent)", Playing: "var(--status-color-playing)", Backlog: "var(--status-color-backlog)", Completed: "var(--status-color-completed)", "On Hold": "var(--status-color-on-hold)", Dropped: "var(--status-color-dropped)", Upcoming: "var(--status-color-upcoming)" };
     const statusPills = `<div class="ios-pills dashboard-status-pills"><input type="hidden" name="status" value="${esc(dashboardStatusFilter)}">${statusOptions.map(([key, label]) => {
       const count = filteredStatusCount(key);
       return `<button type="button" class="ios-pill${dashboardStatusFilter === key ? " active" : ""}" data-pill-name="status" data-pill-value="${esc(key)}" aria-pressed="${dashboardStatusFilter === key}"><i class="dashboard-status-dot" style="--status-dot:${statusColors[key] || "#8b5cf6"}" aria-hidden="true"></i><span>${esc(key === "all" ? "All" : label)}</span><em>${count}</em></button>`;
@@ -97,7 +97,7 @@
       "large-grid": `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="2.5" width="8" height="13" rx="1.5"/><rect x="13" y="2.5" width="8" height="13" rx="1.5"/><path d="M4 19h6M14 19h6"/></svg>`
     };
     const viewPills = `<div class="ios-pills dashboard-view-grid"><input type="hidden" name="view" value="${esc(view)}">${views.map(([key, label]) => `<button type="button" class="dashboard-view-option${view === key ? " active" : ""}" data-pill-name="view" data-pill-value="${esc(key)}" aria-pressed="${view === key}"><span class="dashboard-view-icon">${viewMarks[key]}</span><span class="dashboard-view-label">${esc(label)}</span><i class="dashboard-view-check" data-lucide="check" aria-hidden="true"></i></button>`).join("")}</div>`;
-    const collectionStatuses = [["all", "All", allCount], ...["Playing", "Completed", "Backlog", "On Hold", "Dropped"].map(status => [status, status, statusCount(status)])];
+    const collectionStatuses = [["all", "All", allCount], ...["Playing", "Completed", "Backlog", "Upcoming", "On Hold", "Dropped"].map(status => [status, status, statusCount(status)])];
     const platformOptions = [["all", "All", "layers-3"], ["pc", "PC", "monitor"], ["mac", "Mac", "laptop"], ["mobile", "Mobile", "smartphone"], ["xbox", "Xbox", "tv"], ["playstation", "PlayStation", "gamepad-2"], ["nintendo", "Nintendo", "joystick"]];
     const platformLabels = Object.fromEntries(platformOptions);
     const platformPills = `<div class="ios-pills dashboard-platform-pills"><input type="hidden" name="platform" value="${esc(dashboardPlatformFilter)}">${platformOptions.map(([key, label, icon]) => `<button type="button" class="ios-pill${dashboardPlatformFilter === key ? " active" : ""}" data-pill-name="platform" data-pill-value="${key}" aria-pressed="${dashboardPlatformFilter === key}"><i data-lucide="${icon}" aria-hidden="true"></i><span>${label}</span></button>`).join("")}</div>`;

@@ -120,6 +120,10 @@ public class BackupFolderPlugin extends Plugin {
                 closeExportStream();
                 exportStream = getContext().getContentResolver().openOutputStream(uri, "wt");
                 if (exportStream == null) throw new Exception("Could not open the chosen file");
+                // Small text exports pass their content up front so the file is written even if the
+                // WebView renderer is discarded while the system "Save as" screen is open.
+                String inline = call.getString("content");
+                if (inline != null) { exportStream.write(inline.getBytes(StandardCharsets.UTF_8)); closeExportStream(); }
                 JSObject out = new JSObject();
                 out.put("uri", uri.toString());
                 call.resolve(out);

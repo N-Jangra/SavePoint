@@ -2,6 +2,48 @@
 
 Notable SavePoint changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/) (`0.x` while the app is evolving).
 
+## [0.1.2] — 2026-11-05
+
+### Added
+
+- **Upcoming** status for games you are waiting on: its own pill with a count on Home, a Home filter option, a "Mark as Upcoming" action, timeline support and its own colour.
+- Rotate button in the screenshot viewer: turn any screenshot or thumbnail to landscape inside the viewer only (the rest of the app is not rotated).
+- Statistics → Play time redesigned: a summary card (logged time, time left and saved, library value, status bar, pace), a By status list (Completed avg length; Playing to finish; On Hold and Backlog time needed; Dropped time saved; money for each), a card to find missing play times, and a paginated game-by-game breakdown. Metrics are memoized so the page scrolls smoothly.
+- Statistics: Library breakdown, Ratings and Activity lists are paginated (10 per page).
+- Statistics → Ratings: a Clear all button that removes every rating (with a confirmation).
+- Settings → Backups → Export opens an Export page: pick JSON, TXT or CSV, then tick what to include (names always, ratings, reviews). Import List also accepts `.txt` and `.csv` lists (a CSV `Rating` column is read), which are then synced from your sources.
+- Home: a share button on each group header (e.g. Playing) opens a popup that shares the group as images that look like the Home list (cover, name, developer · genres, rating, status): pages of 15 games with pagination, or one long picture (parts of 45 games), then Save or Share with on-screen progress. Covers and finished pages are cached in IndexedDB, so reopening is fast, and the next page is prepared in the background.
+- Metadata sync pauses while the app is in the background and resumes when you return (Settings → Metadata → Pause Sync In Background).
+- Statistics sub-pages use an icon (following Icon style) instead of a text badge.
+- Status chip rows on Add and Details fade at the scrolling edge, show a swipe hint on Add, and start scrolled to the selected status.
+- Add Game: the Status chips scroll sideways in one row like the Home pills.
+
+### Changed
+
+- Home: tapping a card's image, name or anywhere on the card opens its details, and Discover cards open details from the image or card too, not just from the name or Details button.
+- Home ⋮ menu order is now Edit entry, View Full Details, Add/Remove favorites, the Mark as options, then Remove from Collection; the heart is filled once a game is a favorite.
+- Rating Format: switching between 5 stars and 10 points rescales saved ratings (4/5 becomes 8/10 and back) instead of reading old stars as points.
+- Restoring a backup keeps each game's saved sources (single or mix) and only fetches details for games that have none; games already in the library get blank ratings, favorites, progress and source details filled in from the backup.
+- Logcat times are shown in the device's own time zone with seconds, newest first.
+- Progress and Goal accept decimals (for example 62.4), and the quick progress step can be below 1.
+- Removed the Games / Sources / Library data tiles from App Info, and the extra helper texts on Discover.
+- Home status pills hug their content and the gap between the pills and the first group is smaller.
+- Quick Rate lists only Completed, Dropped and On Hold games that have no score.
+- Settings → Backups & sync is reordered: storage folder, Export/Import/Restore Preview, Backup schedule, then Include Ratings & Reviews (the default for the Export page checkboxes).
+- The Play on Steam / Buy on Steam button no longer shows an underline and fits narrow screens.
+
+### Fixed
+
+- Saving or sharing a share image now shows its result inside the popup; large images no longer stall Android saves (images are kept under about 235 KB and Capacitor payload logging is off).
+- Names exports write through the native side so the file is complete even if Android discards the page while Save As is open.
+- Discover → Details → "In library · Open" opened "That entry is no longer in your library"; it now opens the saved game.
+- Discover showed "+ Add" again for a game that was already added once its details were enriched; matching now uses the source id and original title.
+- Discover search could fall back to blank/suggestions after a re-render or on Android keyboards whose Enter key is not reported as Enter; the search now survives re-renders and fires once.
+- Home thumbnails stayed blank after searching or filtering until the filter was cleared and the app refreshed.
+- Metadata Sync page could not be scrolled while syncing (it rebuilt the list twice a second) and its header was inset instead of full width.
+- Backups: ratings, favorites and source identity are no longer lost when restoring over an existing or re-synced library.
+- Names lists (.txt / .csv) and old backups without a status import with the default status, so those games appear under a Home group; games already saved without a status are repaired on launch.
+
 ## [0.1.1] — 2026-11-04
 
 ### Added

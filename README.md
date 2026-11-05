@@ -9,11 +9,12 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 | Area | What you can do |
 |---|---|
 | Library | Add games manually or from a metadata source; search, sort, filter, group, and change collection layouts. |
-| Game tracking | Set Backlog, Playing, On Hold, Dropped, or Completed; log playtime, set a goal, and rate games. |
+| Game tracking | Set Backlog, Upcoming, Playing, On Hold, Dropped, or Completed; log playtime, set a goal, and rate games. |
 | Game details | View and cache provider descriptions, portrait covers, screenshots, tags, links, requirements, playtime estimates, and other available details. Steam trailers play inline in the details page. |
 | Discover | Browse suggestions and search a single catalog or enabled sources together; add games directly to the library. |
 | Mix fetch | Experimental combined search that merges matching metadata from enabled sources into one saved game. |
-| Timeline and statistics | Review status changes by day on the Timeline, and explore a Statistics overview with Play time, Library breakdown, Activity and Ratings sub-pages (grouped ratings and quick rate). |
+| Timeline and statistics | Review status changes by day on the Timeline, and explore a Statistics overview with Play time (split by status: time spent, time saved on dropped games, time left on playing and on-hold games, and money per status), Library breakdown, Activity and Ratings sub-pages (grouped ratings and quick rate). |
+| Sharing | Share any Home group (for example Playing) as a names list, as pages of 15 names, or as one long image. |
 | Favorites | Heart a game from its details or the ⋮ menu and filter Home to favorites. |
 | Settings | Customize appearance and navigation; configure metadata sources, storage, backups, tracking, and diagnostics. |
 | Performance | Load library batches and defer off-screen artwork until it approaches the viewport, keeping large image-heavy collections responsive. |
@@ -66,7 +67,7 @@ The core state has three parts:
 | `history` | Activity records used by the Timeline and recent-activity views. |
 | `preferences` | Appearance, navigation, tracking, metadata source settings, credentials, and backup options. |
 
-JSON import currently imports items only; it does not restore history or preferences. Save backups before moving or resetting app data. See [storage documentation](docs/storage.md) and [data schema](docs/db-schema.md).
+Import accepts `.json` backups (history is restored for added games, blank fields of existing games are filled in) and `.txt`/`.csv` names lists; it does not restore preferences. Manual exports can leave out ratings and reviews. Save backups before moving or resetting app data. See [storage documentation](docs/storage.md) and [data schema](docs/db-schema.md).
 
 ## Run the browser preview
 
@@ -95,9 +96,9 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.1` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.2` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
 
-The current 0.1.1 release APK is packaged as `dist/savepoint-0.1.1-release.apk` after a signed release build.
+The current 0.1.2 release APK is packaged as `dist/savepoint-0.1.2-release.apk` after a signed release build.
 
 ## Repository layout
 
@@ -141,7 +142,7 @@ SavePoint/
 | Property | Value |
 |---|---|
 | Package | `savepoint` |
-| Version | `0.1.1` |
+| Version | `0.1.2` |
 | Capacitor / Android application ID | `com.cuemark.savepoint` |
 | Capacitor web directory | `frontend/` |
 | Browser state key | `splitapp_savepoint_v1` |

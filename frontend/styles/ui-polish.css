@@ -9,6 +9,7 @@
   --status-color-playing: #0ea5e9;
   --status-color-completed: #22c55e;
   --status-color-on-hold: #f59e0b;
+  --status-color-upcoming: #8b5cf6;
   --status-color-dropped: #f43f5e;
 }
 body { font-family: var(--font-family); background: var(--page-background, #f5f5f7); color: var(--legacy-text, #1d1d1f); }
@@ -2167,3 +2168,181 @@ body[data-dashboard-view="compact-grid"] .dashboard-card .item-copy h3 { font-si
 .stats-activity-feed > .button, .stats-time-actions .button { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:46px; margin-top:12px; padding:0 16px; border:1px solid var(--line); border-radius:14px; background:var(--accent-soft); color:var(--accent-text,var(--accent)); font-size:.84rem; font-weight:700; }
 .stats-time-actions { display:grid; gap:0; }
 .stats-activity-feed > .button:active, .stats-time-actions .button:active { transform:scale(.98); }
+
+/* 0.1.2: whole cards open details */
+.item-card[data-item],.discover-card[data-discover-details]{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ios-action-sheet .favorite-on{color:#e0245e}.ios-action-sheet .favorite-on svg{fill:currentColor;stroke:currentColor}
+.discover-status-banner:has(.discover-message:empty){display:none}
+
+/* 0.1.2: Add/Edit status chips scroll sideways in one row like the Home pills */
+.entry-status-options{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 -4px;padding:4px 4px 8px;scroll-snap-type:x proximity;touch-action:pan-x pan-y}
+.entry-status-options::-webkit-scrollbar{display:none}
+.entry-status-options .entry-status-option{flex:none;white-space:nowrap;scroll-snap-align:start}
+
+/* 0.1.2: Steam buy/play button is a link — no underline, centred label, never wraps */
+.ios-buy a.button,.ios-buy a.button:hover,.ios-buy a.button:visited{display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap;color:#fff;border:0;box-shadow:0 6px 14px -6px color-mix(in srgb,var(--accent) 70%,transparent)}
+.ios-buy a.button:active{transform:scale(.96)}
+@media (max-width:420px){.ios-buy{flex-wrap:wrap}.ios-buy-copy{flex:1 1 100%}.ios-buy strong{margin-right:auto}}
+body[data-page="dashboard"] .dashboard-status-group > .item-list > .dashboard-card .status-pill[data-status="upcoming"],.timeline-event-status[data-status="upcoming"]{background:color-mix(in srgb,var(--status-color-upcoming) 14%,var(--surface));color:color-mix(in srgb,var(--status-color-upcoming) 74%,var(--legacy-text))}
+
+/* 0.1.2: Home pills hug their content (no trailing space after the count) */
+.home-collection-page .collection-status-pills > button{inline-size:max-content;width:auto;min-width:0;flex:0 0 auto;padding-inline:12px;gap:6px;justify-content:flex-start}
+.home-collection-page .collection-status-pills > button > span{margin:0;padding-inline-end:0}
+.home-collection-page .collection-status-pill-label{flex:none;line-height:1.2}
+.home-collection-page .collection-status-pill-count{display:inline-grid;place-items:center;flex:none;min-width:0;padding:2px 6px;line-height:1.2}
+
+/* 0.1.2: Statistics → Ratings clear button */
+.stats-heading-actions{display:inline-flex;align-items:center;gap:8px}
+.stats-clear-ratings{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 11px;border:1px solid color-mix(in srgb,#dc2626 35%,var(--line));border-radius:999px;background:color-mix(in srgb,#dc2626 8%,var(--surface));color:#dc2626;font:700 .72rem var(--font-family);cursor:pointer}
+.stats-clear-ratings svg{width:14px;height:14px}
+
+/* 0.1.2: Statistics → Play time split by status */
+.stats-time-total{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:2px 0 12px}
+.stats-time-total>span{display:grid;gap:2px;padding:10px 12px;border-radius:14px;background:var(--surface-2)}
+.stats-time-total small{color:var(--muted);font-size:.68rem;font-weight:600;letter-spacing:.02em}
+.stats-time-total strong{font:750 1.05rem/1.2 var(--font-heading,inherit);font-variant-numeric:tabular-nums}
+.stats-status-time{display:grid;gap:10px}
+.stats-status-card{--tone:var(--accent);padding:12px;border:1px solid var(--line);border-left:4px solid var(--tone);border-radius:16px;background:var(--surface)}
+.stats-status-card[data-tone="completed"]{--tone:var(--status-color-completed)}
+.stats-status-card[data-tone="dropped"]{--tone:var(--status-color-dropped)}
+.stats-status-card[data-tone="playing"]{--tone:var(--status-color-playing)}
+.stats-status-card[data-tone="on-hold"]{--tone:var(--status-color-on-hold)}
+.stats-status-card[data-tone="backlog"]{--tone:var(--status-color-backlog)}
+.stats-status-card[data-tone="upcoming"]{--tone:var(--status-color-upcoming)}
+.stats-status-card>header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.stats-status-card-icon{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:10px;background:color-mix(in srgb,var(--tone) 14%,var(--surface));color:var(--tone)}
+.stats-status-card-icon svg{width:17px;height:17px}
+.stats-status-card>header>div{flex:1;min-width:0}
+.stats-status-card h4{margin:0;font:700 .92rem var(--font-family)}
+.stats-status-card>header small{display:block;overflow:hidden;color:var(--muted);font-size:.68rem;text-overflow:ellipsis;white-space:nowrap}
+.stats-status-card>header>b{flex:none;color:var(--tone);font-size:.72rem;font-weight:700}
+.stats-status-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px}
+.stats-status-card-grid>div{display:grid;gap:2px;padding:8px 10px;border-radius:12px;background:var(--surface-2)}
+.stats-status-card-grid small{color:var(--muted);font-size:.66rem;font-weight:600}
+.stats-status-card-grid strong{font:750 .95rem/1.2 var(--font-heading,inherit);font-variant-numeric:tabular-nums}
+
+/* 0.1.2: details status row scrolls sideways like the Home pills */
+.ios-pills.detail-status-pills{display:flex;flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-inline:-4px;padding:4px 4px 8px;scroll-snap-type:x proximity}
+.ios-pills.detail-status-pills::-webkit-scrollbar{display:none}
+.ios-pills.detail-status-pills>.ios-pill{flex:none;white-space:nowrap;scroll-snap-align:start}
+.stats-time-panel .stats-status-time{grid-template-columns:minmax(0,1fr);min-width:0;width:100%}
+.stats-status-card{min-width:0;box-sizing:border-box;overflow:hidden}
+.stats-status-card-grid{grid-template-columns:repeat(auto-fit,minmax(86px,1fr))}
+.stats-status-card>header>b{white-space:nowrap}
+
+/* 0.1.2+: stats sub-page icon (follows Icon style) and coverage chip beside the fetch buttons */
+.stats-subpage .analytics-page-heading .stats-subpage-icon{display:grid;place-items:center;justify-self:end;width:34px;height:34px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--accent-text,var(--accent))}
+.stats-subpage .stats-subpage-icon svg{width:17px;height:17px}
+body[data-icon-style=inline] .stats-subpage .stats-subpage-icon{border:0;background:transparent;width:auto}
+.stats-time-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.stats-time-actions .stats-time-coverage{margin-right:auto}
+
+/* 0.1.2+: edge fades + hint so scrollable status rows are obviously scrollable */
+.entry-status-options.can-scroll-right,.detail-status-pills.can-scroll-right{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 38px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 38px),transparent)}
+.entry-status-options.can-scroll-left,.detail-status-pills.can-scroll-left{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 38px),transparent);mask-image:linear-gradient(to left,#000 calc(100% - 38px),transparent)}
+.entry-status-options.can-scroll-left.can-scroll-right,.detail-status-pills.can-scroll-left.can-scroll-right{-webkit-mask-image:linear-gradient(to right,transparent,#000 38px,#000 calc(100% - 38px),transparent);mask-image:linear-gradient(to right,transparent,#000 38px,#000 calc(100% - 38px),transparent)}
+.scroll-hint{display:flex;align-items:center;gap:4px;margin-top:2px;color:var(--muted);font-size:.7rem;font-weight:600}
+.scroll-hint span{color:var(--accent);font-size:1rem;line-height:1;animation:hint-nudge 1.4s ease-in-out infinite}
+@keyframes hint-nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(4px)}}
+@media (prefers-reduced-motion:reduce){.scroll-hint span{animation:none}}
+.detail-status-pills>.ios-pill{min-height:40px;padding:0 14px}
+
+/* 0.1.2+: Export page */
+.export-page{display:grid;align-content:start;gap:10px;padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+.export-group{display:grid;gap:8px}
+.export-choice{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:15px;background:var(--surface);color:inherit;text-align:left;cursor:pointer}
+.export-choice.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+.export-choice strong{display:block;font-size:.92rem}.export-choice small{display:block;color:var(--muted);font-size:.74rem;margin-top:2px}
+.export-radio,.export-check{flex:none;width:22px;height:22px;border:2px solid var(--muted);display:grid;place-items:center}
+.export-radio{border-radius:50%}.export-check{border-radius:7px}
+.export-choice.active .export-radio,.export-choice.active .export-check{border-color:var(--accent);background:var(--accent)}
+.export-choice.active .export-radio::after{content:"";width:8px;height:8px;border-radius:50%;background:#fff}
+.export-choice.active .export-check::after{content:"";width:6px;height:11px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.export-choice.locked{opacity:.75;cursor:default}
+.export-summary{margin:4px 2px;color:var(--muted);font-size:.8rem}
+.export-run{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;width:100%}
+.export-run svg{width:18px;height:18px}
+.detail-status-pills>.ios-pill{font-size:.78rem;font-weight:650;letter-spacing:0;color:var(--muted)}
+.detail-status-pills>.ios-pill.active{color:#fff}
+body[data-page="export"] .topbar{display:none}
+body[data-page="export"] .app-shell,body[data-page="export"] #page-content,body[data-page="export"] .settings-page{padding-top:0 !important;margin-top:0 !important}
+
+/* 0.1.2+: Home group share */
+.dashboard-status-group>h2{display:flex;align-items:center}
+.group-share-btn{margin-left:auto;display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--accent-text,var(--accent));cursor:pointer}
+.group-share-btn svg{width:17px;height:17px}
+body[data-icon-style=inline] .group-share-btn{border:0;background:transparent}
+.share-body{display:grid;gap:12px;padding:6px 18px calc(18px + env(safe-area-inset-bottom));overflow:auto;max-height:78dvh}
+.share-names-btn{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:15px;background:var(--surface);color:inherit;text-align:left;cursor:pointer}
+.share-names-btn svg{width:22px;height:22px;color:var(--accent)}
+.share-names-btn strong{display:block;font-size:.92rem}.share-names-btn small{color:var(--muted);font-size:.74rem}
+.share-label{margin:4px 2px 0}
+.share-modes{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--surface-2)}
+.share-modes button{min-height:40px;padding:0 8px;border:0;border-radius:11px;background:transparent;color:var(--muted);font:650 .78rem var(--font-family);cursor:pointer}
+.share-modes button.active{background:var(--surface);color:var(--accent-text,var(--accent));box-shadow:var(--shadow)}
+.share-preview{display:grid;place-items:start center;min-height:150px;max-height:28dvh;overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.share-preview img{display:block;width:100%;height:auto}
+.share-pager{display:flex;align-items:center;justify-content:center;gap:16px}
+.share-pager button{width:40px;height:40px;border:1px solid var(--line);border-radius:50%;background:var(--surface);font-size:1.3rem;cursor:pointer}
+.share-pager button:disabled{opacity:.35}
+.share-pager span{min-width:70px;text-align:center;font-weight:700;font-size:.85rem;font-variant-numeric:tabular-nums}
+.share-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* 0.1.2+: Play time redesign */
+.stats-time-total em{display:block;color:var(--muted);font-size:.68rem;font-style:normal;font-weight:500}
+.stats-time-total strong{font-variant-numeric:tabular-nums;}
+.stats-time-total strong.is-accent{color:var(--accent)}
+.stats-status-bar{display:flex;height:8px;gap:2px;margin:14px 0 10px;border-radius:99px;overflow:hidden}
+.stats-status-bar span{display:block;min-width:4px}
+.stats-pace-row{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:.74rem}
+.stats-pace-row b{color:var(--legacy-text,inherit);font-weight:700;text-align:right}
+.stats-section-label{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:16px 4px 8px;color:var(--muted);font-size:.68rem;font-weight:750;letter-spacing:.1em}
+.stats-section-label em{padding:2px 8px;border-radius:99px;background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--accent);font-style:normal;letter-spacing:.04em;font-size:.62rem}
+.stats-status-list{padding:0;overflow:hidden}
+.stats-status-list .stats-status-card{border:0;border-radius:0;border-bottom:1px solid var(--line);padding:14px;background:transparent}
+.stats-status-list .stats-status-card:last-child{border-bottom:0}
+.stats-status-list .stats-status-card>header>b{padding:3px 9px;border-radius:99px;background:color-mix(in srgb,var(--tone) 14%,var(--surface));font-variant-numeric:tabular-nums;font-size:.66rem}
+.stats-status-list .stats-status-card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border-radius:12px;background:var(--surface-2);padding:8px 4px}
+.stats-status-list .stats-status-card-grid>div{background:transparent;padding:0 10px;border-radius:0;border-left:1px solid var(--line)}
+.stats-status-list .stats-status-card-grid>div:first-child{border-left:0}
+.stats-status-list .stats-status-card-grid small{text-transform:uppercase;letter-spacing:.04em;font-size:.58rem}
+.stats-status-list .stats-status-card-grid strong{font-variant-numeric:tabular-nums;font-size:.8rem}
+.stats-fetch-card{display:grid;gap:10px;margin-top:12px;background:color-mix(in srgb,var(--accent) 7%,var(--surface))}
+.stats-fetch-card p{margin:0;font-size:.8rem;line-height:1.5}
+.stats-time-coverage-pill{display:inline-block;margin-right:8px;padding:2px 9px;border:1px solid var(--accent);border-radius:99px;color:var(--accent);font-size:.7rem;font-weight:700}
+.stats-fetch-card .button{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+
+.stats-pager{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 4px 2px;color:var(--muted);font-size:.74rem;font-variant-numeric:tabular-nums}
+.stats-pager button{width:38px;height:38px;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:inherit;font-size:1.3rem;cursor:pointer}
+.stats-pager button:disabled{opacity:.35}
+
+/* 0.1.2+: smoother Play time scrolling */
+.stats-subpage-playtime .stats-status-card,.stats-subpage-playtime .stats-playtime-row{content-visibility:auto;contain-intrinsic-size:auto 110px}
+.stats-subpage-playtime .stats-playtime-row{contain-intrinsic-size:auto 72px}
+.stats-subpage-playtime .stats-panel,.stats-subpage-playtime .stats-status-card{contain:layout paint}
+.stats-subpage-playtime{overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}
+.stats-subpage-playtime .stats-playtime-copy,.stats-subpage-playtime .stats-playtime-track i{transition:none}
+
+/* 0.1.2+: share popup never cuts off its buttons on phones */
+dialog.share-dialog[open]{display:flex;flex-direction:column;max-height:92dvh}
+.share-dialog .share-body{flex:1 1 auto;min-height:0;max-height:none;overflow:auto;padding-bottom:8px}
+.share-dialog .share-preview{max-height:none;min-height:200px}
+.share-dialog .share-footer{flex:none;display:grid;gap:8px;padding:10px 18px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--surface)}
+.share-dialog .share-loading{color:var(--muted);font-size:.8rem;padding:40px 0}
+.share-status{margin:0;padding:8px 12px;border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:.8rem;font-weight:600;text-align:center}
+.share-status[data-tone=ok]{background:color-mix(in srgb,#16a34a 14%,var(--surface));color:#15803d}
+.share-status[data-tone=error]{background:color-mix(in srgb,#dc2626 12%,var(--surface));color:#b91c1c}
+
+/* 0.1.2+: tighter Home pills — label and count sit close together */
+.home-collection-page .collection-status-pills > button{gap:4px;padding-inline:11px;letter-spacing:0;word-spacing:0}
+.home-collection-page .collection-status-pills > button .collection-status-pill-label{margin:0;padding:0;letter-spacing:0}
+.home-collection-page .collection-status-pills > button .collection-status-pill-count{margin:0;min-width:0;padding:2px 6px;letter-spacing:0}
+.home-collection-page .collection-status-pills > button.fav-pill{gap:4px}
+.home-collection-page .collection-status-pills > button.fav-pill svg{margin-right:2px}
+
+/* 0.1.2+: less empty space between the status pills and the first group header */
+.home-collection-page .collection-overview.collection-status-pills{margin-bottom:0;padding-bottom:2px}
+.home-collection-page .library-section{padding-top:0}
+.home-collection-page #collection-results>.dashboard-status-group:first-child,.home-collection-page .dashboard-status-group:first-child{margin-top:4px !important}
+.dashboard-status-group>h2{margin-bottom:6px !important}
+.group-share-btn{width:30px;height:30px}

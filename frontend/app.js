@@ -4,7 +4,7 @@
   const config = window.APP_CONFIG;
   const nativeAndroid = Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor?.getPlatform?.() === "android");
   const dashboardPageSize = nativeAndroid ? 8 : 12;
-  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add Game", "import-preview": "Import List", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
+  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add Game", "import-preview": "Import List", export: "Export", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
   const navItems = [
     { key: "dashboard", label: "Home", icon: "⌂", locked: true },
     { key: "discover", label: "Discover", icon: "✧" },
@@ -21,7 +21,7 @@
     metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg", "igdb"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1, humanReadableStats: false, currencyDisplay: "USD", usdToInrRate: 94.8,
-    backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30, restorePreview: true,
+    backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, pauseSyncInBackground: true, backupIncludeRatings: true, folderSyncDelay: 30, restorePreview: true,
     metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false, igdb: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
     imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
@@ -191,7 +191,7 @@
   let localMutationRevision = 0;
   const mixEnrichmentByItem = new Map();
   const detailRefreshByItem = new Map();
-  let discoverCache = null;
+  let discoverCache = null, discoverSubmitted = "", discoverSubmittedAt = 0;
   let timelineThumbnailLookup = null;
   const timelineLocalThumbnailChecked = new Set();
   const timelineOnlineThumbnailRequested = new Set();
@@ -438,7 +438,7 @@
     if (page === "details" && nextPage !== "details") { detailRequest++; detailLoading = false; }
     page = nextPage in titles ? nextPage : "dashboard";
     statsSubpage = page === "statistics" && statsSections.includes(nextSection) ? normalizeStatsSection(nextSection) : "";
-    if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverRequestId++; discoverCache = null; }
+    if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverSubmitted = ""; discoverRequestId++; discoverCache = null; }
     if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
     if (page !== "settings") settingsGroup = null;
     if (updateHistory) historyPush();
@@ -501,7 +501,7 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
@@ -984,7 +984,8 @@
     if (keepScrollY) window.scrollTo({ top: keepScrollY, behavior: "auto" });
     if (topbarActions) window.lucide?.createIcons({ root: topbarActions, attrs: { "aria-hidden": "true" } });
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
-    else if (page === "discover" && !discoverQuery) loadDiscoverSuggestions();
+    else if (page === "discover" && discoverQuery.trim() && discoverQuery === discoverSubmitted) discover();
+    else if (page === "discover") loadDiscoverSuggestions();
     if (page === "mix") paintMixResults();
     if (page === "statistics") { const chart = $(".stats-activity-chart-month"); if (chart) chart.scrollLeft = chart.scrollWidth; }
     if (preservePageState) {
@@ -1011,6 +1012,7 @@
     }
     window.lucide?.createIcons({ root: content, attrs: { "aria-hidden": "true" } });
     observeDeferredImages(content);
+    setupScrollRows(content);
     content.querySelectorAll("[data-timeline-art]").forEach(image => {
       image.addEventListener("load", () => {
         const candidate = image.dataset.onlineFallback || image.currentSrc || image.src;
@@ -1064,10 +1066,12 @@
     content.querySelectorAll("[data-save-item]").forEach(saveButton => saveButton.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); saveAddForm($("#item-form")); }));
     content.querySelector("[data-discover-submit]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); submitDiscover(); });
     content.querySelector("#discover-query")?.addEventListener("keydown", event => {
-      if (event.key !== "Enter") return;
+      // Android soft keyboards can report Enter as keyCode 13 with an "Unidentified" key.
+      if (event.key !== "Enter" && event.keyCode !== 13) return;
       event.preventDefault(); event.stopPropagation();
       submitDiscover();
     });
+    content.querySelector("#discover-query")?.addEventListener("search", event => { event.stopPropagation(); submitDiscover(); });
     content.querySelector("#discover-query")?.addEventListener("input", event => {
       discoverQuery = event.target.value;
       const clearButton = content.querySelector("[data-clear-discover]");
@@ -1075,7 +1079,7 @@
     });
     content.querySelector("[data-clear-discover]")?.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
-      discoverQuery = ""; discoverRequestId++; discoverCache = null;
+      discoverQuery = ""; discoverSubmitted = ""; discoverRequestId++; discoverCache = null;
       const input = content.querySelector("#discover-query");
       if (input) { input.value = ""; input.focus(); }
       const clearButton = content.querySelector("[data-clear-discover]");
@@ -1256,7 +1260,7 @@
       else if (key === "resetAnimations") resetAnimations();
       else if (key === "previewAnimations") previewAnimations();
       else if (key === "resetAppearance") resetAppearance();
-      else if (key === "export") exportList();
+      else if (key === "export") goto("export");
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary")
           .then(() => toast("Temporary cache cleared."))
@@ -1298,6 +1302,47 @@
     content.querySelector("[data-detail-image-prev]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showDetailImage(detailImagePosition - 1); });
     content.querySelector("[data-detail-image-next]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showDetailImage(detailImagePosition + 1); });
   }
+  // Share images mirror the Home list: cover, title, developer · genres, rating and status.
+  function shareEntry(item) {
+    const fieldValue = pattern => item.cachedDetails?.fields?.find(field => pattern.test(String(field.label || "")))?.value || "";
+    const show = value => Array.isArray(value) ? value.map(show).filter(Boolean).slice(0, 2).join(", ") : value && typeof value === "object" ? show(value.name || value.title || value.label || value.value) : String(value || "").trim();
+    const dev = show(item.facts?.developers || item.cachedDetails?.developers || item.cachedDetails?.developer || fieldValue(/^(developer|developers|studio|studios)$/i));
+    const genre = show(item.facts?.genres || item.cachedDetails?.genres || item.cachedDetails?.genre || fieldValue(/^(genre|genres)$/i));
+    return { id: item.id, title: item.title, subtitle: [dev, genre].filter(Boolean).join(" · "), status: item.status, rating: Number(item.rating) ? `★ ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}` : "" };
+  }
+  const shareCacheGet = async (key, sig) => { const hit = await window.SplitAppIDB?.getThumbs?.([[key, sig]]); return hit?.[0]?.[1] || null; };
+  const shareCachePut = (key, sig, blob) => window.SplitAppIDB?.putThumbs?.([[key, sig, blob]]).catch(() => {});
+  // Same-origin sources only (local data, device cache, or a fetched blob) so the canvas can be exported.
+  async function shareImageFor(entry) {
+    const item = itemById(String(entry.id)); if (!item) return null;
+    const load = url => new Promise(resolve => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = url; });
+    const local = item.localPortraitData || item.localThumbnailData;
+    if (local) { const img = await load(local); if (img) return img; }
+    try { const hit = (await cachedThumbUrls([[thumbKeyOf(item, false), thumbSigOf(item)]])).get(thumbKeyOf(item, false)); if (hit) { const img = await load(hit); if (img) return img; } } catch (_) {}
+    const remote = item.image || item.cachedDetails?.portraitImage;
+    if (/^https?:/i.test(remote || "")) {
+      const response = await requestTimelineImage(remote);
+      if (response) {
+        const blob = await response.blob(); const url = URL.createObjectURL(blob); const img = await load(url); setTimeout(() => URL.revokeObjectURL(url), 30000);
+        if (img) { try { const c = document.createElement("canvas"), k = Math.min(1, 240 / img.width); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); cacheThumbFromItem(item, c.toDataURL("image/jpeg", .8)); } catch (_) {} }
+        return img;
+      }
+    }
+    return null;
+  }
+  // Sideways chip rows: fade the edge that still has content and bring the selected chip into view.
+  function setupScrollRows(root) {
+    root.querySelectorAll(".entry-status-options, .detail-status-pills").forEach(row => {
+      const update = () => {
+        row.classList.toggle("can-scroll-right", row.scrollLeft + row.clientWidth < row.scrollWidth - 4);
+        row.classList.toggle("can-scroll-left", row.scrollLeft > 4);
+      };
+      row.addEventListener("scroll", update, { passive: true });
+      const active = row.querySelector(".active, [aria-pressed=true]");
+      if (active) row.scrollLeft = Math.max(0, active.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft - (row.clientWidth - active.offsetWidth) / 2);
+      update();
+    });
+  }
   function refreshSearchResults(pageKey, targetSelector) {
     const current = $(targetSelector);
     const renderer = window.SplitAppPages[pageKey];
@@ -1309,6 +1354,7 @@
     current.replaceChildren(...fresh.childNodes);
     if (pageKey === "dashboard") observeDashboardLoaders();
     window.lucide?.createIcons({ root: current, attrs: { "aria-hidden": "true" } });
+    observeDeferredImages(current);
   }
   async function refreshStorageDetails() {
     const target = $("#storage-cache-breakdown");
@@ -1573,6 +1619,34 @@
     const goalLabel = $("#goal-label"); goalLabel.hidden = false; goalLabel.firstChild.textContent = cat?.unit ? `Goal (${cat.unit})` : "Goal";
     $("#item-form").elements.progress.step = String(prefs.progressIncrement || 1);
   }
+  // Switching between 5 stars and 10 points rescales saved ratings so a 4/5 becomes 8/10 (and back) instead of
+  // being read on the new scale. 10 -> 5 keeps the exact score so switching back restores it.
+  function convertRatingScale(from, to) {
+    if (from === to) return [];
+    const changed = [];
+    for (const item of items) {
+      const rating = Number(item.rating) || 0;
+      if (!rating) continue;
+      if (to === 10) {
+        const exact = item.ratingExact;
+        item.rating = exact && Math.round(exact / 2) === Math.round(rating) ? exact : Math.min(10, Math.round(rating * 2));
+        delete item.ratingExact;
+      } else {
+        item.ratingExact = rating;
+        item.rating = Math.min(5, Math.max(1, Math.round(rating / 2)));
+      }
+      item.updatedAt = Date.now(); changed.push(item.id);
+    }
+    return changed;
+  }
+  async function clearAllRatings() {
+    const rated = items.filter(item => Number(item.rating) > 0);
+    if (!rated.length) { toast("No ratings to clear."); return; }
+    if (!(await appConfirm(`Remove the rating from ${rated.length} ${rated.length === 1 ? "game" : "games"}? This cannot be undone.`, { title: "Clear all ratings", confirmLabel: "Clear ratings", danger: true }))) return;
+    if (prefs.backupBeforeDestructive) exportList({ silent: true });
+    rated.forEach(item => { item.rating = 0; delete item.ratingExact; item.updatedAt = Date.now(); });
+    persist({ ids: rated.map(item => item.id) }); render(); toast("All ratings cleared.");
+  }
   function updateRatingOptions(chosen = "") {
     const select = $("#item-form")?.elements.rating;
     if (!select) return;
@@ -1613,11 +1687,11 @@
   }
   async function updateProgress(id) {
     const item = itemById(id); if (!item) return;
-    const step = Math.max(1, Number(prefs.progressIncrement) || 1); item.progress = (Number(item.progress) || 0) + step; item.updatedAt = Date.now();
+    const step = Number(prefs.progressIncrement) > 0 ? Number(prefs.progressIncrement) : 1; item.progress = Math.round(((Number(item.progress) || 0) + step) * 1000) / 1000; item.updatedAt = Date.now();
     const previousStatus = item.status;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = "Completed";
-    if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+    if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     await persist({ ids: [item.id] }); render(); toast("Progress updated.");
   }
   function finishDeletingItem(id, returnPage) {
@@ -1660,7 +1734,7 @@
     }
     syncEditedCompletionTarget(draft, item);
     Object.assign(item, draft, { updatedAt: Date.now() });
-    if (oldStatus !== item.status && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+    if (oldStatus !== item.status && ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     detailEditMode = false;
     await persist({ ids: [item.id] }); render(); toast("Entry updated.");
   }
@@ -1668,6 +1742,9 @@
   function submitDiscover() {
     const input = $("#discover-query");
     if (input) discoverQuery = input.value;
+    // Enter fires keydown and "search" together on some keyboards; run the request once.
+    if (discoverQuery === discoverSubmitted && Date.now() - discoverSubmittedAt < 500) return;
+    discoverSubmitted = discoverQuery; discoverSubmittedAt = Date.now();
     discover();
   }
   function setDiscoverEmptyState(title, description = "", retryLabel = "") {
@@ -1680,14 +1757,30 @@
     const hasImage = Boolean(image);
     return `<div class="discover-card-art">${hasImage ? `<img data-deferred-image data-lazy-src="${esc(image)}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<span class="discover-art-fallback" aria-hidden="true"${hasImage ? " hidden" : ""}><i data-lucide="gamepad-2"></i></span></div>`;
   }
+  const normalizeLibraryTitle = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  // Keys that identify the catalog entry a game was added from. Enrichment can later rename the game or change
+  // its year, so matching on the live title alone would show "+ Add" again for a game that is already saved.
+  function libraryOriginKeys(result) {
+    const keys = [];
+    const source = result?.source || result?.metadataSource, id = result?.providerId;
+    if (source && id) keys.push(`id:${source}:${id}`);
+    const title = normalizeLibraryTitle(result?.title);
+    if (title) keys.push(`t:${title}`);
+    return keys;
+  }
   function findLibraryMatch(result) {
     if (!result?.title) return null;
-    const normalize = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const keys = libraryOriginKeys(result);
+    const sourceKey = keys.find(key => key.startsWith("id:"));
+    if (sourceKey) {
+      const byId = items.find(item => (item.originKeys || []).includes(sourceKey) || (item.providerId && item.providerId === result.providerId && (item.metadataSource || item.source) === (result.source || result.metadataSource)));
+      if (byId) return byId;
+    }
     const yearOf = value => String(value || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
-    const title = normalize(result.title);
-    const matches = items.filter(item => item.category === result.category && normalize(item.title) === title);
+    const title = normalizeLibraryTitle(result.title);
+    const matches = items.filter(item => (!result.category || item.category === result.category) && (normalizeLibraryTitle(item.title) === title || (item.originKeys || []).includes(`t:${title}`)));
     const year = yearOf(result.year);
-    if (year) return matches.find(item => yearOf(item.year) === year) || (matches.length === 1 && !yearOf(matches[0].year) ? matches[0] : null);
+    if (year) return matches.find(item => yearOf(item.year) === year) || (matches.length === 1 && !yearOf(matches[0].year) ? matches[0] : null) || matches.find(item => (item.originKeys || []).includes(`t:${title}`) && item.originYear === year) || null;
     return matches.length === 1 ? matches[0] : null;
   }
   function discoverAddButton(result, index) {
@@ -1729,7 +1822,7 @@
       ? results.length + " results found" + (sourceName ? " from " + sourceName : "") + partialMessage
       : "No results found" + (sourceName ? " from " + sourceName : "") + ".";
     setDiscoverStatusState(warnings.length ? "warning" : results.length ? "success" : "neutral");
-    box.innerHTML = results.slice(0, 12).map((result, index) => `<article class="discover-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button>${discoverAddButton(result, index)}</div></div></article>`).join("");
+    box.innerHTML = results.slice(0, 12).map((result, index) => `<article class="discover-card" data-discover-details="${index}">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button>${discoverAddButton(result, index)}</div></div></article>`).join("");
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
     empty.hidden = results.length > 0;
     if (!results.length) setDiscoverEmptyState(
@@ -1785,11 +1878,11 @@
       } finally { clearTimeout(suggestionsTimeout); }
       suggestionsCache = { key: cacheKey, sections };
     }
-    if (requestId !== suggestionsRequest || page !== "discover" || discoverQuery || $("#discover-query")?.value.trim()) return;
+    if (requestId !== suggestionsRequest || page !== "discover" || (discoverQuery.trim() && discoverQuery === discoverSubmitted)) return;
     const flat = [];
     const html = sections.map(section => `<section class="discover-suggest"><h2>${esc(section.title)}</h2><div class="discover-rail">${section.items.map(result => {
       const index = flat.push(result) - 1;
-      return `<article class="discover-card discover-suggest-card">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.subtitle || result.year || "")}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button>${discoverAddButton(result, index)}</div></div></article>`;
+      return `<article class="discover-card discover-suggest-card" data-discover-details="${flat.length - 1}">${discoverCardArtwork(result.image)}<div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.subtitle || result.year || "")}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button>${discoverAddButton(result, index)}</div></div></article>`;
     }).join("")}</div></section>`).join("");
     box.setAttribute("aria-busy", "false");
     box.innerHTML = html || ""; box._results = flat;
@@ -1802,7 +1895,7 @@
       ? "Showing saved suggestions; online requests are off."
       : sections.warnings?.length
         ? "Some sources did not respond. Showing available suggestions."
-        : "Suggestions from your enabled sources — or search above.";
+        : "";
     setDiscoverStatusState(sections.warnings?.length ? "warning" : !navigator.onLine || prefs.metadataMode === "offline" ? "neutral" : "success");
   }
   async function discover({ forceRefresh = false } = {}) {
@@ -1912,10 +2005,10 @@
     let item = findLibraryMatch(result);
     const wasSaved = Boolean(item);
     if (!item) {
-      item = { ...result, metadataSource: result.source || result.metadataSource || "", id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
+      item = { ...result, originKeys: libraryOriginKeys(result), originYear: String(result.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", metadataSource: result.source || result.metadataSource || "", id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
       applyMixIdentity(item, result);
       items.unshift(item);
-      if (["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+      if (["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     }
     item.updatedAt = Date.now();
     await persist({ ids: [item.id] });
@@ -2202,7 +2295,7 @@
     item.progress = watched.size;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
     item.updatedAt = Date.now();
-    if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+    if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     persist({ ids: [item.id] }); render(); toast(watched.has(id) ? "Episode marked watched." : "Episode marked unwatched.");
   }
   function deleteFromDetails(id) {
@@ -2256,7 +2349,7 @@
     }
     const changed = item.status !== status;
     item.status = status; item.updatedAt = Date.now();
-    if (changed && ["Dropped", "Completed", "On Hold", "Playing"].includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
+    if (changed && ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
     await persist({ ids: [item.id] });
     return true;
   }
@@ -2268,9 +2361,9 @@
   }
   function openItemActions(id) {
     const item = itemById(String(id)); if (!item) return;
-    const statusIcons = { Playing: "gamepad-2", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus", Completed: "check-circle" };
-    const statusColors = { Playing: "accent", Backlog: "neutral", "On Hold": "warning", Dropped: "danger", Completed: "success" };
-    const availableStatuses = [...new Set(category(item.category)?.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed"])]
+    const statusIcons = { Playing: "gamepad-2", Upcoming: "calendar-clock", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus", Completed: "check-circle" };
+    const statusColors = { Playing: "accent", Upcoming: "accent", Backlog: "neutral", "On Hold": "warning", Dropped: "danger", Completed: "success" };
+    const availableStatuses = [...new Set(category(item.category)?.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed", "Upcoming"])]
       .filter(status => status !== item.status);
     const statusActions = availableStatuses.map(status => `<button type="button" class="${statusColors[status] || "neutral"}" data-sheet-action="${esc(status)}"><i data-lucide="${statusIcons[status] || "circle"}"></i>Mark as ${esc(status)}</button>`).join("");
     let dialog = $("#item-action-dialog");
@@ -2300,7 +2393,7 @@
       });
     }
     dialog.dataset.itemId = id;
-    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p>${statusActions}<button type="button" data-sheet-action="favorite"><i data-lucide="heart"></i>${item.favorite ? "Remove from favorites" : "Add to favorites"}</button><button type="button" data-sheet-action="edit"><i data-lucide="pencil"></i>Edit entry</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
+    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p><button type="button" data-sheet-action="edit"><i data-lucide="pencil"></i>Edit entry</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" class="${item.favorite ? "favorite-on" : ""}" data-sheet-action="favorite"><i data-lucide="heart"></i>${item.favorite ? "Remove from favorites" : "Add to favorites"}</button>${statusActions}<button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
   }
@@ -2359,6 +2452,7 @@
     if (!dialog) return;
     const opener = detailImageOpener;
     detailImageOpener = null;
+    dialog.classList.remove("is-rotated"); dialog.dataset.rotate = "";
     closePopup(dialog);
     requestAnimationFrame(() => { if (opener?.isConnected) opener.focus({ preventScroll: true }); });
   }
@@ -2466,7 +2560,9 @@
       persist({ meta: true }); render();
       return;
     }
+    const ratingChange = key === "ratingFormat" && value !== prefs.ratingFormat ? convertRatingScale(prefs.ratingFormat === "10-point" ? 10 : 5, value === "10-point" ? 10 : 5) : null;
     prefs[key] = value;
+    if (ratingChange?.length) persist({ ids: ratingChange });
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
     persist({ meta: true }); applyPreferences();
     if (key === "backgroundBackups" || key === "backupSchedule") syncBackupSchedule();
@@ -2516,8 +2612,8 @@
       bottomBarLayout: { spread: "align-horizontal-space-between", center: "align-horizontal-justify-center", left: "align-horizontal-justify-start" },
       dashboardView: { list: "list", "detailed-grid": "layout-dashboard", "compact-grid": "grid-3x3", "large-grid": "square" },
       dashboardDefaultPlatform: { all: "layers-3", pc: "monitor", mac: "laptop", mobile: "smartphone", xbox: "tv", playstation: "gamepad-2", nintendo: "joystick" },
-      dashboardDefaultCategory: { remember: "history", all: "layers", Playing: "gamepad-2", Completed: "circle-check", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus" },
-      defaultStatus: { Backlog: "bookmark", Playing: "play", "On Hold": "pause", Dropped: "circle-x", Completed: "circle-check" },
+      dashboardDefaultCategory: { remember: "history", all: "layers", Playing: "gamepad-2", Completed: "circle-check", Backlog: "bookmark", Upcoming: "calendar-clock", "On Hold": "pause-circle", Dropped: "circle-minus" },
+      defaultStatus: { Backlog: "bookmark", Upcoming: "calendar-clock", Playing: "play", "On Hold": "pause", Dropped: "circle-x", Completed: "circle-check" },
       dateFormat: { auto: "globe", dmy: "calendar", mdy: "calendar", iso: "calendar-days", long: "calendar-check" },
       iconStyle: { tiles: "layout-grid", inline: "list" },
       imageStorage: { all: "images", posters: "image", online: "cloud-off" },
@@ -2527,7 +2623,7 @@
       dashboardSort: { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "rating-desc": "star", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-a-z", "alphabetical-desc": "arrow-up-z-a" },
       ratingFormat: { "5-stars": "star", "10-point": "chart-no-axes-column-increasing" },
       automaticCompletion: { automatic: "refresh-cw", ask: "message-circle-question", manual: "hand" },
-      defaultStatus: { Backlog: "archive", Playing: "gamepad-2", "On Hold": "circle-pause", Dropped: "circle-x", Completed: "circle-check" },
+      defaultStatus: { Backlog: "archive", Upcoming: "calendar-clock", Playing: "gamepad-2", "On Hold": "circle-pause", Dropped: "circle-x", Completed: "circle-check" },
       progressIncrement: { 1: "signal-low", 5: "signal-medium", 10: "signal-high" },
       backupSchedule: { never: "calendar-x", daily: "calendar-days" },
       backupRetention: { 3: "archive", 5: "archive-restore", 10: "boxes", 20: "warehouse" },
@@ -2621,18 +2717,50 @@
   // Native: stream the library in small chunks to a file the user picks with Android's "Save as" screen
   // (silent: straight into the backup folder, used before destructive actions). Browsers get a normal download.
   let exportRunning = false;
+  const REVIEW_FIELDS = ["review", "reviews", "notes"];
+  let exportOptions = { format: "json", ratings: prefs.backupIncludeRatings !== false, reviews: prefs.backupIncludeRatings !== false };
+  // Manual exports honour the Export page options; automatic safety backups (silent) always keep everything.
+  function exportableItems(silent, opts = exportOptions) {
+    if (silent || (opts.ratings && opts.reviews)) return items;
+    return items.map(item => { const copy = { ...item }; if (!opts.ratings) { delete copy.rating; delete copy.ratingExact; } if (!opts.reviews) REVIEW_FIELDS.forEach(field => delete copy[field]); return copy; });
+  }
+  const csvCell = value => { const text = String(value ?? ""); return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
+  async function exportNames(format, opts = exportOptions) {
+    if (!items.length) { toast("Your library is empty."); return; }
+    const sorted = [...items].sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: "base" }));
+    const csv = format === "csv", max = prefs.ratingFormat === "10-point" ? 10 : 5;
+    const reviewOf = item => String(item.review ?? item.reviews ?? item.notes ?? "").replace(/\s+/g, " ").trim();
+    const content = csv
+      ? ["Title", "Year", "Status", ...(opts.ratings ? ["Rating"] : []), ...(opts.reviews ? ["Review"] : [])].join(",") + "\r\n" + sorted.map(item => [item.title, String(item.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", item.status, ...(opts.ratings ? [Number(item.rating) || ""] : []), ...(opts.reviews ? [reviewOf(item)] : [])].map(csvCell).join(",")).join("\r\n") + "\r\n"
+      : sorted.map(item => { const line = String(item.title).replace(/[\r\n]+/g, " ").trim(); const extras = [opts.ratings && Number(item.rating) ? `${item.rating}/${max}` : "", opts.reviews ? reviewOf(item) : ""].filter(Boolean); return extras.length ? `${line} — ${extras.join(" — ")}` : line; }).join("\n") + "\n";
+    const fileName = `${config.key}-names-${new Date().toISOString().slice(0, 10)}.${csv ? "csv" : "txt"}`, mimeType = csv ? "text/csv" : "text/plain";
+    try {
+      if (nativeAndroid && window.SplitAppBackend?.exportTextFile) {
+        toast("Choose where to save your list…");
+        await window.SplitAppBackend.exportTextFile({ fileName, mimeType, content });
+      } else {
+        const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([content], { type: `${mimeType};charset=utf-8` })); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      }
+      toast(`Exported ${items.length} names.`);
+    } catch (error) {
+      const message = String(error?.message || error);
+      if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Names export failed: ${message}`); }
+    }
+  }
+  function runExport() { return exportOptions.format === "json" ? exportList() : exportNames(exportOptions.format); }
   async function exportList({ silent = false } = {}) {
     if (exportRunning) { toast("An export is already running."); return; }
     const backend = window.SplitAppBackend;
+    const exportItems = exportableItems(silent);
     if (nativeAndroid && backend?.exportLibrary) {
       exportRunning = true;
       let lastToast = 0;
       try {
         if (!silent) toast("Choose where to save your library…");
-        const result = await backend.exportLibrary({ items, history, preferences: prefs }, { mode: silent ? "folder" : "ask", onProgress: (done, total) => {
+        const result = await backend.exportLibrary({ items: exportItems, history, preferences: prefs }, { mode: silent ? "folder" : "ask", onProgress: (done, total) => {
           if (Date.now() - lastToast > 700 && done < total) { lastToast = Date.now(); toast(`Exporting… ${Math.round(done / total * 100)}%`); }
         } });
-        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} games.`);
+        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} games${!exportOptions.ratings || !exportOptions.reviews ? " with your export options" : ""}.`);
       } catch (error) {
         const message = String(error?.message || error);
         if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Export failed: ${message}`); }
@@ -2641,7 +2769,7 @@
     }
     const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const parts = [`{"app":${JSON.stringify(config.name)},"version":1,"exportedAt":${JSON.stringify(new Date().toISOString())},"items":[`];
-    items.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(item)));
+    exportItems.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(item)));
     parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
     const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(parts, { type: "application/json" })); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); toast("Export ready.");
   }
@@ -2650,12 +2778,52 @@
     const year = String(item?.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
     return `${item?.category || "game"}:${title}:${year}`;
   }
+  // .txt: one game per line. .csv: first column (or a "Title"/"Name" column) is the title; "Year" and "Status" are optional.
+  function parseNamesList(text, isCsv) {
+    const statuses = config.categories[0].statuses || [];
+    const rows = [];
+    if (isCsv) {
+      let row = [], cell = "", quoted = false;
+      const body = String(text).replace(/^\uFEFF/, "");
+      for (let index = 0; index < body.length; index++) {
+        const char = body[index];
+        if (quoted) { if (char === '"') { if (body[index + 1] === '"') { cell += '"'; index++; } else quoted = false; } else cell += char; }
+        else if (char === '"') quoted = true;
+        else if (char === ",") { row.push(cell); cell = ""; }
+        else if (char === "\n" || char === "\r") { if (char === "\r" && body[index + 1] === "\n") index++; row.push(cell); cell = ""; if (row.some(value => value.trim())) rows.push(row); row = []; }
+        else cell += char;
+      }
+      row.push(cell); if (row.some(value => value.trim())) rows.push(row);
+    } else String(text).split(/\r?\n/).forEach(line => { if (line.trim()) rows.push([line]); });
+    let titleAt = 0, yearAt = -1, statusAt = -1, ratingAt = -1, start = 0;
+    const header = (rows[0] || []).map(value => value.trim().toLowerCase());
+    if (isCsv && header.some(value => ["title", "name", "game"].includes(value))) {
+      titleAt = Math.max(0, header.findIndex(value => ["title", "name", "game"].includes(value)));
+      yearAt = header.indexOf("year"); statusAt = header.indexOf("status"); ratingAt = header.indexOf("rating"); start = 1;
+    }
+    return { items: rows.slice(start).map(row => {
+      const status = statuses.find(name => name.toLowerCase() === String(row[statusAt] || "").trim().toLowerCase());
+      return { title: String(row[titleAt] || "").trim(), ...(yearAt >= 0 && row[yearAt] ? { year: String(row[yearAt]).trim() } : {}), ...(status ? { status } : {}), ...(ratingAt >= 0 && Number(row[ratingAt]) > 0 ? { rating: Number(row[ratingAt]) } : {}) };
+    }).filter(item => item.title) };
+  }
+  // A restored game keeps what it was saved with; only a game with no saved details gets fetched again.
+  const hasSavedMetadata = item => Boolean(item?.cachedDetails || item?.facts?.fetchedAt || item?.mixSources?.length);
+  // Games already in the library keep their data, but blanks (rating, favourite, progress, sources…) are filled from the backup.
+  const RESTORE_FILL_FIELDS = ["rating", "ratingExact", "favorite", "progress", "goal", "completionTarget", "completionTargetHours", "metadataSource", "providerId", "originKeys", "originYear", "mixSources", "mixSourceKeys", "facts", "cachedDetails", "url", "description", "image", "backdrop", "year"];
+  function restorePatch(existing, backup) {
+    const patch = {};
+    const empty = value => value == null || value === "" || value === 0 || value === false || (Array.isArray(value) && !value.length) || (typeof value === "object" && !Array.isArray(value) && !Object.keys(value).length);
+    for (const field of RESTORE_FILL_FIELDS) if (empty(existing[field]) && !empty(backup[field])) patch[field] = backup[field];
+    return Object.keys(patch).length ? patch : null;
+  }
   async function importList(file) {
     if (!file) return;
     importState = { phase: "reading", fileName: file.name || "Library backup", fileSize: Number(file.size) || 0, incoming: [], fresh: [], skipped: 0, completed: 0, synced: 0, failed: 0, error: "" };
     goto("import-preview");
     try {
-      const data = JSON.parse(await file.text()); const incoming = Array.isArray(data) ? data : data.items;
+      const text = await file.text();
+      const asList = /\.(txt|csv)$/i.test(file.name || "") || !/^\s*[\[{]/.test(text);
+      const data = asList ? parseNamesList(text, /\.csv$/i.test(file.name || "")) : JSON.parse(text); const incoming = Array.isArray(data) ? data : data.items;
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
       const now = Date.now();
       const idMap = new Map();
@@ -2664,7 +2832,8 @@
         const id = crypto.randomUUID();
         if (item.id != null) idMap.set(String(item.id), id);
         // Keep the backup's own dates so Timeline and Activity show when things really happened.
-        return { ...item, id, category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
+        const catKey = config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key;
+        return { ...item, id, category: catKey, status: item.status || prefs.defaultStatus || defaultStatus(catKey), createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
       });
       const known = new Set(items.map(importIdentity));
       const seen = new Set();
@@ -2674,12 +2843,16 @@
         seen.add(identity);
         return true;
       });
+      const freshIdentity = new Set(fresh.map(item => item.id));
+      const byIdentity = new Map(items.map(item => [importIdentity(item), item]));
+      const patches = [];
+      normalized.forEach(item => { const existing = byIdentity.get(importIdentity(item)); const patch = existing && !freshIdentity.has(item.id) ? restorePatch(existing, item) : null; if (patch) patches.push({ id: existing.id, patch }); });
       // Timeline/Activity read from history: use the backup's history (re-pointed at the new ids), or build it from statuses.
       const freshIds = new Set(fresh.map(item => item.id));
       const fileHistory = Array.isArray(data.history) ? data.history : [];
       let importedHistory = fileHistory.filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
-      if (!importedHistory.length) importedHistory = fresh.filter(item => ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
-      importState = { ...importState, phase: "preview", incoming: normalized, fresh, importedHistory, skipped: normalized.length - fresh.length };
+      if (!importedHistory.length) importedHistory = fresh.filter(item => ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
+      importState = { ...importState, phase: "preview", incoming: normalized, fresh, patches, importedHistory, skipped: normalized.length - fresh.length };
       render();
       if (prefs.restorePreview === false && fresh.length) continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not finish the restore."; render(); } });
     } catch (error) {
@@ -2712,14 +2885,16 @@
     await new Promise(resolve => requestAnimationFrame(resolve));
     items = [...fresh, ...items];
     history = [...(importState.importedHistory || []), ...history].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0));
-    await persist({ ids: fresh.map(item => item.id) });
+    const patchedIds = [];
+    for (const { id, patch } of importState.patches || []) { const existing = itemById(id); if (existing) { Object.assign(existing, patch, { updatedAt: Date.now() }); patchedIds.push(id); } }
+    await persist({ ids: [...fresh.map(item => item.id), ...patchedIds] });
     const count = fresh.length;
     importState = { ...importState, phase: "complete", completed: count, total: count };
     render();
     await new Promise(resolve => setTimeout(resolve, 600));
     importState = null;
     goto("dashboard");
-    const started = startSyncJob(fresh);
+    const started = startSyncJob(fresh.filter(item => !hasSavedMetadata(item)));
     toast(started ? `Added ${count} ${count === 1 ? "game" : "games"}. Syncing metadata in the background.` : `Added ${count} ${count === 1 ? "game" : "games"}.`);
   }
   // ---- Background metadata sync -------------------------------------------
@@ -2818,13 +2993,13 @@
     if (!c.failed) syncHideTimer = setTimeout(() => { if (syncJob === job) { syncJob = null; updateSyncUI(); if (page === "sync") render(); } }, 6000);
   }
   let syncActionListener = null;
-  function setSyncPaused(paused) {
+  function setSyncPaused(paused, { quiet = false } = {}) {
     if (!syncJob || syncJob.finished || syncJob.paused === paused) return;
     syncJob.paused = paused;
     if (!paused) { const waiters = syncJob.waiters; syncJob.waiters = []; waiters.forEach(resolve => resolve()); }
     updateSyncUI();
     if (page === "sync") render();
-    toast(paused ? "Sync paused." : "Sync resumed.");
+    if (!quiet) toast(paused ? "Sync paused." : "Sync resumed.");
   }
   function retrySyncFailures() {
     if (!syncJob || !syncJob.finished) return;
@@ -2877,10 +3052,20 @@
     root.style.setProperty("--p", c.percent + "%");
     set("[data-sync-percent]", c.percent + "%"); set("[data-sync-completed]", `${c.completed} / ${c.total}`);
     set("[data-sync-done]", c.done); set("[data-sync-failed]", c.failed); set("[data-sync-active]", c.total - c.completed);
-    // Only the ~60 rendered rows matter; re-render (at most twice a second) when one changed state.
+    // Only the ~60 rendered rows matter. Patch changed rows in place: a full render would rebuild the list and
+    // throw the scroll position back to the top while the user is reading it.
     const byId = new Map((syncJob?.entries || []).map(entry => [entry.id, entry]));
-    const stale = [...root.querySelectorAll("[data-sync-row]")].some(row => byId.get(row.dataset.syncRow)?.status !== row.dataset.status);
-    if (stale && !syncPageRenderTimer) syncPageRenderTimer = setTimeout(() => { syncPageRenderTimer = 0; if (page === "sync") render(); }, 500);
+    const labels = { syncing: syncJob?.paused ? "Finishing…" : "Syncing…", queued: syncJob?.paused ? "Paused" : "Waiting", done: "Updated", failed: "Failed" };
+    const icons = { syncing: "loader-circle", queued: "clock", done: "circle-check", failed: "circle-alert" };
+    root.querySelectorAll("[data-sync-row]").forEach(row => {
+      const entry = byId.get(row.dataset.syncRow); if (!entry || entry.status === row.dataset.status) return;
+      row.className = `sync-row is-${entry.status}`; row.dataset.status = entry.status;
+      const label = row.querySelector("em"); if (label) label.textContent = labels[entry.status] || "";
+      const icon = row.querySelector("svg, i[data-lucide]");
+      if (icon) { const fresh = document.createElement("i"); fresh.dataset.lucide = icons[entry.status] || "clock"; fresh.setAttribute("aria-hidden", "true"); icon.replaceWith(fresh); window.lucide?.createIcons({ root: row, attrs: { "aria-hidden": "true" } }); }
+      const copy = row.querySelector("span"); copy?.querySelector("small")?.remove();
+      if (entry.error && copy) { const small = document.createElement("small"); small.textContent = entry.error; copy.appendChild(small); }
+    });
   }
   let syncPageRenderTimer = 0;
   function resetDashboard() {
@@ -2995,6 +3180,15 @@
       }
       return;
     }
+    const shareGroup = event.target.closest("[data-share-group]");
+    if (shareGroup) {
+      const key = shareGroup.dataset.shareGroup, by = prefs.dashboardGroupBy || "status";
+      const list = dashboardSortedItems().filter(item => by === "status" ? item.status === key : by === "category" ? String(item.category || "other") === key : by === "none" ? true : String(item.year || "Unknown release date") === key);
+      window.SplitAppShare.open({ title: by === "none" ? "All games" : key, entries: list.map(shareEntry), getImage: shareImageFor }, { showPopup, closePopup, toast, esc, cacheGet: shareCacheGet, cachePut: shareCachePut });
+      return;
+    }
+    const itemCard = event.target.closest(".item-card[data-item]");
+    if (itemCard && !event.target.closest("button,a,input,select,textarea,label")) { openDetails(itemCard.dataset.item); return; }
     const itemMenu = event.target.closest("[data-open-item-actions]");
     if (itemMenu) { openItemActions(itemMenu.dataset.openItemActions); return; }
     const dashboardViewChoice = event.target.closest("button[data-dashboard-view]");
@@ -3010,6 +3204,7 @@
       showDetailImage($$("[data-detail-image-src]", $("#page-content")).indexOf(detailImage));
       return;
     }
+    if (event.target.closest("[data-detail-image-rotate]")) { const modal = $("#detail-image-modal"); if (modal) { const next = { "": "cw", cw: "ccw", ccw: "" }[modal.dataset.rotate || ""]; modal.dataset.rotate = next; modal.classList.toggle("is-rotated", Boolean(next)); } return; }
     if (event.target.closest("[data-detail-image-close]")) { closeDetailImage(); return; }
     if (event.target.closest("[data-detail-image-prev]")) { showDetailImage(detailImagePosition - 1); return; }
     if (event.target.closest("[data-detail-image-next]")) { showDetailImage(detailImagePosition + 1); return; }
@@ -3028,17 +3223,24 @@
     if (event.target.closest("[data-custom-source-test]")) { testCustomSourceForm(); return; }
     if (event.target.closest("[data-custom-source-delete]")) { deleteCustomSource(); return; }
     const rangeButton = event.target.closest("[data-stats-range]");
-    if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; statsActivityDate = ""; render(); return; }
+    if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; statsActivityDate = ""; statsLimits = { ...statsLimits, pages: { ...(statsLimits.pages || {}), act: 0 } }; render(); return; }
     const activityDay = event.target.closest("[data-stats-activity-date]");
-    if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; render(); return; }
+    if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; statsLimits = { ...statsLimits, pages: { ...(statsLimits.pages || {}), act: 0 } }; render(); return; }
     const statsGroup = event.target.closest("[data-stats-group]");
     if (statsGroup) { const score = statsGroup.dataset.statsGroup; const wasOpen = statsGroup.getAttribute("aria-expanded") === "true"; statsLimits = { ...statsLimits, open: { ...(statsLimits.open || {}), [score]: !wasOpen } }; render(); return; }
     const statsMore = event.target.closest("[data-stats-more]");
     if (statsMore) { const kind = statsMore.dataset.statsMore === "rated" ? "rated" : "quick"; statsLimits = { ...statsLimits, [kind]: statsLimits[kind] + (kind === "rated" ? 15 : 10) }; render(); return; }
+    if (event.target.closest("[data-clear-all-ratings]")) { clearAllRatings(); return; }
+    const pgBtn = event.target.closest("[data-stats-pg]");
+    if (pgBtn) { const [key, dir] = pgBtn.dataset.statsPg.split("|"); const pages = { ...(statsLimits.pages || {}) }; pages[key] = Math.max(0, (pages[key] || 0) + (dir === "next" ? 1 : -1)); statsLimits = { ...statsLimits, pages }; render(); return; }
+    const libSummary = event.target.closest("details[data-stats-lib] > summary");
+    if (libSummary) { event.preventDefault(); const k2 = libSummary.parentElement.dataset.statsLib; statsLimits = { ...statsLimits, libOpen: { ...(statsLimits.libOpen || {}), [k2]: !(statsLimits.libOpen || {})[k2] } }; render(); return; }
+    const ptBtn = event.target.closest("[data-stats-pt]");
+    if (ptBtn) { statsLimits = { ...statsLimits, playtimePage: Math.max(0, (statsLimits.playtimePage || 0) + (ptBtn.dataset.statsPt === "next" ? 1 : -1)) }; render(); return; }
     const statsRating = event.target.closest("[data-stats-rating]");
     if (statsRating) {
       const item = itemById(String(statsRating.dataset.statsRating));
-      if (item) { item.rating = Number(statsRating.dataset.score) || 0; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
+      if (item) { item.rating = Number(statsRating.dataset.score) || 0; delete item.ratingExact; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
       return;
     }
     const findHours = event.target.closest("[data-stats-find-hours]");
@@ -3152,7 +3354,7 @@
     const settingAction = event.target.closest("[data-setting-action]");
     if (settingAction && settingAction.type !== "file") {
       const key = settingAction.dataset.settingAction;
-      if (key === "export") exportList(); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
+      if (key === "export") goto("export"); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary");
         toast("Temporary cache cleared.");
@@ -3163,9 +3365,15 @@
     if (event.target.closest("[data-sync-retry]")) { retrySyncFailures(); return; }
     if (event.target.closest("[data-sync-dismiss]")) { if (syncJob?.finished) { syncJob = null; updateSyncUI(); goto("dashboard"); } return; }
     if (event.target.closest("[data-continue-import]")) { continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not restore this library."; render(); } }); return; }
+    const exportFormat = event.target.closest("[data-export-format]");
+    if (exportFormat) { exportOptions = { ...exportOptions, format: exportFormat.dataset.exportFormat }; render(); return; }
+    const exportOpt = event.target.closest("[data-export-opt]");
+    if (exportOpt) { exportOptions = { ...exportOptions, [exportOpt.dataset.exportOpt]: !exportOptions[exportOpt.dataset.exportOpt] }; render(); return; }
+    if (event.target.closest("[data-run-export]")) { runExport(); return; }
     if (event.target.closest("[data-cancel-import]")) { importState = null; settingsGroup = "backups"; goto("settings"); return; }
-    const sourceDetails = event.target.closest("[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
     const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { await addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); return; }
+    if (event.target.closest("[data-discover-row-add]")) return;
+    const sourceDetails = event.target.closest("[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
   });
   document.addEventListener("change", event => {
     const input = event.target;
@@ -3463,7 +3671,7 @@
     if (!(next in titles)) return;
     const previousPage = page;
     if (previousPage === "details" && next !== "details") { detailRequest++; detailLoading = false; }
-    if (next !== "discover") { discoverQuery = ""; discoverRequestId++; }
+    if (next !== "discover") { discoverQuery = ""; discoverSubmitted = ""; discoverRequestId++; }
     if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
     else if (previousPage !== "add") { entryDraftId = null; addMetadataQuery = ""; } // opening Add from a link/back is a new entry
     const previousDiscoverSource = discoverSource;
@@ -3515,7 +3723,16 @@
   window.addEventListener("hashchange", syncRouteFromHash);
   window.addEventListener("storage", event => { if (event.key === storageKey) toast("Library changed in another tab."); });
   window.addEventListener("beforeunload", flushPersist);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPersist(); });
+  // Save battery: metadata sync stops while the app is in the background and resumes when it comes back.
+  let syncAutoPaused = false;
+  function applyBackgroundState(hidden) {
+    if (hidden) {
+      flushPersist();
+      if (prefs.pauseSyncInBackground !== false && syncJob && !syncJob.finished && !syncJob.paused) { syncAutoPaused = true; setSyncPaused(true, { quiet: true }); }
+    } else if (syncAutoPaused) { syncAutoPaused = false; if (syncJob && !syncJob.finished && syncJob.paused) setSyncPaused(false, { quiet: true }); }
+  }
+  document.addEventListener("visibilitychange", () => applyBackgroundState(document.visibilityState === "hidden"));
+  try { window.Capacitor?.Plugins?.App?.addListener?.("appStateChange", state => applyBackgroundState(!state?.isActive)); } catch (_) {}
   window.addEventListener("error", event => recordLog("error", event.message || "Unknown page error"));
   window.addEventListener("unhandledrejection", event => recordLog("error", event.reason?.message || event.reason || "Unhandled promise rejection"));
   async function restoreNativeData({ fast = false } = {}) {
@@ -3533,6 +3750,9 @@
         if (old) { item.localPortraitData = old.localPortraitData; item.localThumbnailData = old.localThumbnailData; item.localLandscapeData = old.localLandscapeData; }
       });
       const nativeItems = Array.isArray(restored.items) ? restored.items.filter(item => config.categories.some(category => category.key === item.category)) : items;
+      // A game saved without a status would not appear under any Home group; give it the default one.
+      const repairedIds = nativeItems.filter(item => item && !item.status).map(item => { item.status = prefs.defaultStatus || defaultStatus(item.category); return item.id; });
+      if (repairedIds.length) persist({ ids: repairedIds });
       const nativeHistory = Array.isArray(restored.history) ? restored.history : history;
       const nativePreferences = restored.preferences && typeof restored.preferences === "object" ? restored.preferences : {};
       if (localMutationRevision === initialRevision) {
