@@ -2266,3 +2266,24 @@ body[data-icon-style=inline] .stats-subpage .stats-subpage-icon{border:0;backgro
 .detail-status-pills>.ios-pill.active{color:#fff}
 body[data-page="export"] .topbar{display:none}
 body[data-page="export"] .app-shell,body[data-page="export"] #page-content,body[data-page="export"] .settings-page{padding-top:0 !important;margin-top:0 !important}
+
+/* 0.1.2+: Home group share */
+.dashboard-status-group>h2{display:flex;align-items:center}
+.group-share-btn{margin-left:auto;display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--accent-text,var(--accent));cursor:pointer}
+.group-share-btn svg{width:17px;height:17px}
+body[data-icon-style=inline] .group-share-btn{border:0;background:transparent}
+.share-body{display:grid;gap:12px;padding:6px 18px calc(18px + env(safe-area-inset-bottom));overflow:auto;max-height:78dvh}
+.share-names-btn{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:15px;background:var(--surface);color:inherit;text-align:left;cursor:pointer}
+.share-names-btn svg{width:22px;height:22px;color:var(--accent)}
+.share-names-btn strong{display:block;font-size:.92rem}.share-names-btn small{color:var(--muted);font-size:.74rem}
+.share-label{margin:4px 2px 0}
+.share-modes{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--surface-2)}
+.share-modes button{min-height:40px;padding:0 8px;border:0;border-radius:11px;background:transparent;color:var(--muted);font:650 .78rem var(--font-family);cursor:pointer}
+.share-modes button.active{background:var(--surface);color:var(--accent-text,var(--accent));box-shadow:var(--shadow)}
+.share-preview{display:grid;place-items:center;min-height:180px;max-height:46dvh;overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.share-preview img{display:block;width:100%;height:auto}
+.share-pager{display:flex;align-items:center;justify-content:center;gap:16px}
+.share-pager button{width:40px;height:40px;border:1px solid var(--line);border-radius:50%;background:var(--surface);font-size:1.3rem;cursor:pointer}
+.share-pager button:disabled{opacity:.35}
+.share-pager span{min-width:70px;text-align:center;font-weight:700;font-size:.85rem;font-variant-numeric:tabular-nums}
+.share-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}

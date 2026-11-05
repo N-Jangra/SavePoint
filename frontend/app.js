@@ -3152,6 +3152,13 @@
       }
       return;
     }
+    const shareGroup = event.target.closest("[data-share-group]");
+    if (shareGroup) {
+      const key = shareGroup.dataset.shareGroup, by = prefs.dashboardGroupBy || "status";
+      const list = dashboardSortedItems().filter(item => by === "status" ? item.status === key : by === "category" ? String(item.category || "other") === key : by === "none" ? true : String(item.year || "Unknown release date") === key);
+      window.SplitAppShare.open({ title: by === "none" ? "All games" : key, names: list.map(item => item.title) }, { showPopup, closePopup, toast, esc });
+      return;
+    }
     const itemCard = event.target.closest(".item-card[data-item]");
     if (itemCard && !event.target.closest("button,a,input,select,textarea,label")) { openDetails(itemCard.dataset.item); return; }
     const itemMenu = event.target.closest("[data-open-item-actions]");
