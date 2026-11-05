@@ -1809,7 +1809,7 @@
       ? "Showing saved suggestions; online requests are off."
       : sections.warnings?.length
         ? "Some sources did not respond. Showing available suggestions."
-        : "Suggestions from your enabled sources — or search above.";
+        : "";
     setDiscoverStatusState(sections.warnings?.length ? "warning" : !navigator.onLine || prefs.metadataMode === "offline" ? "neutral" : "success");
   }
   async function discover({ forceRefresh = false } = {}) {
