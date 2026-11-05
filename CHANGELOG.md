@@ -2,6 +2,39 @@
 
 Notable SavePoint changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/) (`0.x` while the app is evolving).
 
+## [0.1.2] — 2026-11-05
+
+### Added
+
+- **Upcoming** status for games you are waiting on: its own pill with a count on Home, a Home filter option, a "Mark as Upcoming" action, timeline support and its own colour.
+- Rotate button in the screenshot viewer: turn any screenshot or thumbnail to landscape inside the viewer only (the rest of the app is not rotated).
+- Statistics → Play time is now split by status: Completed (time spent), Dropped (time spent and time saved), Playing and On Hold (time spent and time left), Backlog and Upcoming (games and money only), each with the money value of its games.
+- Statistics → Ratings: a Clear all button that removes every rating (with a confirmation).
+- Settings → Backups: Export Names (TXT) and Export Names (CSV) write a titles-only list; Import List now also accepts `.txt` and `.csv` names lists, which are then synced from your sources.
+- Settings → Backups: Include Ratings & Reviews toggle for manual JSON exports.
+- Add Game: the Status chips scroll sideways in one row like the Home pills.
+
+### Changed
+
+- Home: tapping a card's image, name or anywhere on the card opens its details, and Discover cards open details from the image or card too, not just from the name or Details button.
+- Home ⋮ menu order is now Edit entry, View Full Details, Add/Remove favorites, the Mark as options, then Remove from Collection; the heart is filled once a game is a favorite.
+- Rating Format: switching between 5 stars and 10 points rescales saved ratings (4/5 becomes 8/10 and back) instead of reading old stars as points.
+- Restoring a backup keeps each game's saved sources (single or mix) and only fetches details for games that have none; games already in the library get blank ratings, favorites, progress and source details filled in from the backup.
+- Logcat times are shown in the device's own time zone with seconds, newest first.
+- Progress and Goal accept decimals (for example 62.4), and the quick progress step can be below 1.
+- Removed the Games / Sources / Library data tiles from App Info, and the extra helper texts on Discover.
+- Home status pills hug their content (no extra space after the count).
+- The Play on Steam / Buy on Steam button no longer shows an underline and fits narrow screens.
+
+### Fixed
+
+- Discover → Details → "In library · Open" opened "That entry is no longer in your library"; it now opens the saved game.
+- Discover showed "+ Add" again for a game that was already added once its details were enriched; matching now uses the source id and original title.
+- Discover search could fall back to blank/suggestions after a re-render or on Android keyboards whose Enter key is not reported as Enter; the search now survives re-renders and fires once.
+- Home thumbnails stayed blank after searching or filtering until the filter was cleared and the app refreshed.
+- Metadata Sync page could not be scrolled while syncing (it rebuilt the list twice a second) and its header was inset instead of full width.
+- Backups: ratings, favorites and source identity are no longer lost when restoring over an existing or re-synced library.
+
 ## [0.1.1] — 2026-11-04
 
 ### Added
