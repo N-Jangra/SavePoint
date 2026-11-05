@@ -1,6 +1,6 @@
 // Share a Home group as images that look like the Home list (cover, title, subtitle, rating, status).
 (() => {
-  const PER_PAGE = 15, LONG_CHUNK = 45, W = 1080, ROW = 176, HEAD = 200, FOOT = 84, PAD = 40;
+  const PER_PAGE = 15, LONG_CHUNK = 45, W = 1080, ROW = 196, HEAD = 200, FOOT = 84, PAD = 40;
   const native = () => window.Capacitor?.Plugins?.ShareIntent;
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const fit = (ctx, text, max) => {
@@ -17,6 +17,18 @@
   const coverJobs = new Map();
   const coverOf = (entry, getImage) => { if (!coverJobs.has(entry.id)) coverJobs.set(entry.id, getImage(entry).catch(() => null)); return coverJobs.get(entry.id); };
   const waitFor = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(undefined), ms))]);
+  // Resolve any CSS colour expression (vars, color-mix) to rgb() so the canvas follows the active theme.
+  const probe = document.createElement("span");
+  const resolve = (expr, fallback) => { try { probe.style.color = ""; probe.style.color = expr; document.body.appendChild(probe); const c = getComputedStyle(probe).color; probe.remove(); return c || fallback; } catch (_) { return fallback; } };
+  const withAlpha = (color, alpha) => { const m = String(color).match(/rgba?\(([^)]+)\)/); if (!m) return color; const [r, g, b] = m[1].split(/[ ,\/]+/).map(Number); return `rgba(${r},${g},${b},${alpha})`; };
+  const themeColors = () => ({
+    page: getComputedStyle(document.body).backgroundColor || "#f2f3f9",
+    card: resolve("var(--surface)", "#fff"), card2: resolve("var(--surface-2)", "#f2f3f9"), line: resolve("var(--line)", "#e8eaf2"),
+    text: getComputedStyle(document.body).color || "#1c2030", muted: resolve("var(--muted)", "#7a8094"), accent: resolve("var(--accent)", "#6355f5"),
+    status: s => resolve(`var(--status-color-${String(s || "").toLowerCase().replace(/\s+/g, "-")}, var(--accent))`, "#6355f5")
+  });
+  const themeKey = () => { const c = themeColors(); return [c.page, c.card, c.accent, c.text].join("|"); };
+
   async function drawSheet({ title, entries, start, total, page, pages, showHead, getImage }) {
     const jobs = entries.map(entry => coverOf(entry, getImage));
     let images = await Promise.all(jobs.map(job => waitFor(job, 4000)));
@@ -24,42 +36,48 @@
     if (images.some(img => img === undefined)) images = await Promise.all(jobs.map((job, i) => images[i] === undefined ? waitFor(job, 9000) : images[i]));
     const missing = images.filter(img => img === undefined).length;
     images = images.map(img => img || null);
+    const C = themeColors();
     const head = showHead ? HEAD : 24, rows = entries.length;
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = head + rows * ROW + FOOT;
     const ctx = canvas.getContext("2d");
     const font = getComputedStyle(document.body).fontFamily || "sans-serif";
-    const accent = css("--accent") || "#6355f5";
-    ctx.fillStyle = "#f2f3f9"; ctx.fillRect(0, 0, W, canvas.height);
+    ctx.fillStyle = C.page; ctx.fillRect(0, 0, W, canvas.height);
     if (showHead) {
-      ctx.fillStyle = accent; ctx.fillRect(0, 0, W, HEAD);
+      ctx.fillStyle = C.accent; ctx.fillRect(0, 0, W, HEAD);
       ctx.fillStyle = "#fff"; ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
       ctx.font = `800 64px ${font}`; ctx.fillText(fit(ctx, title, W - PAD * 2), PAD, 96);
       ctx.globalAlpha = .85; ctx.font = `600 34px ${font}`;
       ctx.fillText(`${total} ${total === 1 ? "game" : "games"}${pages > 1 ? ` · page ${page} of ${pages}` : ""}`, PAD, 150); ctx.globalAlpha = 1;
     }
-    // One white card holding the rows, like the Home list.
-    ctx.fillStyle = "#fff"; roundRect(ctx, 20, head, W - 40, rows * ROW, 28); ctx.fill();
+    ctx.fillStyle = C.card; roundRect(ctx, 20, head, W - 40, rows * ROW, 28); ctx.fill();
+    ctx.strokeStyle = C.line; ctx.lineWidth = 2; roundRect(ctx, 20, head, W - 40, rows * ROW, 28); ctx.stroke();
     entries.forEach((entry, index) => {
       const y = head + index * ROW, art = { x: 44, y: y + 18, w: 108, h: ROW - 36 };
-      if (index) { ctx.fillStyle = "#e8eaf2"; ctx.fillRect(176, y, W - 216, 2); }
+      if (index) { ctx.fillStyle = C.line; ctx.fillRect(176, y, W - 216, 2); }
       ctx.save(); roundRect(ctx, art.x, art.y, art.w, art.h, 16); ctx.clip();
       const img = images[index];
       if (img) {
         const scale = Math.max(art.w / img.width, art.h / img.height), dw = img.width * scale, dh = img.height * scale;
         ctx.drawImage(img, art.x + (art.w - dw) / 2, art.y + (art.h - dh) / 2, dw, dh);
-      } else { ctx.fillStyle = "#dff1ea"; ctx.fillRect(art.x, art.y, art.w, art.h); ctx.fillStyle = "#4b8f78"; ctx.font = `700 40px ${font}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("🎮", art.x + art.w / 2, art.y + art.h / 2); }
+      } else { ctx.fillStyle = withAlpha(C.accent, .14); ctx.fillRect(art.x, art.y, art.w, art.h); ctx.fillStyle = C.muted; ctx.font = `700 40px ${font}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("🎮", art.x + art.w / 2, art.y + art.h / 2); }
       ctx.restore();
       const tx = 176, maxW = W - tx - 48;
       ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-      ctx.fillStyle = "#1c2030"; ctx.font = `700 38px ${font}`; ctx.fillText(fit(ctx, entry.title, maxW), tx, y + 62);
-      ctx.fillStyle = "#7a8094"; ctx.font = `500 27px ${font}`; if (entry.subtitle) ctx.fillText(fit(ctx, entry.subtitle, maxW), tx, y + 100);
-      let px = tx; const py = y + 118, ph = 38;
+      ctx.fillStyle = C.text; ctx.font = `700 38px ${font}`; ctx.fillText(fit(ctx, entry.title, maxW), tx, y + 60);
+      ctx.fillStyle = C.muted; ctx.font = `500 27px ${font}`; if (entry.subtitle) ctx.fillText(fit(ctx, entry.subtitle, maxW), tx, y + 98);
+      let px = tx; const py = y + 112, ph = 38;
       const pill = (text, bg, fg) => { ctx.font = `700 24px ${font}`; const w = ctx.measureText(text).width + 32; ctx.fillStyle = bg; roundRect(ctx, px, py, w, ph, 12); ctx.fill(); ctx.fillStyle = fg; ctx.textBaseline = "middle"; ctx.fillText(text, px + 16, py + ph / 2 + 1); ctx.textBaseline = "alphabetic"; px += w + 12; };
-      if (entry.rating) pill(entry.rating, "#fdf0d5", "#a8690a");
-      if (entry.status) { const c = statusColor(entry.status); pill(entry.status, c + "26", c); }
+      if (entry.rating) pill(entry.rating, "rgba(245,158,11,.18)", "#d97706");
+      if (entry.status) { const c = C.status(entry.status); pill(entry.status, withAlpha(c, .18), c); }
+      if (entry.progressText) { ctx.font = `700 26px ${font}`; ctx.fillStyle = C.text; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText(entry.progressText, W - 48, py + ph / 2 + 1); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; }
+      if (entry.percent != null) {
+        const bx = tx, bw = W - tx - 48, by = y + 164;
+        ctx.fillStyle = C.card2; roundRect(ctx, bx, by, bw, 10, 5); ctx.fill();
+        if (entry.percent > 0) { ctx.fillStyle = C.accent; roundRect(ctx, bx, by, Math.max(10, bw * Math.min(1, entry.percent / 100)), 10, 5); ctx.fill(); }
+      }
     });
-    ctx.textBaseline = "middle"; ctx.fillStyle = "#8a90a2"; ctx.font = `600 26px ${font}`; ctx.textAlign = "left";
+    ctx.textBaseline = "middle"; ctx.fillStyle = C.muted; ctx.font = `600 26px ${font}`; ctx.textAlign = "left";
     ctx.fillText("Shared from SavePoint", PAD, head + rows * ROW + FOOT / 2);
     if (pages > 1) { ctx.textAlign = "right"; ctx.fillText(`${page} / ${pages}`, W - PAD, head + rows * ROW + FOOT / 2); }
     const url = encode(canvas);
@@ -110,7 +128,7 @@
     // Rendered pages live in IndexedDB (keyed by the page's content), so reopening a group is instant.
     const hash = text => { let h = 5381; for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
     const blobToDataUrl = blob => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob); });
-    const pageSig = d => "v3:" + hash(JSON.stringify([title, count, d.index, d.pages, d.group.map(e => [e.id, e.title, e.subtitle, e.rating, e.status])]));
+    const pageSig = d => "v4:" + hash(JSON.stringify([themeKey(), title, count, d.index, d.pages, d.group.map(e => [e.id, e.title, e.subtitle, e.rating, e.status, e.progressText, e.percent])]));
     const render = index => {
       const key = `${mode}:${index}`;
       if (!cache.has(key)) {

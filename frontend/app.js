@@ -351,7 +351,9 @@
     const cores = Number(navigator.hardwareConcurrency) || 4, memory = Number(navigator.deviceMemory) || 4;
     const weak = Boolean(navigator.connection?.saveData) || memory <= 2 || cores <= 2;
     const strongAndroid = nativeAndroid && memory >= 6 && cores >= 6;
-    const lowEnd = weak || (nativeAndroid && !strongAndroid);
+    // Every Android WebView gets the lighter effects: on fast 90/120 Hz phones the entrance animations and
+    // layered blur were what made scrolling feel worse than on older devices.
+    const lowEnd = weak || nativeAndroid;
     root.dataset.perf = weak ? "low" : lowEnd ? "mid" : "high";
     root.dataset.lowend = String(lowEnd);
     root.dataset.nativeAndroid = String(nativeAndroid);
@@ -798,7 +800,7 @@
         }
         if (!nativeAndroid) deferredImageObserver.unobserve(image);
         activateDeferredImage(image);
-      }), { rootMargin: nativeAndroid ? "180px 0px" : "700px 0px" });
+      }), { rootMargin: nativeAndroid ? "900px 0px" : "700px 0px" });
     }
     images.forEach(image => deferredImageObserver.observe(image));
   }
@@ -1310,7 +1312,9 @@
     const show = value => Array.isArray(value) ? value.map(show).filter(Boolean).slice(0, 2).join(", ") : value && typeof value === "object" ? show(value.name || value.title || value.label || value.value) : String(value || "").trim();
     const dev = show(item.facts?.developers || item.cachedDetails?.developers || item.cachedDetails?.developer || fieldValue(/^(developer|developers|studio|studios)$/i));
     const genre = show(item.facts?.genres || item.cachedDetails?.genres || item.cachedDetails?.genre || fieldValue(/^(genre|genres)$/i));
-    return { id: item.id, title: item.title, subtitle: [dev, genre].filter(Boolean).join(" · "), status: item.status, rating: Number(item.rating) ? `★ ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}` : "" };
+    const progress = Math.max(0, Number(item.progress) || 0), goal = Math.max(0, Number(item.goal) || 0, Number(item.completionTargetHours) || 0);
+    const unit = /^hours?$/i.test(String(category(item.category)?.unit || "")) ? " h" : "";
+    return { id: item.id, title: item.title, subtitle: [dev, genre].filter(Boolean).join(" · "), status: item.status, rating: Number(item.rating) ? `★ ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}` : "", progressText: progress || goal ? `${progress}${goal ? ` / ${goal}` : ""}${unit}` : "", percent: goal ? Math.min(100, Math.round(progress / goal * 100)) : null };
   }
   const shareCacheGet = async (key, sig) => { const hit = await window.SplitAppIDB?.getThumbs?.([[key, sig]]); return hit?.[0]?.[1] || null; };
   const shareCachePut = (key, sig, blob) => window.SplitAppIDB?.putThumbs?.([[key, sig, blob]]).catch(() => {});

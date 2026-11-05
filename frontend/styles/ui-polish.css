@@ -2399,3 +2399,24 @@ body[data-page="explore"] .app-shell,body[data-page="explore"] #page-content{pad
 .home-collection-page .collection-search-row .collection-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
 .home-collection-page .collection-search-row .collection-search>i svg{width:18px;height:18px;stroke-width:1.8}
 .home-collection-page .collection-search-row .collection-search input{height:48px;font-size:1rem;min-width:0;width:100%}
+
+/* 0.1.2+: glossy (translucent + blurred) top bars, only on the few sticky headers; everything else stays blur-free */
+html[data-lowend=true] body[data-page="dashboard"] .topbar,
+html[data-lowend=true] body[data-page="explore"] .explore-heading,
+html[data-lowend=true] body .detail-page-heading,
+html[data-lowend=true] body .settings-subpage-heading{
+  background:color-mix(in srgb,var(--surface) 78%,transparent) !important;
+  -webkit-backdrop-filter:saturate(170%) blur(14px) !important;
+  backdrop-filter:saturate(170%) blur(14px) !important;
+  box-shadow:0 1px 0 color-mix(in srgb,var(--line) 70%,transparent)}
+@media (pointer:coarse){
+  html body[data-page="dashboard"] .topbar,
+  html body[data-page="explore"] .explore-heading,
+  html body .detail-page-heading,
+  html body .settings-subpage-heading{
+    -webkit-backdrop-filter:saturate(170%) blur(14px) !important;
+    backdrop-filter:saturate(170%) blur(14px) !important}
+}
+/* Smoother scrolling: promote the sticky bar to its own layer and keep list cards isolated. */
+body[data-page="dashboard"] .topbar,body[data-page="explore"] .explore-heading,.detail-page-heading,.settings-subpage-heading{transform:translateZ(0);will-change:transform}
+html[data-nativeandroid=true] #page-content.page-route-enter .item-card,html[data-native-android=true] #page-content.page-route-enter .item-card{animation:none}
