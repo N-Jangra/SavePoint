@@ -94,30 +94,39 @@
     // Play time and money split by status so each number answers one question.
     const inStatus = name => items.filter(item => String(item.status).toLowerCase() === name.toLowerCase());
     const sumOf = (list, fn) => list.reduce((sum, item) => sum + fn(item), 0);
+    const left = list => sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item)));
+    const lenOf = list => sumOf(list.filter(item => lengthOf(item) > 0), lengthOf);
+    const completedWithLength = inStatus("Completed").filter(item => lengthOf(item) > 0);
+    const spent = list => ["Time spent", hoursText(sumOf(list, loggedOf))];
     const statusTimeSpec = [
-      { status: "Completed", icon: "circle-check", tone: "completed", blurb: "Finished games", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))]] },
-      { status: "Dropped", icon: "circle-minus", tone: "dropped", blurb: "Stopped early — time saved", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["Time saved", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
-      { status: "Playing", icon: "gamepad-2", tone: "playing", blurb: "In progress right now", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["To finish", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
-      { status: "On Hold", icon: "pause-circle", tone: "on-hold", blurb: "Paused for later", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["Time needed", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
-      { status: "Backlog", icon: "bookmark", tone: "backlog", blurb: "Not started yet", stats: list => [["Time needed", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), lengthOf))]] },
-      { status: "Upcoming", icon: "calendar-clock", tone: "upcoming", blurb: "Not released or started — no time counted", stats: () => [] }
+      { status: "Completed", icon: "circle-check", tone: "completed", blurb: "Finished games", stats: list => [spent(list), ["Avg length", completedWithLength.length ? hoursText(lenOf(completedWithLength) / completedWithLength.length) : "—"]] },
+      { status: "Playing", icon: "gamepad-2", tone: "playing", blurb: "In progress right now", stats: list => [spent(list), ["To finish", hoursText(left(list))]] },
+      { status: "On Hold", icon: "pause-circle", tone: "on-hold", blurb: "Paused for later", stats: list => [spent(list), ["Time needed", hoursText(left(list))]] },
+      { status: "Backlog", icon: "bookmark", tone: "backlog", blurb: "Not started yet", stats: list => [spent(list), ["Time needed", hoursText(left(list))]] },
+      { status: "Dropped", icon: "circle-minus", tone: "dropped", blurb: "Stopped early — time saved", stats: list => [spent(list), ["Time saved", hoursText(left(list))]] },
+      { status: "Upcoming", icon: "calendar-clock", tone: "upcoming", blurb: "Not released yet", stats: list => [spent(list), ["Time needed", hoursText(left(list))]] }
     ];
-    const statusTimeCards = statusTimeSpec.map(spec => {
+    const activeSpecs = statusTimeSpec.filter(spec => inStatus(spec.status).length || ["Completed", "Playing", "On Hold", "Backlog", "Dropped"].includes(spec.status));
+    const statusRows = activeSpecs.map(spec => {
       const list = inStatus(spec.status);
-      if (!list.length && !["Completed", "Dropped", "Playing", "On Hold"].includes(spec.status)) return "";
-      const value = sumOf(list, displayPrice);
-      const cells = [...spec.stats(list), ["Value", formatMoney(value)]].map(([label, text]) => `<div><small>${esc(label)}</small><strong>${esc(text)}</strong></div>`).join("");
+      const cells = [...spec.stats(list), ["Value", formatMoney(sumOf(list, displayPrice))]].map(([label, text]) => `<div><small>${esc(label)}</small><strong>${esc(text)}</strong></div>`).join("");
       return `<section class="stats-status-card" data-tone="${spec.tone}"><header><span class="stats-status-card-icon"><i data-lucide="${spec.icon}" aria-hidden="true"></i></span><div><h4>${esc(spec.status)}</h4><small>${esc(spec.blurb)}</small></div><b>${plural(list.length, "game")}</b></header><div class="stats-status-card-grid">${cells}</div></section>`;
     }).join("");
+    const savedHours = left(inStatus("Dropped"));
+    const toGo = remainingHours;
+    const paceText = toGo <= 0 ? "Nothing left to play" : toGo <= 14 * 1 ? `~${Math.max(1, Math.ceil(toGo))} ${Math.ceil(toGo) === 1 ? "day" : "days"} left (${hoursText(toGo)})` : `~${Math.round(toGo / 7)} weeks left (${hoursText(toGo)})`;
+    const barSegments = activeSpecs.map(spec => ({ spec, n: inStatus(spec.status).length })).filter(row => row.n).map(({ spec, n }) => `<span title="${esc(spec.status)}: ${n}" style="flex:${n};background:var(--status-color-${spec.tone})"></span>`).join("");
     const timePanel = `<article class="stats-panel stats-time-panel">
-      <header class="stats-panel-heading"><div><span class="stats-eyebrow">PLAY TIME</span><h3>Time to beat</h3></div></header>
-      <div class="stats-time-total"><span><small>Logged in total</small><strong>${hoursText(loggedHours)}</strong></span><span><small>Library value</small><strong>${formatMoney(libraryValue)}</strong></span></div>
-      <div class="stats-status-time">${statusTimeCards}</div>
-      <p class="stats-time-note">${esc(note)}</p>
-      <div class="stats-time-actions"><span class="stats-time-coverage"><strong>${known.length}/${items.length}</strong><span>games with data</span></span>${missingFacts ? `<button type="button" class="button secondary small" data-stats-fetch-facts>Fetch details for ${plural(missingFacts, "game")}</button>` : ""}${missingHours ? `<button type="button" class="button secondary small" data-stats-find-hours>Find play times for ${plural(missingHours, "game")}</button>` : ""}</div>
-    </article>`;
+      <header class="stats-panel-heading"><div><span class="stats-eyebrow">PLAY TIME</span><h3>Time to beat</h3></div><span class="stats-total-chip">${items.length} games · ${known.length} with data</span></header>
+      <div class="stats-time-total"><span><small>Logged in total</small><strong>${hoursText(loggedHours)}</strong><em>${hoursText(toGo)} left · ${hoursText(savedHours)} saved</em></span><span><small>Library value</small><strong class="is-accent">${formatMoney(libraryValue)}</strong><em>Across ${items.length} games</em></span></div>
+      <div class="stats-status-bar" role="img" aria-label="Games by status">${barSegments}</div>
+      <div class="stats-pace-row"><span>Est. pace at <b>1 h / day</b></span><b>${esc(paceText)}</b></div>
+    </article>
+    <div class="stats-section-label"><span>BY STATUS</span><em>${activeSpecs.length} groups · ${items.length} games</em></div>
+    <article class="stats-panel stats-status-list">${statusRows}</article>
+    <article class="stats-panel stats-fetch-card"><p><span class="stats-time-coverage-pill">${known.length} / ${items.length}</span>${unknownOpen.length ? `<b>${unknownOpen.length} unfinished games</b> have no play-time data yet, so they aren’t counted in your estimate.` : "Every unfinished game has play-time data."}</p>${missingFacts ? `<button type="button" class="button secondary small" data-stats-fetch-facts>Fetch details for ${plural(missingFacts, "game")}</button>` : ""}${missingHours ? `<button type="button" class="button primary" data-stats-find-hours><i data-lucide="refresh-cw" aria-hidden="true"></i> Find play times for ${plural(missingHours, "game")}</button>` : ""}</article>
     const perHour = loggedHours > 0 && libraryValue > 0 ? libraryValue / loggedHours : 0;
-    const timeDetails = `<article class="stats-panel stats-playtime-games"><header class="stats-panel-heading"><div><span class="stats-eyebrow">GAME BY GAME</span><h3>Playtime breakdown</h3></div><span class="stats-total-chip">${known.length} tracked</span></header>${timeGameRows || `<p class="stats-empty-copy">Playtime breakdowns appear when a game has a known length. You can fetch playtime data below.</p>`}</article>${perHour ? `<article class="stats-panel stats-efficiency-panel"><span class="stats-eyebrow">VALUE EFFICIENCY</span><strong>${formatMoney(perHour)} per logged hour</strong><p>Based on ${formatMoney(libraryValue)} in saved game prices and ${hoursText(loggedHours)} logged.</p></article>` : ""}`;
+    const timeDetails = `<div class="stats-section-label"><span>GAME BY GAME · PLAYTIME BREAKDOWN</span><em>${known.length} tracked</em></div><article class="stats-panel stats-playtime-games">${timeGameRows || `<p class="stats-empty-copy">Playtime breakdowns appear when a game has a known length. You can fetch playtime data below.</p>`}</article>${perHour ? `<article class="stats-panel stats-efficiency-panel"><span class="stats-eyebrow">VALUE EFFICIENCY</span><strong>${formatMoney(perHour)} per logged hour</strong><p>Based on ${formatMoney(libraryValue)} in saved game prices and ${hoursText(loggedHours)} logged.</p></article>` : ""}`;
     const month = statsRange === "month", rangeDays = month ? 30 : 7;
     const dayKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     const historyTime = entry => Number(entry.at) || Date.parse(entry.at) || 0;

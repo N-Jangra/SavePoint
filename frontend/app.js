@@ -2690,7 +2690,7 @@
   // (silent: straight into the backup folder, used before destructive actions). Browsers get a normal download.
   let exportRunning = false;
   const REVIEW_FIELDS = ["review", "reviews", "notes"];
-  let exportOptions = { format: "json", ratings: true, reviews: true };
+  let exportOptions = { format: "json", ratings: prefs.backupIncludeRatings !== false, reviews: prefs.backupIncludeRatings !== false };
   // Manual exports honour the Export page options; automatic safety backups (silent) always keep everything.
   function exportableItems(silent, opts = exportOptions) {
     if (silent || (opts.ratings && opts.reviews)) return items;
