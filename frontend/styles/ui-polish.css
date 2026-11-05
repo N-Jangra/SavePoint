@@ -2220,3 +2220,8 @@ body[data-page="dashboard"] .dashboard-status-group > .item-list > .dashboard-ca
 .stats-status-card-grid>div{display:grid;gap:2px;padding:8px 10px;border-radius:12px;background:var(--surface-2)}
 .stats-status-card-grid small{color:var(--muted);font-size:.66rem;font-weight:600}
 .stats-status-card-grid strong{font:750 .95rem/1.2 var(--font-heading,inherit);font-variant-numeric:tabular-nums}
+
+/* 0.1.2: details status row scrolls sideways like the Home pills */
+.ios-pills.detail-status-pills{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-inline:-4px;padding:4px 4px 8px;scroll-snap-type:x proximity}
+.ios-pills.detail-status-pills::-webkit-scrollbar{display:none}
+.ios-pills.detail-status-pills>.ios-pill{flex:none;white-space:nowrap;scroll-snap-align:start}
