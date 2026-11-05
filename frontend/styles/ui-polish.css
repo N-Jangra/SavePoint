@@ -2195,3 +2195,28 @@ body[data-page="dashboard"] .dashboard-status-group > .item-list > .dashboard-ca
 .stats-heading-actions{display:inline-flex;align-items:center;gap:8px}
 .stats-clear-ratings{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 11px;border:1px solid color-mix(in srgb,#dc2626 35%,var(--line));border-radius:999px;background:color-mix(in srgb,#dc2626 8%,var(--surface));color:#dc2626;font:700 .72rem var(--font-family);cursor:pointer}
 .stats-clear-ratings svg{width:14px;height:14px}
+
+/* 0.1.2: Statistics → Play time split by status */
+.stats-time-total{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:2px 0 12px}
+.stats-time-total>span{display:grid;gap:2px;padding:10px 12px;border-radius:14px;background:var(--surface-2)}
+.stats-time-total small{color:var(--muted);font-size:.68rem;font-weight:600;letter-spacing:.02em}
+.stats-time-total strong{font:750 1.05rem/1.2 var(--font-heading,inherit);font-variant-numeric:tabular-nums}
+.stats-status-time{display:grid;gap:10px}
+.stats-status-card{--tone:var(--accent);padding:12px;border:1px solid var(--line);border-left:4px solid var(--tone);border-radius:16px;background:var(--surface)}
+.stats-status-card[data-tone="completed"]{--tone:var(--status-color-completed)}
+.stats-status-card[data-tone="dropped"]{--tone:var(--status-color-dropped)}
+.stats-status-card[data-tone="playing"]{--tone:var(--status-color-playing)}
+.stats-status-card[data-tone="on-hold"]{--tone:var(--status-color-on-hold)}
+.stats-status-card[data-tone="backlog"]{--tone:var(--status-color-backlog)}
+.stats-status-card[data-tone="upcoming"]{--tone:var(--status-color-upcoming)}
+.stats-status-card>header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.stats-status-card-icon{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:10px;background:color-mix(in srgb,var(--tone) 14%,var(--surface));color:var(--tone)}
+.stats-status-card-icon svg{width:17px;height:17px}
+.stats-status-card>header>div{flex:1;min-width:0}
+.stats-status-card h4{margin:0;font:700 .92rem var(--font-family)}
+.stats-status-card>header small{display:block;overflow:hidden;color:var(--muted);font-size:.68rem;text-overflow:ellipsis;white-space:nowrap}
+.stats-status-card>header>b{flex:none;color:var(--tone);font-size:.72rem;font-weight:700}
+.stats-status-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px}
+.stats-status-card-grid>div{display:grid;gap:2px;padding:8px 10px;border-radius:12px;background:var(--surface-2)}
+.stats-status-card-grid small{color:var(--muted);font-size:.66rem;font-weight:600}
+.stats-status-card-grid strong{font:750 .95rem/1.2 var(--font-heading,inherit);font-variant-numeric:tabular-nums}

@@ -91,15 +91,28 @@
     const hoursValue = value => humanReadable ? formatHours(value) : `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10}`;
     const pace = remainingHours <= 0 ? "" : remainingHours <= 14 ? `About ${plural(Math.ceil(remainingHours), "day")} left at 1 hour a day.` : `About ${plural(Math.round(remainingHours / 7), "week")} left at 1 hour a day.`;
     const note = !items.length ? "Add games to see play time and totals here." : !known.length ? "No game has play-time data yet. Use the button below to look it up." : [remainingHours <= 0 && !unknownOpen.length ? "Nothing left to play. 🎉" : pace, unknownOpen.length ? `${plural(unknownOpen.length, "unfinished game")} ${unknownOpen.length === 1 ? "has" : "have"} no play-time data, so ${unknownOpen.length === 1 ? "it isn't" : "they aren't"} counted in “Left to play”.` : ""].filter(Boolean).join(" ");
+    // Play time and money split by status so each number answers one question.
+    const inStatus = name => items.filter(item => String(item.status).toLowerCase() === name.toLowerCase());
+    const sumOf = (list, fn) => list.reduce((sum, item) => sum + fn(item), 0);
+    const statusTimeSpec = [
+      { status: "Completed", icon: "circle-check", tone: "completed", blurb: "Finished games", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))]] },
+      { status: "Dropped", icon: "circle-minus", tone: "dropped", blurb: "Stopped early — the rest of the time is saved", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["Time saved", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
+      { status: "Playing", icon: "gamepad-2", tone: "playing", blurb: "In progress right now", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["To finish", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
+      { status: "On Hold", icon: "pause-circle", tone: "on-hold", blurb: "Paused for later", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["Time needed", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
+      { status: "Backlog", icon: "bookmark", tone: "backlog", blurb: "Not started — no time counted", stats: () => [] },
+      { status: "Upcoming", icon: "calendar-clock", tone: "upcoming", blurb: "Not released or started — no time counted", stats: () => [] }
+    ];
+    const statusTimeCards = statusTimeSpec.map(spec => {
+      const list = inStatus(spec.status);
+      if (!list.length && !["Completed", "Dropped", "Playing", "On Hold"].includes(spec.status)) return "";
+      const value = sumOf(list, displayPrice);
+      const cells = [...spec.stats(list), ["Value", formatMoney(value)]].map(([label, text]) => `<div><small>${esc(label)}</small><strong>${esc(text)}</strong></div>`).join("");
+      return `<section class="stats-status-card" data-tone="${spec.tone}"><header><span class="stats-status-card-icon"><i data-lucide="${spec.icon}" aria-hidden="true"></i></span><div><h4>${esc(spec.status)}</h4><small>${esc(spec.blurb)}</small></div><b>${plural(list.length, "game")}</b></header><div class="stats-status-card-grid">${cells}</div></section>`;
+    }).join("");
     const timePanel = `<article class="stats-panel stats-time-panel">
       <header class="stats-panel-heading"><div><span class="stats-eyebrow">PLAY TIME</span><h3>Time to beat</h3></div><span class="stats-time-coverage"><strong>${known.length}/${items.length}</strong><span>games with data</span></span></header>
-      <div class="stats-time-grid">
-        <div class="stats-time-stat stats-time-stat-primary"><span class="stats-time-label">Logged time</span><strong>${hoursValue(loggedHours)}${humanReadable ? "" : "<small>h</small>"}</strong><span class="stats-time-caption">Across all games</span></div>
-        <div class="stats-time-stat"><span class="stats-time-label">Estimated length</span><strong>${hoursValue(knownHours)}${humanReadable ? "" : "<small>h</small>"}</strong><span class="stats-time-caption">${plural(known.length, "game")}</span></div>
-        <div class="stats-time-stat"><span class="stats-time-label">Time remaining</span><strong>${hoursValue(remainingHours)}${humanReadable ? "" : "<small>h</small>"}</strong><span class="stats-time-caption">Unfinished games</span></div>
-        <div class="stats-time-stat"><span class="stats-time-label">Library value</span><strong>${formatMoney(libraryValue)}</strong><span class="stats-time-caption">Based on saved prices</span></div>
-      </div>
-      ${knownHours ? `<div class="stats-time-progress" role="img" aria-label="${Math.round(knownPlayed / knownHours * 100)}% of the known length played"><span style="width:${Math.min(100, knownPlayed / knownHours * 100)}%"></span></div><p class="stats-time-note">${hoursText(knownPlayed)} of ${hoursText(knownHours)} played in games with data.</p>` : ""}
+      <div class="stats-time-total"><span><small>Logged in total</small><strong>${hoursText(loggedHours)}</strong></span><span><small>Library value</small><strong>${formatMoney(libraryValue)}</strong></span></div>
+      <div class="stats-status-time">${statusTimeCards}</div>
       <p class="stats-time-note">${esc(note)}</p>
       <div class="stats-time-actions">${missingFacts ? `<button type="button" class="button secondary small" data-stats-fetch-facts>Fetch details for ${plural(missingFacts, "game")}</button>` : ""}${missingHours ? `<button type="button" class="button secondary small" data-stats-find-hours>Find play times for ${plural(missingHours, "game")}</button>` : ""}</div>
     </article>`;
