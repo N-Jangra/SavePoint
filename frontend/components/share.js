@@ -29,6 +29,7 @@
   });
   const themeKey = () => { const c = themeColors(); return [c.page, c.card, c.accent, c.text].join("|"); };
 
+
   async function drawSheet({ title, entries, start, total, page, pages, showHead, getImage }) {
     const jobs = entries.map(entry => coverOf(entry, getImage));
     let images = await Promise.all(jobs.map(job => waitFor(job, 4000)));
@@ -269,7 +270,7 @@
     showPopup(dialog);
     setTimeout(() => setMode("pages"), 30);
     // Warm the remaining covers a few at a time so later pages are ready.
-    (async () => { const queue = entries.slice(PER_PAGE); const worker = async () => { while (queue.length && dialog.isConnected) { await coverOf(queue.shift(), getImage); } }; await new Promise(r => setTimeout(r, 1500)); await Promise.all([worker(), worker(), worker()]); })();
+    (async () => { const queue = entries.slice(perPage); const worker = async () => { while (queue.length && dialog.isConnected) { await coverOf(queue.shift(), getImage); } }; await new Promise(r => setTimeout(r, 1500)); await Promise.all([worker(), worker(), worker()]); })();
   }
   window.SplitAppShare = Object.freeze({ open, helpers: { themeColors, withAlpha, roundRect, fit, loadImage, saveBytes, shareBytes } });
 })();
