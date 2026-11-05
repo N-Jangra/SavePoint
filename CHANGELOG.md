@@ -34,6 +34,7 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Home thumbnails stayed blank after searching or filtering until the filter was cleared and the app refreshed.
 - Metadata Sync page could not be scrolled while syncing (it rebuilt the list twice a second) and its header was inset instead of full width.
 - Backups: ratings, favorites and source identity are no longer lost when restoring over an existing or re-synced library.
+- Names lists (.txt / .csv) and old backups without a status import with the default status, so those games appear under a Home group; games already saved without a status are repaired on launch.
 
 ## [0.1.1] — 2026-11-04
 

@@ -2789,7 +2789,8 @@
         const id = crypto.randomUUID();
         if (item.id != null) idMap.set(String(item.id), id);
         // Keep the backup's own dates so Timeline and Activity show when things really happened.
-        return { ...item, id, category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
+        const catKey = config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key;
+        return { ...item, id, category: catKey, status: item.status || prefs.defaultStatus || defaultStatus(catKey), createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
       });
       const known = new Set(items.map(importIdentity));
       const seen = new Set();
@@ -3679,6 +3680,9 @@
         if (old) { item.localPortraitData = old.localPortraitData; item.localThumbnailData = old.localThumbnailData; item.localLandscapeData = old.localLandscapeData; }
       });
       const nativeItems = Array.isArray(restored.items) ? restored.items.filter(item => config.categories.some(category => category.key === item.category)) : items;
+      // A game saved without a status would not appear under any Home group; give it the default one.
+      const repairedIds = nativeItems.filter(item => item && !item.status).map(item => { item.status = prefs.defaultStatus || defaultStatus(item.category); return item.id; });
+      if (repairedIds.length) persist({ ids: repairedIds });
       const nativeHistory = Array.isArray(restored.history) ? restored.history : history;
       const nativePreferences = restored.preferences && typeof restored.preferences === "object" ? restored.preferences : {};
       if (localMutationRevision === initialRevision) {
