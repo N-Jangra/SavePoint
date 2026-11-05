@@ -19,7 +19,7 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Game details: a **Time to beat** card (main story, main + extras, completionist from HowLongToBeat). Tap one to use it as your goal; games with no goal get their main-story hours automatically and keep following later updates until you pick your own.
 - Settings → **Library history** records adds, removals, merges, imports, bulk edits and undos, and flags games that disappeared without a recorded reason.
 - Covers from every source (not only the one used as the cover) are now saved into the Screenshots gallery.
-- Logcat and Library history are saved in your storage folder (`savepoint-db/logcat.json` and `savepoint-db/library-history.json`) with no 200/400 cap, so older entries stay searchable; both pages have a search box and Storage has "Clear logcat" and "Clear library history" buttons.
+- Logcat and Library history are saved in your storage folder (`savepoint-db/logcat.json` and `savepoint-db/library-history.json`) with no 200/400 cap, so older entries stay searchable; both pages have a search box with From / To date filters and Storage has "Clear logcat" and "Clear library history" buttons.
 
 ### Changed
 
