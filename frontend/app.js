@@ -21,7 +21,7 @@
     metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg", "igdb"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1, humanReadableStats: false, currencyDisplay: "USD", usdToInrRate: 94.8,
-    backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30, restorePreview: true,
+    backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, backupIncludeRatings: true, folderSyncDelay: 30, restorePreview: true,
     metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false, igdb: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
     imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
@@ -1260,6 +1260,8 @@
       else if (key === "previewAnimations") previewAnimations();
       else if (key === "resetAppearance") resetAppearance();
       else if (key === "export") exportList();
+      else if (key === "exportTxt") exportNames("txt");
+      else if (key === "exportCsv") exportNames("csv");
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary")
           .then(() => toast("Temporary cache cleared."))
@@ -2675,18 +2677,47 @@
   // Native: stream the library in small chunks to a file the user picks with Android's "Save as" screen
   // (silent: straight into the backup folder, used before destructive actions). Browsers get a normal download.
   let exportRunning = false;
+  const OPINION_FIELDS = ["rating", "ratingExact", "review", "reviews", "notes"];
+  // Manual exports can leave ratings and reviews out; automatic safety backups always keep everything.
+  function exportableItems(silent) {
+    if (silent || prefs.backupIncludeRatings !== false) return items;
+    return items.map(item => { const copy = { ...item }; OPINION_FIELDS.forEach(field => delete copy[field]); return copy; });
+  }
+  const csvCell = value => { const text = String(value ?? ""); return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
+  async function exportNames(format) {
+    if (!items.length) { toast("Your library is empty."); return; }
+    const sorted = [...items].sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: "base" }));
+    const csv = format === "csv";
+    const content = csv
+      ? "Title,Year,Status\r\n" + sorted.map(item => [item.title, String(item.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", item.status].map(csvCell).join(",")).join("\r\n") + "\r\n"
+      : sorted.map(item => String(item.title).replace(/[\r\n]+/g, " ").trim()).join("\n") + "\n";
+    const fileName = `${config.key}-names-${new Date().toISOString().slice(0, 10)}.${csv ? "csv" : "txt"}`, mimeType = csv ? "text/csv" : "text/plain";
+    try {
+      if (nativeAndroid && window.SplitAppBackend?.exportTextFile) {
+        toast("Choose where to save your list…");
+        await window.SplitAppBackend.exportTextFile({ fileName, mimeType, content });
+      } else {
+        const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([content], { type: `${mimeType};charset=utf-8` })); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      }
+      toast(`Exported ${items.length} names.`);
+    } catch (error) {
+      const message = String(error?.message || error);
+      if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Names export failed: ${message}`); }
+    }
+  }
   async function exportList({ silent = false } = {}) {
     if (exportRunning) { toast("An export is already running."); return; }
     const backend = window.SplitAppBackend;
+    const exportItems = exportableItems(silent);
     if (nativeAndroid && backend?.exportLibrary) {
       exportRunning = true;
       let lastToast = 0;
       try {
         if (!silent) toast("Choose where to save your library…");
-        const result = await backend.exportLibrary({ items, history, preferences: prefs }, { mode: silent ? "folder" : "ask", onProgress: (done, total) => {
+        const result = await backend.exportLibrary({ items: exportItems, history, preferences: prefs }, { mode: silent ? "folder" : "ask", onProgress: (done, total) => {
           if (Date.now() - lastToast > 700 && done < total) { lastToast = Date.now(); toast(`Exporting… ${Math.round(done / total * 100)}%`); }
         } });
-        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} games.`);
+        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} games${prefs.backupIncludeRatings === false ? " without ratings and reviews" : ""}.`);
       } catch (error) {
         const message = String(error?.message || error);
         if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Export failed: ${message}`); }
@@ -2695,7 +2726,7 @@
     }
     const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const parts = [`{"app":${JSON.stringify(config.name)},"version":1,"exportedAt":${JSON.stringify(new Date().toISOString())},"items":[`];
-    items.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(item)));
+    exportItems.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(item)));
     parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
     const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(parts, { type: "application/json" })); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); toast("Export ready.");
   }
@@ -2704,12 +2735,52 @@
     const year = String(item?.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
     return `${item?.category || "game"}:${title}:${year}`;
   }
+  // .txt: one game per line. .csv: first column (or a "Title"/"Name" column) is the title; "Year" and "Status" are optional.
+  function parseNamesList(text, isCsv) {
+    const statuses = config.categories[0].statuses || [];
+    const rows = [];
+    if (isCsv) {
+      let row = [], cell = "", quoted = false;
+      const body = String(text).replace(/^\uFEFF/, "");
+      for (let index = 0; index < body.length; index++) {
+        const char = body[index];
+        if (quoted) { if (char === '"') { if (body[index + 1] === '"') { cell += '"'; index++; } else quoted = false; } else cell += char; }
+        else if (char === '"') quoted = true;
+        else if (char === ",") { row.push(cell); cell = ""; }
+        else if (char === "\n" || char === "\r") { if (char === "\r" && body[index + 1] === "\n") index++; row.push(cell); cell = ""; if (row.some(value => value.trim())) rows.push(row); row = []; }
+        else cell += char;
+      }
+      row.push(cell); if (row.some(value => value.trim())) rows.push(row);
+    } else String(text).split(/\r?\n/).forEach(line => { if (line.trim()) rows.push([line]); });
+    let titleAt = 0, yearAt = -1, statusAt = -1, start = 0;
+    const header = (rows[0] || []).map(value => value.trim().toLowerCase());
+    if (isCsv && header.some(value => ["title", "name", "game"].includes(value))) {
+      titleAt = Math.max(0, header.findIndex(value => ["title", "name", "game"].includes(value)));
+      yearAt = header.indexOf("year"); statusAt = header.indexOf("status"); start = 1;
+    }
+    return { items: rows.slice(start).map(row => {
+      const status = statuses.find(name => name.toLowerCase() === String(row[statusAt] || "").trim().toLowerCase());
+      return { title: String(row[titleAt] || "").trim(), ...(yearAt >= 0 && row[yearAt] ? { year: String(row[yearAt]).trim() } : {}), ...(status ? { status } : {}) };
+    }).filter(item => item.title) };
+  }
+  // A restored game keeps what it was saved with; only a game with no saved details gets fetched again.
+  const hasSavedMetadata = item => Boolean(item?.cachedDetails || item?.facts?.fetchedAt || item?.mixSources?.length);
+  // Games already in the library keep their data, but blanks (rating, favourite, progress, sources…) are filled from the backup.
+  const RESTORE_FILL_FIELDS = ["rating", "ratingExact", "favorite", "progress", "goal", "completionTarget", "completionTargetHours", "metadataSource", "providerId", "originKeys", "originYear", "mixSources", "mixSourceKeys", "facts", "cachedDetails", "url", "description", "image", "backdrop", "year"];
+  function restorePatch(existing, backup) {
+    const patch = {};
+    const empty = value => value == null || value === "" || value === 0 || value === false || (Array.isArray(value) && !value.length) || (typeof value === "object" && !Array.isArray(value) && !Object.keys(value).length);
+    for (const field of RESTORE_FILL_FIELDS) if (empty(existing[field]) && !empty(backup[field])) patch[field] = backup[field];
+    return Object.keys(patch).length ? patch : null;
+  }
   async function importList(file) {
     if (!file) return;
     importState = { phase: "reading", fileName: file.name || "Library backup", fileSize: Number(file.size) || 0, incoming: [], fresh: [], skipped: 0, completed: 0, synced: 0, failed: 0, error: "" };
     goto("import-preview");
     try {
-      const data = JSON.parse(await file.text()); const incoming = Array.isArray(data) ? data : data.items;
+      const text = await file.text();
+      const asList = /\.(txt|csv)$/i.test(file.name || "") || !/^\s*[\[{]/.test(text);
+      const data = asList ? parseNamesList(text, /\.csv$/i.test(file.name || "")) : JSON.parse(text); const incoming = Array.isArray(data) ? data : data.items;
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
       const now = Date.now();
       const idMap = new Map();
@@ -2728,12 +2799,16 @@
         seen.add(identity);
         return true;
       });
+      const freshIdentity = new Set(fresh.map(item => item.id));
+      const byIdentity = new Map(items.map(item => [importIdentity(item), item]));
+      const patches = [];
+      normalized.forEach(item => { const existing = byIdentity.get(importIdentity(item)); const patch = existing && !freshIdentity.has(item.id) ? restorePatch(existing, item) : null; if (patch) patches.push({ id: existing.id, patch }); });
       // Timeline/Activity read from history: use the backup's history (re-pointed at the new ids), or build it from statuses.
       const freshIds = new Set(fresh.map(item => item.id));
       const fileHistory = Array.isArray(data.history) ? data.history : [];
       let importedHistory = fileHistory.filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
       if (!importedHistory.length) importedHistory = fresh.filter(item => ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
-      importState = { ...importState, phase: "preview", incoming: normalized, fresh, importedHistory, skipped: normalized.length - fresh.length };
+      importState = { ...importState, phase: "preview", incoming: normalized, fresh, patches, importedHistory, skipped: normalized.length - fresh.length };
       render();
       if (prefs.restorePreview === false && fresh.length) continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not finish the restore."; render(); } });
     } catch (error) {
@@ -2766,14 +2841,16 @@
     await new Promise(resolve => requestAnimationFrame(resolve));
     items = [...fresh, ...items];
     history = [...(importState.importedHistory || []), ...history].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0));
-    await persist({ ids: fresh.map(item => item.id) });
+    const patchedIds = [];
+    for (const { id, patch } of importState.patches || []) { const existing = itemById(id); if (existing) { Object.assign(existing, patch, { updatedAt: Date.now() }); patchedIds.push(id); } }
+    await persist({ ids: [...fresh.map(item => item.id), ...patchedIds] });
     const count = fresh.length;
     importState = { ...importState, phase: "complete", completed: count, total: count };
     render();
     await new Promise(resolve => setTimeout(resolve, 600));
     importState = null;
     goto("dashboard");
-    const started = startSyncJob(fresh);
+    const started = startSyncJob(fresh.filter(item => !hasSavedMetadata(item)));
     toast(started ? `Added ${count} ${count === 1 ? "game" : "games"}. Syncing metadata in the background.` : `Added ${count} ${count === 1 ? "game" : "games"}.`);
   }
   // ---- Background metadata sync -------------------------------------------
@@ -3220,7 +3297,7 @@
     const settingAction = event.target.closest("[data-setting-action]");
     if (settingAction && settingAction.type !== "file") {
       const key = settingAction.dataset.settingAction;
-      if (key === "export") exportList(); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
+      if (key === "export") exportList(); else if (key === "exportTxt") exportNames("txt"); else if (key === "exportCsv") exportNames("csv"); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary");
         toast("Temporary cache cleared.");
