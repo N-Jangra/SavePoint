@@ -2,7 +2,7 @@
 (() => {
   window.SplitAppPages = window.SplitAppPages || {};
   window.SplitAppPages.settings = context => {
-    const { config, prefs, items, history, logEntries = [], settingsParam = "", settingsFrom = "", settingsOrigin = "", esc, safeLucideName = value => value, settingsGroup, navItems, metadataSourceFilter = "all", libraryBytes = 0 } = context;
+    const { config, prefs, items, history, logEntries = [], changeLog = [], settingsParam = "", settingsFrom = "", settingsOrigin = "", esc, safeLucideName = value => value, settingsGroup, navItems, metadataSourceFilter = "all", libraryBytes = 0 } = context;
     const themeOptions = [["light", "Light"], ["dark", "Dark"], ["grey", "Grey"], ["amoled", "AMOLED"], ["flashbang", "Flashbang"], ["material-you", "Material You"], ["ocean", "Ocean"], ["forest", "Forest"], ["sunset", "Sunset"], ["rose", "Rose"], ["lavender", "Lavender"], ["nord", "Nord"], ["sand", "Sand"], ["mint", "Mint"], ["system", "System"]].map(([value, label]) => `${value}|${label}`);
     const fontOptions = ["system|System Default", "inter|Inter", "outfit|Outfit", "serif|Serif", "monospace|Monospace", "rounded|Rounded", "poppins|Poppins", "roboto|Roboto", "nunito|Nunito", "lato|Lato", "merriweather|Merriweather", "jetbrains-mono|JetBrains Mono", "open-sans|Open Sans", "montserrat|Montserrat", "oswald|Oswald", "raleway|Raleway", "ubuntu|Ubuntu", "playfair-display|Playfair Display", "fira-sans|Fira Sans", "rubik|Rubik", "quicksand|Quicksand", "caveat|Caveat"];
     const mainColors = [["#6355f8", "Indigo"], ["#f472b6", "Carnation Pink"], ["#16a34a", "Dark Green"], ["#b91c1c", "Maroon"], ["#2563eb", "Navy Blue"], ["#64748b", "Grey"], ["#e2e8f0", "White"], ["#a16207", "Brown"], ["#06b6d4", "Cool Cyan"], ["#f97316", "Fire"], ["#7c3aed", "Burple"], ["#22c55e", "Green"], ["#65a30d", "Apple"], ["#eab308", "Banan"], ["#f43f5e", "Party"], ["#fb7185", "Pink"], ["#8b5cf6", "Material You"]].map(([value, label]) => `${value}|${label}`);
@@ -62,7 +62,7 @@
         ["Clear All Temporary Cache", "clear-cache", "action"], ["Clear Image Cache", "clear-images", "action", "Remove cached thumbnails."], ["Clear Metadata Cache", "clear-metadata", "action", "Tracked data is not affected."],
         ["Limit Image Cache", "imageCacheMaxEntries", "select", ["100|100 images", "250|250 images", "500|500 images", "1000|1000 images", "0|Unlimited"]],
       ]},
-      { id: "info", title: "App Info", description: "View app details and diagnostic logs.", icon: "info", settings: [["App Info", "appInfo", "page", { page: "app-info", value: "View details" }], ["Logcat", "logcat", "page", { page: "logcat", value: "View logs" }]] }
+      { id: "info", title: "App Info", description: "View app details and diagnostic logs.", icon: "info", settings: [["App Info", "appInfo", "page", { page: "app-info", value: "View details" }], ["Library history", "history", "page", { page: "history", value: "View changes" }], ["Logcat", "logcat", "page", { page: "logcat", value: "View logs" }]] }
     ];
 
     function control(setting) {
@@ -292,6 +292,13 @@ ${native ? "" : `<p class="source-note source-capability-note"><i data-lucide="i
       return sameDay ? `Today, ${time}` : `${window.SplitAppDates?.date(when) || when.toLocaleDateString()}, ${time}`;
     }
 
+    function renderHistory() {
+      const labels = { added: "Added", removed: "Removed", restored: "Restored", merged: "Merged", imported: "Imported", status: "Status", favorite: "Favorite", cleared: "Cleared", lost: "Missing" };
+      const rows = changeLog.map(entry => `<article class="logcat-entry logcat-entry-${entry.action === "lost" ? "error" : entry.action === "removed" || entry.action === "cleared" ? "warning" : "info"}"><div class="logcat-entry-meta"><strong class="logcat-level">${esc(labels[entry.action] || entry.action)}</strong><time>${esc(formatLogTime(entry.at))}</time></div><p>${esc(entry.detail || "")}</p></article>`).join("");
+      const lost = changeLog.filter(entry => entry.action === "lost").length;
+      return `<section class="settings-page settings-detail-page logcat-page">${pageHeader("Library history", "info")}<section class="logcat-summary"><span class="logcat-summary-icon" aria-hidden="true"><i data-lucide="history"></i></span><div class="logcat-summary-copy"><strong>${changeLog.length} ${changeLog.length === 1 ? "change" : "changes"}</strong><small>${lost ? `${lost} unexplained ${lost === 1 ? "loss" : "losses"} found` : "Adds, removals, merges, imports and bulk edits"}</small></div><button type="button" class="logcat-clear-button" data-log-action="clear-changes" ${changeLog.length ? "" : "disabled"}><i data-lucide="trash-2" aria-hidden="true"></i> Clear</button></section>${rows ? `<div class="logcat-list">${rows}</div>` : `<div class="import-restore-empty"><p>No changes recorded yet.</p></div>`}</section>`;
+    }
+
     function renderLogcat() {
       const rows = [...logEntries].sort((a, b) => (Date.parse(b.at) || Number(b.at) || 0) - (Date.parse(a.at) || Number(a.at) || 0)).map(entry => {
         const level = String(entry.level || "info"), when = formatLogTime(entry.at);
@@ -309,6 +316,7 @@ ${native ? "" : `<p class="source-note source-capability-note"><i data-lucide="i
     if (settingsGroup === "storage-details") return renderStorageDetails();
     if (settingsGroup === "app-info") return renderAppInfo();
     if (settingsGroup === "logcat") return renderLogcat();
+    if (settingsGroup === "history") return renderHistory();
     const selected = settingGroups.find(group => group.id === settingsGroup);
     if (selected) {
       const globalResults = settingGroups.filter(group => group.id !== selected.id).flatMap(group => group.settings.map(setting => {
@@ -341,7 +349,7 @@ ${native ? "" : `<p class="source-note source-capability-note"><i data-lucide="i
     const indexGroup = (title, groups, extra = "") => `<section class="settings-index-group"><h2 class="settings-overline">${esc(title)}</h2><div class="settings-category-list">${groups.map(group => card(group.icon, group.title, group.description, `#settings/${group.id}`)).join("")}${extra}</div></section>`;
     const storageBytes = libraryBytes;
     const storageCard = card("hard-drive", "Storage", `${items.length} ${items.length === 1 ? "entry" : "entries"} · ${formatBytes(storageBytes)} used`, "#settings/storage-details");
-    const moreCards = card("info", "App Info", "About SavePoint and its features.", "#settings/app-info") + card("terminal", "Logcat", "Read or clear diagnostic logs.", "#settings/logcat");
+    const moreCards = card("info", "App Info", "About SavePoint and its features.", "#settings/app-info") + card("history", "Library history", "See what was added, removed or merged.", "#settings/history") + card("terminal", "Logcat", "Read or clear diagnostic logs.", "#settings/logcat");
     const indexResults = settingGroups.flatMap(group => group.settings.map(setting => {
       const searchText = `${setting[0]} ${group.title} ${group.description}`.toLowerCase();
       return `<a class="setting-search-result" data-settings-index-result data-search-value="${esc(searchText)}" href="#settings/${group.id}"><span class="setting-search-result-icon"><i data-lucide="${group.icon}"></i></span><span><strong>${esc(setting[0])}</strong><small>${esc(group.title)} · ${esc(group.description)}</small></span><span class="settings-chevron" aria-hidden="true">›</span></a>`;
