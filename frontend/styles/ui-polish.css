@@ -2190,3 +2190,8 @@ body[data-page="dashboard"] .dashboard-status-group > .item-list > .dashboard-ca
 .home-collection-page .collection-status-pills > button > span{margin:0;padding-inline-end:0}
 .home-collection-page .collection-status-pill-label{flex:none;line-height:1.2}
 .home-collection-page .collection-status-pill-count{display:inline-grid;place-items:center;flex:none;min-width:0;padding:2px 6px;line-height:1.2}
+
+/* 0.1.2: Statistics → Ratings clear button */
+.stats-heading-actions{display:inline-flex;align-items:center;gap:8px}
+.stats-clear-ratings{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 11px;border:1px solid color-mix(in srgb,#dc2626 35%,var(--line));border-radius:999px;background:color-mix(in srgb,#dc2626 8%,var(--surface));color:#dc2626;font:700 .72rem var(--font-family);cursor:pointer}
+.stats-clear-ratings svg{width:14px;height:14px}

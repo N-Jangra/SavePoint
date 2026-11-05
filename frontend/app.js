@@ -1577,6 +1577,34 @@
     const goalLabel = $("#goal-label"); goalLabel.hidden = false; goalLabel.firstChild.textContent = cat?.unit ? `Goal (${cat.unit})` : "Goal";
     $("#item-form").elements.progress.step = String(prefs.progressIncrement || 1);
   }
+  // Switching between 5 stars and 10 points rescales saved ratings so a 4/5 becomes 8/10 (and back) instead of
+  // being read on the new scale. 10 -> 5 keeps the exact score so switching back restores it.
+  function convertRatingScale(from, to) {
+    if (from === to) return [];
+    const changed = [];
+    for (const item of items) {
+      const rating = Number(item.rating) || 0;
+      if (!rating) continue;
+      if (to === 10) {
+        const exact = item.ratingExact;
+        item.rating = exact && Math.round(exact / 2) === Math.round(rating) ? exact : Math.min(10, Math.round(rating * 2));
+        delete item.ratingExact;
+      } else {
+        item.ratingExact = rating;
+        item.rating = Math.min(5, Math.max(1, Math.round(rating / 2)));
+      }
+      item.updatedAt = Date.now(); changed.push(item.id);
+    }
+    return changed;
+  }
+  async function clearAllRatings() {
+    const rated = items.filter(item => Number(item.rating) > 0);
+    if (!rated.length) { toast("No ratings to clear."); return; }
+    if (!(await appConfirm(`Remove the rating from ${rated.length} ${rated.length === 1 ? "game" : "games"}? This cannot be undone.`, { title: "Clear all ratings", confirmLabel: "Clear ratings", danger: true }))) return;
+    if (prefs.backupBeforeDestructive) exportList({ silent: true });
+    rated.forEach(item => { item.rating = 0; delete item.ratingExact; item.updatedAt = Date.now(); });
+    persist({ ids: rated.map(item => item.id) }); render(); toast("All ratings cleared.");
+  }
   function updateRatingOptions(chosen = "") {
     const select = $("#item-form")?.elements.rating;
     if (!select) return;
@@ -2490,7 +2518,9 @@
       persist({ meta: true }); render();
       return;
     }
+    const ratingChange = key === "ratingFormat" && value !== prefs.ratingFormat ? convertRatingScale(prefs.ratingFormat === "10-point" ? 10 : 5, value === "10-point" ? 10 : 5) : null;
     prefs[key] = value;
+    if (ratingChange?.length) persist({ ids: ratingChange });
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
     persist({ meta: true }); applyPreferences();
     if (key === "backgroundBackups" || key === "backupSchedule") syncBackupSchedule();
@@ -3072,10 +3102,11 @@
     if (statsGroup) { const score = statsGroup.dataset.statsGroup; const wasOpen = statsGroup.getAttribute("aria-expanded") === "true"; statsLimits = { ...statsLimits, open: { ...(statsLimits.open || {}), [score]: !wasOpen } }; render(); return; }
     const statsMore = event.target.closest("[data-stats-more]");
     if (statsMore) { const kind = statsMore.dataset.statsMore === "rated" ? "rated" : "quick"; statsLimits = { ...statsLimits, [kind]: statsLimits[kind] + (kind === "rated" ? 15 : 10) }; render(); return; }
+    if (event.target.closest("[data-clear-all-ratings]")) { clearAllRatings(); return; }
     const statsRating = event.target.closest("[data-stats-rating]");
     if (statsRating) {
       const item = itemById(String(statsRating.dataset.statsRating));
-      if (item) { item.rating = Number(statsRating.dataset.score) || 0; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
+      if (item) { item.rating = Number(statsRating.dataset.score) || 0; delete item.ratingExact; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
       return;
     }
     const findHours = event.target.closest("[data-stats-find-hours]");
