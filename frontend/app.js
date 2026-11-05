@@ -1309,6 +1309,7 @@
     current.replaceChildren(...fresh.childNodes);
     if (pageKey === "dashboard") observeDashboardLoaders();
     window.lucide?.createIcons({ root: current, attrs: { "aria-hidden": "true" } });
+    observeDeferredImages(current);
   }
   async function refreshStorageDetails() {
     const target = $("#storage-cache-breakdown");
