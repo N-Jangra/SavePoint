@@ -14,7 +14,8 @@
   const statusColor = status => { const key = String(status || "").toLowerCase().replace(/\s+/g, "-"); return css(`--status-color-${key}`) || css("--accent") || "#6355f5"; };
 
   async function drawSheet({ title, entries, start, total, page, pages, showHead, getImage }) {
-    const images = await Promise.all(entries.map(entry => getImage(entry).catch(() => null)));
+    const withTimeout = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(null), ms))]);
+    const images = await Promise.all(entries.map(entry => withTimeout(getImage(entry), 5000).catch(() => null)));
     const head = showHead ? HEAD : 24, rows = entries.length;
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = head + rows * ROW + FOOT;
