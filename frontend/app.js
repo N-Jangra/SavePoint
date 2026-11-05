@@ -1621,7 +1621,7 @@
     const previousStatus = item.status;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = "Completed";
-    if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+    if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     await persist({ ids: [item.id] }); render(); toast("Progress updated.");
   }
   function finishDeletingItem(id, returnPage) {
@@ -1664,7 +1664,7 @@
     }
     syncEditedCompletionTarget(draft, item);
     Object.assign(item, draft, { updatedAt: Date.now() });
-    if (oldStatus !== item.status && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+    if (oldStatus !== item.status && ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     detailEditMode = false;
     await persist({ ids: [item.id] }); render(); toast("Entry updated.");
   }
@@ -1938,7 +1938,7 @@
       item = { ...result, originKeys: libraryOriginKeys(result), originYear: String(result.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", metadataSource: result.source || result.metadataSource || "", id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
       applyMixIdentity(item, result);
       items.unshift(item);
-      if (["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+      if (["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     }
     item.updatedAt = Date.now();
     await persist({ ids: [item.id] });
@@ -2225,7 +2225,7 @@
     item.progress = watched.size;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
     item.updatedAt = Date.now();
-    if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+    if (item.status !== previousStatus && ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     persist({ ids: [item.id] }); render(); toast(watched.has(id) ? "Episode marked watched." : "Episode marked unwatched.");
   }
   function deleteFromDetails(id) {
@@ -2279,7 +2279,7 @@
     }
     const changed = item.status !== status;
     item.status = status; item.updatedAt = Date.now();
-    if (changed && ["Dropped", "Completed", "On Hold", "Playing"].includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
+    if (changed && ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
     await persist({ ids: [item.id] });
     return true;
   }
@@ -2291,9 +2291,9 @@
   }
   function openItemActions(id) {
     const item = itemById(String(id)); if (!item) return;
-    const statusIcons = { Playing: "gamepad-2", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus", Completed: "check-circle" };
-    const statusColors = { Playing: "accent", Backlog: "neutral", "On Hold": "warning", Dropped: "danger", Completed: "success" };
-    const availableStatuses = [...new Set(category(item.category)?.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed"])]
+    const statusIcons = { Playing: "gamepad-2", Upcoming: "calendar-clock", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus", Completed: "check-circle" };
+    const statusColors = { Playing: "accent", Upcoming: "accent", Backlog: "neutral", "On Hold": "warning", Dropped: "danger", Completed: "success" };
+    const availableStatuses = [...new Set(category(item.category)?.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed", "Upcoming"])]
       .filter(status => status !== item.status);
     const statusActions = availableStatuses.map(status => `<button type="button" class="${statusColors[status] || "neutral"}" data-sheet-action="${esc(status)}"><i data-lucide="${statusIcons[status] || "circle"}"></i>Mark as ${esc(status)}</button>`).join("");
     let dialog = $("#item-action-dialog");
@@ -2540,8 +2540,8 @@
       bottomBarLayout: { spread: "align-horizontal-space-between", center: "align-horizontal-justify-center", left: "align-horizontal-justify-start" },
       dashboardView: { list: "list", "detailed-grid": "layout-dashboard", "compact-grid": "grid-3x3", "large-grid": "square" },
       dashboardDefaultPlatform: { all: "layers-3", pc: "monitor", mac: "laptop", mobile: "smartphone", xbox: "tv", playstation: "gamepad-2", nintendo: "joystick" },
-      dashboardDefaultCategory: { remember: "history", all: "layers", Playing: "gamepad-2", Completed: "circle-check", Backlog: "bookmark", "On Hold": "pause-circle", Dropped: "circle-minus" },
-      defaultStatus: { Backlog: "bookmark", Playing: "play", "On Hold": "pause", Dropped: "circle-x", Completed: "circle-check" },
+      dashboardDefaultCategory: { remember: "history", all: "layers", Playing: "gamepad-2", Completed: "circle-check", Backlog: "bookmark", Upcoming: "calendar-clock", "On Hold": "pause-circle", Dropped: "circle-minus" },
+      defaultStatus: { Backlog: "bookmark", Upcoming: "calendar-clock", Playing: "play", "On Hold": "pause", Dropped: "circle-x", Completed: "circle-check" },
       dateFormat: { auto: "globe", dmy: "calendar", mdy: "calendar", iso: "calendar-days", long: "calendar-check" },
       iconStyle: { tiles: "layout-grid", inline: "list" },
       imageStorage: { all: "images", posters: "image", online: "cloud-off" },
@@ -2551,7 +2551,7 @@
       dashboardSort: { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "rating-desc": "star", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-a-z", "alphabetical-desc": "arrow-up-z-a" },
       ratingFormat: { "5-stars": "star", "10-point": "chart-no-axes-column-increasing" },
       automaticCompletion: { automatic: "refresh-cw", ask: "message-circle-question", manual: "hand" },
-      defaultStatus: { Backlog: "archive", Playing: "gamepad-2", "On Hold": "circle-pause", Dropped: "circle-x", Completed: "circle-check" },
+      defaultStatus: { Backlog: "archive", Upcoming: "calendar-clock", Playing: "gamepad-2", "On Hold": "circle-pause", Dropped: "circle-x", Completed: "circle-check" },
       progressIncrement: { 1: "signal-low", 5: "signal-medium", 10: "signal-high" },
       backupSchedule: { never: "calendar-x", daily: "calendar-days" },
       backupRetention: { 3: "archive", 5: "archive-restore", 10: "boxes", 20: "warehouse" },
@@ -2702,7 +2702,7 @@
       const freshIds = new Set(fresh.map(item => item.id));
       const fileHistory = Array.isArray(data.history) ? data.history : [];
       let importedHistory = fileHistory.filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
-      if (!importedHistory.length) importedHistory = fresh.filter(item => ["Dropped", "Completed", "On Hold", "Playing"].includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
+      if (!importedHistory.length) importedHistory = fresh.filter(item => ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
       importState = { ...importState, phase: "preview", incoming: normalized, fresh, importedHistory, skipped: normalized.length - fresh.length };
       render();
       if (prefs.restorePreview === false && fresh.length) continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not finish the restore."; render(); } });

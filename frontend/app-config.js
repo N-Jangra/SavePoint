@@ -18,7 +18,8 @@ window.APP_CONFIG = {
         "Playing",
         "On Hold",
         "Dropped",
-        "Completed"
+        "Completed",
+        "Upcoming"
       ]
     }
   ],

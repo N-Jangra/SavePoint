@@ -140,7 +140,7 @@
     const rangeSwitch = `<div class="ios-pills segmented stats-range" role="group" aria-label="Activity range"><button type="button" class="ios-pill${month ? "" : " active"}" data-stats-range="week" aria-pressed="${!month}">Week</button><button type="button" class="ios-pill${month ? " active" : ""}" data-stats-range="month" aria-pressed="${month}">Month</button></div>`;
     const statusOrder = [...new Set(config.categories.flatMap(category => category.statuses || []))];
     const statusGroups = [...new Set([...statusOrder, ...items.map(item => item.status || "Other")])].map(status => ({ status, games: items.filter(item => String(item.status || "Other").toLowerCase() === String(status).toLowerCase()) })).filter(group => group.games.length);
-    const statusColors = { completed: "var(--status-color-completed)", playing: "var(--status-color-playing)", backlog: "var(--status-color-backlog)", "on hold": "var(--status-color-on-hold)", dropped: "var(--status-color-dropped)" };
+    const statusColors = { completed: "var(--status-color-completed)", playing: "var(--status-color-playing)", backlog: "var(--status-color-backlog)", "on hold": "var(--status-color-on-hold)", dropped: "var(--status-color-dropped)", upcoming: "var(--status-color-upcoming)" };
     const statusSegments = statusGroups.map(group => `<span style="width:${total ? group.games.length / total * 100 : 0}%;background:${statusColors[group.status.toLowerCase()] || "var(--accent)"}" title="${esc(group.status)}: ${group.games.length}"></span>`).join("");
     const statusAccordion = statusGroups.map(group => {
       const pct = total ? Math.round(group.games.length / total * 100) : 0;

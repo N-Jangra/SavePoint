@@ -9,6 +9,7 @@
   --status-color-playing: #0ea5e9;
   --status-color-completed: #22c55e;
   --status-color-on-hold: #f59e0b;
+  --status-color-upcoming: #8b5cf6;
   --status-color-dropped: #f43f5e;
 }
 body { font-family: var(--font-family); background: var(--page-background, #f5f5f7); color: var(--legacy-text, #1d1d1f); }
@@ -2182,3 +2183,4 @@ body[data-dashboard-view="compact-grid"] .dashboard-card .item-copy h3 { font-si
 .ios-buy a.button,.ios-buy a.button:hover,.ios-buy a.button:visited{display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap;color:#fff;border:0;box-shadow:0 6px 14px -6px color-mix(in srgb,var(--accent) 70%,transparent)}
 .ios-buy a.button:active{transform:scale(.96)}
 @media (max-width:420px){.ios-buy{flex-wrap:wrap}.ios-buy-copy{flex:1 1 100%}.ios-buy strong{margin-right:auto}}
+body[data-page="dashboard"] .dashboard-status-group > .item-list > .dashboard-card .status-pill[data-status="upcoming"],.timeline-event-status[data-status="upcoming"]{background:color-mix(in srgb,var(--status-color-upcoming) 14%,var(--surface));color:color-mix(in srgb,var(--status-color-upcoming) 74%,var(--legacy-text))}

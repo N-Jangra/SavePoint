@@ -4,7 +4,7 @@
   window.SplitAppPages.add = context => {
     const { config, prefs, editingItem, addMetadataQuery = "", esc } = context;
     const game = config.categories[0];
-    const statuses = game.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed"];
+    const statuses = game.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed", "Upcoming"];
     const selectedStatus = editingItem?.status || prefs.defaultStatus || statuses[0];
     const statusOptions = statuses.map(status => `<button type="button" class="entry-status-option${status === selectedStatus ? " active" : ""}" data-entry-status="${esc(status)}" aria-pressed="${status === selectedStatus}">${esc(status)}</button>`).join("");
     const maxRating = prefs.ratingFormat === "10-point" ? 10 : 5;

@@ -33,7 +33,7 @@
       ]},
       { id: "dashboard", title: "Dashboard", description: "Choose how your game collection is arranged.", icon: "layout-dashboard", settings: [
         ["Dashboard view", "dashboardView", "select", ["list|List", "detailed-grid|Detailed grid", "compact-grid|Compact grid", "large-grid|Large poster grid"]],
-        ["Default Category", "dashboardDefaultCategory", "select", ["remember|Remember last", "all|All", ...["Playing", "Completed", "Backlog", "On Hold", "Dropped"].map(status => `${status}|${status}`)]],
+        ["Default Category", "dashboardDefaultCategory", "select", ["remember|Remember last", "all|All", ...["Playing", "Completed", "Backlog", "Upcoming", "On Hold", "Dropped"].map(status => `${status}|${status}`)]],
         ["Default Platform", "dashboardDefaultPlatform", "select", ["all|All platforms", "pc|PC", "mac|Mac", "mobile|Mobile", "xbox|Xbox", "playstation|PlayStation", "nintendo|Nintendo"]],
         ["Card Corner Style", "cardCorners", "select", ["rounded|Rounded", "soft|Soft", "square|Square"]],
         ["Dashboard Density", "dashboardDensity", "select", ["comfortable|Comfortable", "compact|Compact"]],

@@ -11,7 +11,7 @@
     const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7)).getTime();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const configuredStatuses = (config?.categories || []).flatMap(category => category.statuses || []);
-    const visibleStatuses = new Set(configuredStatuses.length ? configuredStatuses : ["Backlog", "Playing", "Completed", "On Hold", "Dropped"]);
+    const visibleStatuses = new Set(configuredStatuses.length ? configuredStatuses : ["Backlog", "Playing", "Completed", "On Hold", "Dropped", "Upcoming"]);
     const historyEntryIndex = new Map(history.map((entry, index) => [entry, index]));
     const yearOptions = [...new Set(history.map(entry => new Date(entry.at || 0).getFullYear()).filter(year => year > 1970))].sort((a, b) => b - a);
     const stamp = new Map();
@@ -40,7 +40,7 @@
       if (!days.has(dayKey)) days.set(dayKey, []);
       days.get(dayKey).push({ entry, date });
     });
-    const statusIcons = { Backlog: "▤", Dropped: "↓", Completed: "✓", "On Hold": "Ⅱ", Playing: "▶" };
+    const statusIcons = { Backlog: "▤", Upcoming: "◷", Dropped: "↓", Completed: "✓", "On Hold": "Ⅱ", Playing: "▶" };
     // Two O(1) indexes instead of scanning every game for every history row.
     const gameById = new Map(), gameByTitle = new Map();
     items.forEach(row => { gameById.set(String(row.id), row); const key = String(row.title).toLowerCase(); if (!gameByTitle.has(key)) gameByTitle.set(key, row); });
