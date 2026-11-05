@@ -4,7 +4,7 @@
   const config = window.APP_CONFIG;
   const nativeAndroid = Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor?.getPlatform?.() === "android");
   const dashboardPageSize = nativeAndroid ? 8 : 12;
-  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add Game", "import-preview": "Import List", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
+  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add Game", "import-preview": "Import List", export: "Export", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
   const navItems = [
     { key: "dashboard", label: "Home", icon: "⌂", locked: true },
     { key: "discover", label: "Discover", icon: "✧" },
@@ -501,7 +501,7 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
@@ -1260,9 +1260,7 @@
       else if (key === "resetAnimations") resetAnimations();
       else if (key === "previewAnimations") previewAnimations();
       else if (key === "resetAppearance") resetAppearance();
-      else if (key === "export") exportList();
-      else if (key === "exportTxt") exportNames("txt");
-      else if (key === "exportCsv") exportNames("csv");
+      else if (key === "export") goto("export");
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary")
           .then(() => toast("Temporary cache cleared."))
@@ -2691,20 +2689,22 @@
   // Native: stream the library in small chunks to a file the user picks with Android's "Save as" screen
   // (silent: straight into the backup folder, used before destructive actions). Browsers get a normal download.
   let exportRunning = false;
-  const OPINION_FIELDS = ["rating", "ratingExact", "review", "reviews", "notes"];
-  // Manual exports can leave ratings and reviews out; automatic safety backups always keep everything.
-  function exportableItems(silent) {
-    if (silent || prefs.backupIncludeRatings !== false) return items;
-    return items.map(item => { const copy = { ...item }; OPINION_FIELDS.forEach(field => delete copy[field]); return copy; });
+  const REVIEW_FIELDS = ["review", "reviews", "notes"];
+  let exportOptions = { format: "json", ratings: true, reviews: true };
+  // Manual exports honour the Export page options; automatic safety backups (silent) always keep everything.
+  function exportableItems(silent, opts = exportOptions) {
+    if (silent || (opts.ratings && opts.reviews)) return items;
+    return items.map(item => { const copy = { ...item }; if (!opts.ratings) { delete copy.rating; delete copy.ratingExact; } if (!opts.reviews) REVIEW_FIELDS.forEach(field => delete copy[field]); return copy; });
   }
   const csvCell = value => { const text = String(value ?? ""); return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
-  async function exportNames(format) {
+  async function exportNames(format, opts = exportOptions) {
     if (!items.length) { toast("Your library is empty."); return; }
     const sorted = [...items].sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: "base" }));
-    const csv = format === "csv";
+    const csv = format === "csv", max = prefs.ratingFormat === "10-point" ? 10 : 5;
+    const reviewOf = item => String(item.review ?? item.reviews ?? item.notes ?? "").replace(/\s+/g, " ").trim();
     const content = csv
-      ? "Title,Year,Status\r\n" + sorted.map(item => [item.title, String(item.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", item.status].map(csvCell).join(",")).join("\r\n") + "\r\n"
-      : sorted.map(item => String(item.title).replace(/[\r\n]+/g, " ").trim()).join("\n") + "\n";
+      ? ["Title", "Year", "Status", ...(opts.ratings ? ["Rating"] : []), ...(opts.reviews ? ["Review"] : [])].join(",") + "\r\n" + sorted.map(item => [item.title, String(item.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", item.status, ...(opts.ratings ? [Number(item.rating) || ""] : []), ...(opts.reviews ? [reviewOf(item)] : [])].map(csvCell).join(",")).join("\r\n") + "\r\n"
+      : sorted.map(item => { const line = String(item.title).replace(/[\r\n]+/g, " ").trim(); const extras = [opts.ratings && Number(item.rating) ? `${item.rating}/${max}` : "", opts.reviews ? reviewOf(item) : ""].filter(Boolean); return extras.length ? `${line} — ${extras.join(" — ")}` : line; }).join("\n") + "\n";
     const fileName = `${config.key}-names-${new Date().toISOString().slice(0, 10)}.${csv ? "csv" : "txt"}`, mimeType = csv ? "text/csv" : "text/plain";
     try {
       if (nativeAndroid && window.SplitAppBackend?.exportTextFile) {
@@ -2719,6 +2719,7 @@
       if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Names export failed: ${message}`); }
     }
   }
+  function runExport() { return exportOptions.format === "json" ? exportList() : exportNames(exportOptions.format); }
   async function exportList({ silent = false } = {}) {
     if (exportRunning) { toast("An export is already running."); return; }
     const backend = window.SplitAppBackend;
@@ -2731,7 +2732,7 @@
         const result = await backend.exportLibrary({ items: exportItems, history, preferences: prefs }, { mode: silent ? "folder" : "ask", onProgress: (done, total) => {
           if (Date.now() - lastToast > 700 && done < total) { lastToast = Date.now(); toast(`Exporting… ${Math.round(done / total * 100)}%`); }
         } });
-        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} games${prefs.backupIncludeRatings === false ? " without ratings and reviews" : ""}.`);
+        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} games${!exportOptions.ratings || !exportOptions.reviews ? " with your export options" : ""}.`);
       } catch (error) {
         const message = String(error?.message || error);
         if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Export failed: ${message}`); }
@@ -2766,15 +2767,15 @@
       }
       row.push(cell); if (row.some(value => value.trim())) rows.push(row);
     } else String(text).split(/\r?\n/).forEach(line => { if (line.trim()) rows.push([line]); });
-    let titleAt = 0, yearAt = -1, statusAt = -1, start = 0;
+    let titleAt = 0, yearAt = -1, statusAt = -1, ratingAt = -1, start = 0;
     const header = (rows[0] || []).map(value => value.trim().toLowerCase());
     if (isCsv && header.some(value => ["title", "name", "game"].includes(value))) {
       titleAt = Math.max(0, header.findIndex(value => ["title", "name", "game"].includes(value)));
-      yearAt = header.indexOf("year"); statusAt = header.indexOf("status"); start = 1;
+      yearAt = header.indexOf("year"); statusAt = header.indexOf("status"); ratingAt = header.indexOf("rating"); start = 1;
     }
     return { items: rows.slice(start).map(row => {
       const status = statuses.find(name => name.toLowerCase() === String(row[statusAt] || "").trim().toLowerCase());
-      return { title: String(row[titleAt] || "").trim(), ...(yearAt >= 0 && row[yearAt] ? { year: String(row[yearAt]).trim() } : {}), ...(status ? { status } : {}) };
+      return { title: String(row[titleAt] || "").trim(), ...(yearAt >= 0 && row[yearAt] ? { year: String(row[yearAt]).trim() } : {}), ...(status ? { status } : {}), ...(ratingAt >= 0 && Number(row[ratingAt]) > 0 ? { rating: Number(row[ratingAt]) } : {}) };
     }).filter(item => item.title) };
   }
   // A restored game keeps what it was saved with; only a game with no saved details gets fetched again.
@@ -3312,7 +3313,7 @@
     const settingAction = event.target.closest("[data-setting-action]");
     if (settingAction && settingAction.type !== "file") {
       const key = settingAction.dataset.settingAction;
-      if (key === "export") exportList(); else if (key === "exportTxt") exportNames("txt"); else if (key === "exportCsv") exportNames("csv"); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
+      if (key === "export") goto("export"); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary");
         toast("Temporary cache cleared.");
@@ -3323,6 +3324,11 @@
     if (event.target.closest("[data-sync-retry]")) { retrySyncFailures(); return; }
     if (event.target.closest("[data-sync-dismiss]")) { if (syncJob?.finished) { syncJob = null; updateSyncUI(); goto("dashboard"); } return; }
     if (event.target.closest("[data-continue-import]")) { continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not restore this library."; render(); } }); return; }
+    const exportFormat = event.target.closest("[data-export-format]");
+    if (exportFormat) { exportOptions = { ...exportOptions, format: exportFormat.dataset.exportFormat }; render(); return; }
+    const exportOpt = event.target.closest("[data-export-opt]");
+    if (exportOpt) { exportOptions = { ...exportOptions, [exportOpt.dataset.exportOpt]: !exportOptions[exportOpt.dataset.exportOpt] }; render(); return; }
+    if (event.target.closest("[data-run-export]")) { runExport(); return; }
     if (event.target.closest("[data-cancel-import]")) { importState = null; settingsGroup = "backups"; goto("settings"); return; }
     const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { await addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); return; }
     if (event.target.closest("[data-discover-row-add]")) return;

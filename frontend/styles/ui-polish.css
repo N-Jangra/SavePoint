@@ -2246,3 +2246,19 @@ body[data-icon-style=inline] .stats-subpage .stats-subpage-icon{border:0;backgro
 @keyframes hint-nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(4px)}}
 @media (prefers-reduced-motion:reduce){.scroll-hint span{animation:none}}
 .detail-status-pills>.ios-pill{min-height:40px;padding:0 14px}
+
+/* 0.1.2+: Export page */
+.export-page{display:grid;align-content:start;gap:10px;padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+.export-group{display:grid;gap:8px}
+.export-choice{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:15px;background:var(--surface);color:inherit;text-align:left;cursor:pointer}
+.export-choice.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+.export-choice strong{display:block;font-size:.92rem}.export-choice small{display:block;color:var(--muted);font-size:.74rem;margin-top:2px}
+.export-radio,.export-check{flex:none;width:22px;height:22px;border:2px solid var(--muted);display:grid;place-items:center}
+.export-radio{border-radius:50%}.export-check{border-radius:7px}
+.export-choice.active .export-radio,.export-choice.active .export-check{border-color:var(--accent);background:var(--accent)}
+.export-choice.active .export-radio::after{content:"";width:8px;height:8px;border-radius:50%;background:#fff}
+.export-choice.active .export-check::after{content:"";width:6px;height:11px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.export-choice.locked{opacity:.75;cursor:default}
+.export-summary{margin:4px 2px;color:var(--muted);font-size:.8rem}
+.export-run{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;width:100%}
+.export-run svg{width:18px;height:18px}

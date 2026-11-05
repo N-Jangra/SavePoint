@@ -10,8 +10,10 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Rotate button in the screenshot viewer: turn any screenshot or thumbnail to landscape inside the viewer only (the rest of the app is not rotated).
 - Statistics → Play time is now split by status: Completed (time spent), Dropped (time spent and time saved), Playing and On Hold (time spent and time left), Backlog and Upcoming (games and money only), each with the money value of its games.
 - Statistics → Ratings: a Clear all button that removes every rating (with a confirmation).
-- Settings → Backups: Export Names (TXT) and Export Names (CSV) write a titles-only list; Import List now also accepts `.txt` and `.csv` names lists, which are then synced from your sources.
-- Settings → Backups: Include Ratings & Reviews toggle for manual JSON exports.
+- Settings → Backups → Export opens an Export page: pick JSON, TXT or CSV, then tick what to include (names always, ratings, reviews). Import List also accepts `.txt` and `.csv` lists (a CSV `Rating` column is read), which are then synced from your sources.
+- Metadata sync pauses while the app is in the background and resumes when you return (Settings → Metadata → Pause Sync In Background).
+- Play time: Backlog shows time needed; the "games with data" chip sits beside the fetch buttons; Statistics sub-pages use an icon (following Icon style) instead of a text badge.
+- Status chip rows on Add and Details fade at the scrolling edge, show a swipe hint on Add, and start scrolled to the selected status.
 - Add Game: the Status chips scroll sideways in one row like the Home pills.
 
 ### Changed
