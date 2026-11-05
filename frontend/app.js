@@ -1314,7 +1314,8 @@
     const genre = show(item.facts?.genres || item.cachedDetails?.genres || item.cachedDetails?.genre || fieldValue(/^(genre|genres)$/i));
     const progress = Math.max(0, Number(item.progress) || 0), goal = Math.max(0, Number(item.goal) || 0, Number(item.completionTargetHours) || 0);
     const unit = /^hours?$/i.test(String(category(item.category)?.unit || "")) ? " h" : "";
-    return { id: item.id, title: item.title, subtitle: [dev, genre].filter(Boolean).join(" · "), status: item.status, rating: Number(item.rating) ? `★ ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}` : "", progressText: progress || goal ? `${progress}${goal ? ` / ${goal}` : ""}${unit}` : "", percent: goal ? Math.min(100, Math.round(progress / goal * 100)) : null };
+    const tagList = [...new Set([...(String(genre).split(/,\s*/)), ...((item.cachedDetails?.tags || item.facts?.tags || []).map(t => typeof t === "string" ? t : t?.name))].map(v => String(v || "").trim()).filter(Boolean))].slice(0, 5);
+    return { id: item.id, tagsText: tagList.join(" · "), title: item.title, subtitle: [dev, genre].filter(Boolean).join(" · "), status: item.status, rating: Number(item.rating) ? `★ ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}` : "", progressText: progress || goal ? `${progress}${goal ? ` / ${goal}` : ""}${unit}` : "", percent: goal ? Math.min(100, Math.round(progress / goal * 100)) : null };
   }
   const shareCacheGet = async (key, sig) => { const hit = await window.SplitAppIDB?.getThumbs?.([[key, sig]]); return hit?.[0]?.[1] || null; };
   const shareCachePut = (key, sig, blob) => window.SplitAppIDB?.putThumbs?.([[key, sig, blob]]).catch(() => {});
@@ -1345,6 +1346,30 @@
       try { const clone = { ...item, localPortraitData: "", localThumbnailData: "" }; await window.SplitAppBackend.hydrateThumbnails([clone]); img = await tryLocal(clone.localPortraitData || clone.localThumbnailData); if (img) return img; } catch (_) {}
     }
     return null;
+  }
+  // Loads any image so a canvas can use it (fetch first: a plain <img> from another origin would taint the canvas).
+  async function shareLoadUrl(url, maxWidth = 0) {
+    const load = src => new Promise(resolve => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = src; });
+    if (!/^https?:/i.test(url || "")) return load(url);
+    let blob = null;
+    try { const r = await fetch(url, { mode: "cors", credentials: "omit" }); if (r.ok) blob = await r.blob(); } catch (_) {}
+    if (!blob) { const response = await requestTimelineImage(url); if (response) blob = await response.blob(); }
+    if (!blob) return null;
+    if (maxWidth && window.createImageBitmap) { try { return await createImageBitmap(blob, { resizeWidth: maxWidth, resizeQuality: "medium" }); } catch (_) {} }
+    const objectUrl = URL.createObjectURL(blob); const img = await load(objectUrl); setTimeout(() => URL.revokeObjectURL(objectUrl), 30000); return img;
+  }
+  async function openShareGame(id) {
+    const item = itemById(String(id)); if (!item) return;
+    const entry = shareEntry(item);
+    const show = value => Array.isArray(value) ? value.map(show).filter(Boolean).slice(0, 3).join(", ") : value && typeof value === "object" ? show(value.name || value.title || value.label || value.value) : String(value || "").trim();
+    const f = item.facts || {}, cd = item.cachedDetails || {};
+    const fields = (cd.fields || []).filter(x => x && x.label && String(x.value ?? "").trim());
+    const shotUrls = $$("#page-content [data-detail-image-src]").filter(node => /^screenshot/i.test(node.dataset.detailImageLabel || "")).map(node => node.dataset.detailImageSrc).filter(url => /^(https?:|data:)/i.test(url));
+    const languages = (cd.languages || []).map(l => typeof l === "string" ? l : l?.name).filter(Boolean);
+    const tags = (cd.tags || f.tags || []).map(t => typeof t === "string" ? t : t?.name).filter(Boolean);
+    const game = { title: item.title, subtitle: [entry.status, show(f.released || f.releaseDate || cd.releaseDate || item.year)].filter(Boolean).join(" · "), status: entry.status, rating: entry.rating, progressText: entry.progressText, percent: entry.percent, fields, requirements: cd.requirements || null, languages, tags, description: String(cd.description || item.description || item.summary || "").trim(), shotUrls, cover: null };
+    game.coverPromise = shareImageFor(entry).catch(() => null);
+    window.SplitAppShareGame.open(game, { showPopup, closePopup, toast, esc, loadImage: url => shareLoadUrl(url, 720) });
   }
   // Sideways chip rows: fade the edge that still has content and bring the selected chip into view.
   function setupScrollRows(root) {
@@ -2070,7 +2095,7 @@
       if (!saved) return null;
       let loaded = null, mixed = false;
       try {
-        loaded = await window.SplitAppMix.load({ ...saved, ...sourceResult, title: saved.title, category: saved.category }, { ...detailSettings(), background: options.background === true }, options.quiet ? null : partial => {
+        loaded = await window.SplitAppMix.load({ ...saved, ...sourceResult, title: saved.title, category: saved.category }, { ...detailSettings(), background: options.background !== false }, options.quiet ? null : partial => {
           const current = itemById(itemId);
           if (!current) return;
           applyEnrichedDetails(current, partial, true);
@@ -2240,7 +2265,10 @@
       }).catch(() => {});
     }
     if (!item.metadataSource || !item.providerId) { detailLoading = false; return; }
-    if (!force && hasCachedDetails && detailCacheIsFresh(item)) { detailLoading = false; return; }
+    const singleSource = !isPreview && item.category === "game" && item.metadataSource !== "mix" && hasCachedDetails && Boolean(window.SplitAppMix?.load);
+    const mixDue = singleSource && Date.now() - (Number(item.mixTriedAt) || 0) > 6 * 3600000;
+    const mixOnly = !force && hasCachedDetails && detailCacheIsFresh(item) && mixDue;
+    if (!force && hasCachedDetails && detailCacheIsFresh(item) && !mixDue) { detailLoading = false; return; }
     if (prefs.metadataMode === "offline" || !navigator.onLine) { detailLoading = false; return; }
     // Stale cached content stays visible while this refresh runs in the background.
     detailLoading = !hasCachedDetails;
@@ -2255,13 +2283,15 @@
           // A stale single-source game checks all enabled catalogs. Multiple matches
           // upgrade it to Mix; otherwise its original provider remains authoritative.
           // Only when something is already on screen: with nothing cached, waiting for every catalog would keep the page loading.
-          if (!isPreview && hasCachedDetails && item.category === "game" && item.metadataSource !== "mix" && window.SplitAppMix?.load) {
+          if (singleSource) {
             try {
-              const combined = await window.SplitAppMix.load(item, settings);
+              // Something is already on screen, so slow catalogs (HowLongToBeat) get the long grace period.
+              const combined = await window.SplitAppMix.load(item, { ...settings, background: true });
               if ((combined?.facts?.sources || []).length > 1) { loaded = combined; upgradedToMix = true; }
             } catch (_) { /* Keep the saved provider as a fallback if cross-source lookup fails. */ }
+            item.mixTriedAt = Date.now();
           }
-          if (!loaded) loaded = await window.SplitAppDetails.load(item, settings);
+          if (!loaded) loaded = mixOnly ? item.cachedDetails : await window.SplitAppDetails.load(item, settings);
           return { loaded, upgradedToMix };
         })();
         detailRefreshByItem.set(requestKey, refresh);
@@ -3199,6 +3229,8 @@
       }
       return;
     }
+    const shareGameBtn = event.target.closest("[data-share-game]");
+    if (shareGameBtn) { openShareGame(shareGameBtn.dataset.shareGame); return; }
     const shareGroup = event.target.closest("[data-share-group]");
     if (shareGroup) {
       const key = shareGroup.dataset.shareGroup, by = prefs.dashboardGroupBy || "status";

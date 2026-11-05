@@ -706,7 +706,9 @@
     const plugin = window.Capacitor?.Plugins?.EncryptedStore;
     if (plugin?.getItems && plugin?.getMeta) {
       try {
-        const [itemsResult, metaResult] = await Promise.all([plugin.getItems(), plugin.getMeta()]);
+        // Fetching the whole encrypted library is a multi-megabyte bridge call that blocks every other plugin call
+        // (share, save, export) for a long time after launch, so it is only fetched when the database is empty.
+        const [itemsResult, metaResult] = await Promise.all([data.items.length ? Promise.resolve(null) : plugin.getItems(), plugin.getMeta()]);
         // IndexedDB already holds the library; parsing the encrypted copy (one huge JSON string over the bridge) only matters when it is empty.
         if (!data.items.length && itemsResult?.exists && itemsResult.data) {
           const items = JSON.parse(itemsResult.data);

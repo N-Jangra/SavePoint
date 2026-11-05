@@ -2420,3 +2420,57 @@ html[data-lowend=true] body .settings-subpage-heading{
 /* Smoother scrolling: promote the sticky bar to its own layer and keep list cards isolated. */
 body[data-page="dashboard"] .topbar,body[data-page="explore"] .explore-heading,.detail-page-heading,.settings-subpage-heading{transform:translateZ(0);will-change:transform}
 html[data-nativeandroid=true] #page-content.page-route-enter .item-card,html[data-native-android=true] #page-content.page-route-enter .item-card{animation:none}
+.share-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.share-step{display:grid;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.share-step>span{color:var(--muted);font-size:.68rem;font-weight:700;letter-spacing:.03em}
+.share-step>div{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.share-step b{font-variant-numeric:tabular-nums;font-size:.9rem}
+.share-step button{width:34px;height:34px;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:inherit;font-size:1.1rem;cursor:pointer}
+
+/* 0.1.2+: Share on group headers is a proper labelled button */
+.group-share-btn{display:inline-flex !important;align-items:center;justify-content:center;gap:7px;width:auto !important;height:38px !important;min-width:88px;padding:0 14px !important;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line)) !important;border-radius:12px !important;background:color-mix(in srgb,var(--accent) 12%,var(--surface)) !important;color:var(--accent-text,var(--accent)) !important;font:700 .82rem var(--font-family);letter-spacing:0;text-transform:none;box-shadow:0 1px 2px color-mix(in srgb,#000 8%,transparent)}
+.group-share-btn svg{width:17px;height:17px}
+.group-share-btn:active{transform:scale(.96);background:color-mix(in srgb,var(--accent) 20%,var(--surface)) !important}
+body[data-icon-style=inline] .group-share-btn{border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line)) !important;background:color-mix(in srgb,var(--accent) 12%,var(--surface)) !important}
+
+/* 0.1.2+: compact, quiet Share button that sits level with the group title */
+.dashboard-status-group>h2{align-items:center;min-height:32px}
+.group-share-btn{height:30px !important;min-width:0 !important;padding:0 11px !important;gap:6px;border:1px solid var(--line) !important;border-radius:10px !important;background:var(--surface) !important;color:var(--accent-text,var(--accent)) !important;font:650 .72rem var(--font-family) !important;box-shadow:none !important}
+.group-share-btn svg{width:14px !important;height:14px !important}
+.group-share-btn:active{background:var(--surface-2) !important}
+body .group-share-btn,body[data-icon-style=inline] .group-share-btn{border:1px solid var(--line) !important;background:var(--surface) !important}
+.dashboard-status-group>h2 .group-share-btn span{display:inline;padding:0 !important;margin:0 !important;border:0 !important;border-radius:0 !important;background:none !important;color:inherit !important;font:inherit !important;letter-spacing:0 !important;text-transform:none !important;min-width:0 !important}
+.share-pdf-info{display:grid;gap:4px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.share-pdf-info strong{font-size:.9rem}.share-pdf-info small{color:var(--muted);font-size:.74rem;line-height:1.4}
+.share-dialog .share-footer>.button.primary{width:100%}
+
+/* 0.1.2+: compact game-share popup */
+.share-game-dialog .share-body{gap:8px;padding-top:2px}
+.share-game-dialog .share-label{margin:6px 2px 0}
+.share-hint{margin:0 2px;color:var(--muted);font-size:.74rem;line-height:1.35;min-height:1em}
+.share-chips{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.share-chip{display:flex;align-items:center;gap:9px;min-height:46px;padding:8px 11px;border:1px solid var(--line);border-radius:13px;background:var(--surface);color:inherit;font:650 .8rem/1.2 var(--font-family);text-align:left;cursor:pointer}
+.share-chip:first-child{grid-column:1 / -1}
+.share-chip-box{display:grid;place-items:center;flex:none;width:20px;height:20px;border:2px solid var(--muted);border-radius:6px;color:#fff}
+.share-chip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface))}
+.share-chip.on .share-chip-box{border-color:var(--accent);background:var(--accent)}
+.share-chip:disabled{opacity:.45;cursor:default}
+.share-chip.always{opacity:.8}
+
+/* 0.1.2+: Home share popup — compact footer rows, tidier steppers, larger preview */
+.share-dialog .share-footer{gap:8px;padding:10px 16px calc(12px + env(safe-area-inset-bottom))}
+.share-dialog .share-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.share-dialog .share-actions.has-cap{grid-template-columns:76px 1fr 1fr;align-items:center}
+.share-cap{color:var(--muted);font-size:.7rem;font-weight:700;letter-spacing:.02em;line-height:1.2}
+.share-dialog .share-footer .button{min-height:42px;padding:0 10px;border-radius:13px;font-size:.88rem}
+.share-dialog .share-options{gap:8px}
+.share-dialog .share-step{grid-template-columns:1fr;gap:4px;padding:7px 10px 8px;border-radius:13px}
+.share-dialog .share-step>span{font-size:.64rem}
+.share-dialog .share-step button{width:30px;height:30px;font-size:1rem}
+.share-dialog .share-step b{font-size:.86rem}
+.share-dialog .share-preview{min-height:240px}
+.share-dialog .share-pager{gap:12px}
+.share-dialog .share-pager button{width:34px;height:34px;font-size:1.1rem}
+.share-dialog .share-modes button{min-height:38px}
+.share-dialog .share-pdf-info{padding:10px 12px}
+.share-dialog .share-pdf-info small{font-size:.72rem}

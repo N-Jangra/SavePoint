@@ -91,6 +91,173 @@ public class ShareIntentPlugin extends Plugin {
     @PluginMethod
     public void shareImage(PluginCall call) { withImage(call, "share"); }
 
+    // Large files cross the WebView bridge slowly in one piece, so they are sent in small chunks.
+    private File chunkFile;
+    private FileOutputStream chunkOut;
+
+    @PluginMethod
+    public void beginFile(PluginCall call) {
+        String ext = call.getString("extension", "pdf").replaceAll("[^A-Za-z0-9]", "");
+        String name = call.getString("filename", "SavePoint").replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("\\.+$", "");
+        final String safeName = name.isEmpty() ? "SavePoint" : name;
+        imageExecutor.execute(() -> {
+            try {
+                synchronized (this) {
+                    if (chunkOut != null) { try { chunkOut.close(); } catch (Exception ignored) {} chunkOut = null; }
+                    File directory = new File(getContext().getCacheDir(), "shared-images");
+                    if (!directory.exists() && !directory.mkdirs()) throw new Exception("Could not prepare the file.");
+                    chunkFile = new File(directory, UUID.randomUUID() + "-" + safeName + "." + ext);
+                    chunkOut = new FileOutputStream(chunkFile);
+                }
+                call.resolve();
+            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not start the file." : error.getMessage(), error); }
+        });
+    }
+
+    @PluginMethod
+    public void appendFileChunk(PluginCall call) {
+        String data = call.getString("data", "");
+        imageExecutor.execute(() -> {
+            try {
+                synchronized (this) {
+                    if (chunkOut == null) throw new Exception("No file is open.");
+                    chunkOut.write(android.util.Base64.decode(data, android.util.Base64.DEFAULT));
+                }
+                call.resolve();
+            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not write the file." : error.getMessage(), error); }
+        });
+    }
+
+    @PluginMethod
+    public void saveChunkedFile(PluginCall call) {
+        String mime = call.getString("mimeType", "application/pdf");
+        String name = call.getString("filename", "SavePoint").replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("\\.+$", "");
+        final String safeName = name.isEmpty() ? "SavePoint" : name;
+        imageExecutor.execute(() -> {
+            try {
+                File source;
+                synchronized (this) {
+                    if (chunkOut == null || chunkFile == null) throw new Exception("No file to save.");
+                    chunkOut.close(); chunkOut = null;
+                    source = chunkFile;
+                }
+                byte[] bytes = java.nio.file.Files.readAllBytes(source.toPath());
+                String location = saveDownload(safeName, new ImageData(bytes, mime));
+                String actualName = location.substring(location.lastIndexOf('/') + 1);
+                boolean notified = postDownloadNotification(actualName, location);
+                JSObject result = new JSObject(); result.put("location", location); result.put("notification", notified);
+                call.resolve(result);
+            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not save the file." : error.getMessage(), error); }
+        });
+    }
+
+    @PluginMethod
+    public void shareChunkedFile(PluginCall call) {
+        String mime = call.getString("mimeType", "application/pdf");
+        String title = call.getString("title", "SavePoint");
+        imageExecutor.execute(() -> {
+            try {
+                final Uri uri;
+                synchronized (this) {
+                    if (chunkOut == null || chunkFile == null) throw new Exception("No file to share.");
+                    chunkOut.close(); chunkOut = null;
+                    uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", chunkFile);
+                }
+                getActivity().runOnUiThread(() -> {
+                    try {
+                        Intent send = new Intent(Intent.ACTION_SEND);
+                        send.setType(mime);
+                        send.putExtra(Intent.EXTRA_STREAM, uri);
+                        send.putExtra(Intent.EXTRA_SUBJECT, title);
+                        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        Intent chooser = Intent.createChooser(send, "Share");
+                        chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        getActivity().startActivity(chooser);
+                        call.resolve();
+                    } catch (Exception error) { call.reject("Could not open Android sharing.", error); }
+                });
+            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not share the file." : error.getMessage(), error); }
+        });
+    }
+
+    @PluginMethod
+    public void shareFile(PluginCall call) {
+        String data = call.getString("data", "");
+        String mime = call.getString("mimeType", "application/pdf");
+        String ext = call.getString("extension", "pdf").replaceAll("[^A-Za-z0-9]", "");
+        String name = call.getString("filename", "SavePoint").replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("\\.+$", "");
+        String title = call.getString("title", "SavePoint");
+        if (data.isEmpty()) { call.reject("Nothing to share."); return; }
+        final String safeName = name.isEmpty() ? "SavePoint" : name;
+        imageExecutor.execute(() -> {
+            try {
+                byte[] bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT);
+                File directory = new File(getContext().getCacheDir(), "shared-images");
+                if (!directory.exists() && !directory.mkdirs()) throw new Exception("Could not prepare the file.");
+                File file = new File(directory, UUID.randomUUID() + "-" + safeName + "." + ext);
+                try (FileOutputStream output = new FileOutputStream(file)) { output.write(bytes); }
+                Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+                getActivity().runOnUiThread(() -> {
+                    try {
+                        Intent send = new Intent(Intent.ACTION_SEND);
+                        send.setType(mime);
+                        send.putExtra(Intent.EXTRA_STREAM, uri);
+                        send.putExtra(Intent.EXTRA_SUBJECT, title);
+                        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        Intent chooser = Intent.createChooser(send, "Share");
+                        chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        getActivity().startActivity(chooser);
+                        call.resolve();
+                    } catch (Exception error) { call.reject("Could not open Android sharing.", error); }
+                });
+            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not process this file." : error.getMessage(), error); }
+        });
+    }
+
+    // Multi-image share: images are staged one at a time (keeps each bridge call small), then sent together.
+    private final java.util.ArrayList<Uri> stagedImages = new java.util.ArrayList<>();
+
+    @PluginMethod
+    public void clearStagedImages(PluginCall call) { synchronized (stagedImages) { stagedImages.clear(); } call.resolve(); }
+
+    @PluginMethod
+    public void stageImage(PluginCall call) {
+        String source = call.getString("src", "");
+        String name = call.getString("filename", "SavePoint-image").replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("\\.+$", "");
+        if (source.isEmpty()) { call.reject("The image source is empty."); return; }
+        final String safeName = name.isEmpty() ? "SavePoint-image" : name;
+        imageExecutor.execute(() -> {
+            try {
+                ImageData image = readImage(source);
+                File cached = cacheImage(safeName, image);
+                Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", cached);
+                synchronized (stagedImages) { stagedImages.add(uri); }
+                call.resolve();
+            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not process this image." : error.getMessage(), error); }
+        });
+    }
+
+    @PluginMethod
+    public void shareStagedImages(PluginCall call) {
+        final java.util.ArrayList<Uri> uris;
+        synchronized (stagedImages) { uris = new java.util.ArrayList<>(stagedImages); stagedImages.clear(); }
+        if (uris.isEmpty()) { call.reject("No images to share."); return; }
+        String title = call.getString("title", "SavePoint images");
+        getActivity().runOnUiThread(() -> {
+            try {
+                Intent send = new Intent(uris.size() == 1 ? Intent.ACTION_SEND : Intent.ACTION_SEND_MULTIPLE);
+                send.setType("image/*");
+                if (uris.size() == 1) send.putExtra(Intent.EXTRA_STREAM, uris.get(0)); else send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+                send.putExtra(Intent.EXTRA_SUBJECT, title);
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                Intent chooser = Intent.createChooser(send, "Share images");
+                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                getActivity().startActivity(chooser);
+                JSObject result = new JSObject(); result.put("shared", uris.size()); call.resolve(result);
+            } catch (Exception error) { call.reject("Could not open Android sharing.", error); }
+        });
+    }
+
     @PluginMethod
     public void copyImage(PluginCall call) { withImage(call, "copy"); }
 

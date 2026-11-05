@@ -1,6 +1,6 @@
 // Share a Home group as images that look like the Home list (cover, title, subtitle, rating, status).
 (() => {
-  const PER_PAGE = 15, LONG_CHUNK = 45, W = 1080, ROW = 196, HEAD = 200, FOOT = 84, PAD = 40;
+  const DEFAULT_PER_PAGE = 15, LONG_CHUNK = 45, W = 1080, ROW = 196, HEAD = 200, FOOT = 84, PAD = 40;
   const native = () => window.Capacitor?.Plugins?.ShareIntent;
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const fit = (ctx, text, max) => {
@@ -95,7 +95,7 @@
     return url;
   }
   const chunk = (list, size) => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, i * size + size));
-  const buildImages = (entries, mode) => { const size = mode === "pages" ? PER_PAGE : LONG_CHUNK, groups = chunk(entries, size); return groups.map((group, index) => ({ group, index, pages: groups.length, start: index * size })); };
+  const buildImages = (entries, mode, perPage) => { const size = mode === "pages" ? perPage : LONG_CHUNK, groups = chunk(entries, size); return groups.map((group, index) => ({ group, index, pages: groups.length, start: index * size })); };
   const slug = value => String(value).normalize("NFKD").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "savepoint";
 
   async function saveImage(dataUrl, name) {
@@ -111,18 +111,66 @@
     throw new Error("Sharing images isn't available here — use Save instead.");
   }
 
+  async function shareAllImages(urls, name) {
+    const plugin = native();
+    if (plugin?.stageImage && plugin?.shareStagedImages) {
+      await plugin.clearStagedImages?.();
+      for (let i = 0; i < urls.length; i++) await plugin.stageImage({ src: urls[i], filename: `${name}-${i + 1}` });
+      return plugin.shareStagedImages({ title: name });
+    }
+    const files = await Promise.all(urls.map(async (u, i) => new File([await (await fetch(u)).blob()], `${name}-${i + 1}.jpg`, { type: "image/jpeg" })));
+    if (navigator.canShare?.({ files })) return navigator.share({ files, title: name });
+    throw new Error("Sharing several images isn't available here — use Save all instead.");
+  }
+
+  const PDF_ROWS_PER_PAGE = 16;
+  async function loadCoversFor(entries, getImage) {
+    const withTimeout = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(undefined), ms))]);
+    const jobs = entries.map(entry => coverOf(entry, getImage));
+    let images = await Promise.all(jobs.map(job => withTimeout(job, 4000)));
+    if (images.some(img => img === undefined)) images = await Promise.all(jobs.map((job, n) => images[n] === undefined ? withTimeout(job, 9000) : images[n]));
+    return images.map(img => img || null);
+  }
+  const b64 = bytes => { let bin = ""; for (let n = 0; n < bytes.length; n += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(n, n + 0x8000)); return btoa(bin); };
+  async function stageBytes(bytes, ext, name) {
+    const plugin = native();
+    await plugin.beginFile({ extension: ext, filename: name });
+    for (let offset = 0; offset < bytes.length; offset += 60000) await plugin.appendFileChunk({ data: b64(bytes.subarray(offset, offset + 60000)) });
+  }
+  async function saveBytes(bytes, mime, ext, name) {
+    const plugin = native();
+    if (plugin?.saveChunkedFile) { await stageBytes(bytes, ext, name); const r = await plugin.saveChunkedFile({ mimeType: mime, filename: name }); return r?.location || "Downloads"; }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes], { type: mime })); a.download = `${name}.${ext}`; document.body.appendChild(a); a.click(); a.remove(); return "your device";
+  }
+  async function shareBytes(bytes, mime, ext, name, title) {
+    const plugin = native();
+    if (plugin?.beginFile && plugin?.appendFileChunk && plugin?.shareChunkedFile) {
+      await plugin.beginFile({ extension: ext, filename: name });
+      for (let offset = 0; offset < bytes.length; offset += 60000) await plugin.appendFileChunk({ data: b64(bytes.subarray(offset, offset + 60000)) });
+      return plugin.shareChunkedFile({ mimeType: mime, title });
+    }
+    const file = new File([bytes], `${name}.${ext}`, { type: mime });
+    if (navigator.canShare?.({ files: [file] })) return navigator.share({ files: [file], title });
+    throw new Error("Sharing files isn't available here.");
+  }
+
   function open({ title, entries, getImage }, { showPopup, closePopup, toast, esc, cacheGet, cachePut }) {
     document.getElementById("share-dialog")?.remove();
     coverJobs.clear();
     const dialog = document.createElement("dialog");
     dialog.id = "share-dialog"; dialog.className = "choice-dialog share-dialog";
-    let mode = "pages", page = 0, images = [], cache = new Map(), token = 0;
+    let kind = "images", mode = "pages", page = 0, images = [], cache = new Map(), token = 0, perPage = DEFAULT_PER_PAGE, shareCount = 0;
     const count = entries.length;
     dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">SHARE</p><h2>${esc(title)} · ${count}</h2></div><button class="choice-dialog-close" type="button" data-share-close aria-label="Close">×</button></header>
-      <div class="share-body"><div class="share-modes" role="group"><button type="button" class="active" data-share-mode="pages">Pages · ${PER_PAGE} games each</button><button type="button" data-share-mode="long">One long picture</button></div>
+      <div class="share-body"><div class="share-modes" data-share-kinds role="group"><button type="button" class="active" data-share-kind="images">Images</button><button type="button" data-share-kind="pdf">PDF</button></div>
+      <div class="share-pdf-info" data-share-pdf-info hidden></div>
+      <div class="share-options" data-share-options>
+        <div class="share-step"><span>Games per page</span><div><button type="button" data-step="per:-1" aria-label="Fewer games per page">−</button><b data-share-per>${DEFAULT_PER_PAGE}</b><button type="button" data-step="per:1" aria-label="More games per page">+</button></div></div>
+        <div class="share-step"><span>Pages to share</span><div><button type="button" data-step="cnt:-1" aria-label="Fewer pages">−</button><b data-share-cnt>1</b><button type="button" data-step="cnt:1" aria-label="More pages">+</button></div></div>
+      </div>
       <div class="share-preview" data-share-preview><span class="share-loading">Preparing…</span></div>
       <div class="share-pager" data-share-pager><button type="button" data-share-prev aria-label="Previous page">‹</button><span data-share-page></span><button type="button" data-share-next aria-label="Next page">›</button></div></div>
-      <footer class="share-footer"><p class="share-status" data-share-status role="status" aria-live="polite" hidden></p><div class="share-actions"><button type="button" class="button secondary" data-share-save>Save</button><button type="button" class="button primary" data-share-send>Share</button></div><button type="button" class="button ghost share-save-all" data-share-save-all hidden>Save all pages</button></footer>`;
+      <footer class="share-footer"><p class="share-status" data-share-status role="status" aria-live="polite" hidden></p><div class="share-actions has-cap" data-share-pdf-row hidden><span class="share-cap" data-share-pdf-cap>PDF</span><button type="button" class="button secondary" data-share-pdf-save>Save</button><button type="button" class="button primary" data-share-pdf-share>Share</button></div><div class="share-actions has-cap"><span class="share-cap">This page</span><button type="button" class="button secondary" data-share-save>Save</button><button type="button" class="button primary" data-share-send>Share</button></div><div class="share-actions share-all-actions has-cap" data-share-all-row hidden><span class="share-cap" data-share-all-cap>All pages</span><button type="button" class="button secondary" data-share-save-all>Save</button><button type="button" class="button primary" data-share-send-all>Share</button></div></footer>`;
     document.body.appendChild(dialog);
     const q = sel => dialog.querySelector(sel);
     // Rendered pages live in IndexedDB (keyed by the page's content), so reopening a group is instant.
@@ -132,10 +180,10 @@
     const render = index => {
       const key = `${mode}:${index}`;
       if (!cache.has(key)) {
-        const d = images[index], idbKey = `share:${slug(title)}:${mode}:${index}`, sig = pageSig(d);
+        const d = images[index], idbKey = `share:${slug(title)}:${mode}:${perPage}:${index}`, sig = pageSig(d);
         cache.set(key, (async () => {
           try { const blob = cacheGet && await cacheGet(idbKey, sig); if (blob) return await blobToDataUrl(blob); } catch (_) {}
-          const { url, complete } = await drawSheet({ title, entries: d.group, start: d.start, total: count, page: index + 1, pages: d.pages, showHead: index === 0, getImage });
+          const { url, complete } = await drawSheet({ title, entries: d.group, start: d.start, total: count, page: index + 1, pages: d.pages, showHead: true, getImage });
           // Only complete pages are stored; a page with missing covers is redrawn next time.
           if (!complete) cache.delete(key); else { try { if (cachePut) cachePut(idbKey, sig, await (await fetch(url)).blob()); } catch (_) {} }
           return url;
@@ -151,13 +199,41 @@
       preview.innerHTML = `<span class="share-loading">Preparing…</span>`;
       q("[data-share-page]").textContent = images.length > 1 ? `${page + 1} / ${images.length}` : "1 image";
       q("[data-share-prev]").disabled = page === 0; q("[data-share-next]").disabled = page >= images.length - 1;
-      q("[data-share-pager]").hidden = images.length < 2;
-      const all = q("[data-share-save-all]"); all.hidden = images.length < 2; all.textContent = `Save all ${images.length} images`;
+      q("[data-share-pager]").hidden = kind === "pdf" || images.length < 2;
+      shareCount = Math.min(Math.max(1, shareCount || images.length), images.length); q("[data-share-per]").textContent = perPage; q("[data-share-cnt]").textContent = `${shareCount} / ${images.length}`;
+      q("[data-share-all-row]").hidden = kind === "pdf" || images.length < 2; q("[data-share-all-cap]").textContent = `All ${shareCount} ${shareCount === 1 ? "page" : "pages"}`;
       const url = await render(page);
-      if (mine === token) { preview.innerHTML = `<img alt="Preview of ${esc(title)}" src="${url}">`; prefetch(page + 1); }
+      if (mine === token) { preview.innerHTML = `<img alt="Preview of ${esc(title)}" src="${url}">`; preview.scrollTop = 0; prefetch(page + 1); }
+    };
+    const pdfPages = Math.max(1, Math.ceil((count + 3) / PDF_ROWS_PER_PAGE));
+    const applyKind = () => {
+      const pdf = kind === "pdf";
+      dialog.querySelectorAll("[data-share-kind]").forEach(b => b.classList.toggle("active", b.dataset.shareKind === kind));
+      q("[data-share-options]").hidden = pdf; q("[data-share-pager]").hidden = pdf || images.length < 2;
+      q("[data-share-preview]").hidden = pdf;
+      q(".share-footer > .share-actions:not([data-share-pdf-row])").hidden = pdf; q("[data-share-pdf-row]").hidden = !pdf;
+      q("[data-share-all-row]").hidden = pdf || images.length < 2;
+      q("[data-share-pdf-cap]").textContent = `All ${count} ${count === 1 ? "game" : "games"}`;
+      const info = q("[data-share-pdf-info]"); info.hidden = !pdf;
+      info.innerHTML = `<strong>${count} ${count === 1 ? "game" : "games"} in one PDF</strong><small>A clean list in your theme colours: number, cover, name, tags, rating and hours for every game, about ${pdfPages} ${pdfPages === 1 ? "page" : "pages"}. The text stays selectable.</small>`;
+      if (!pdf) paint();
+    };
+    let pdfCache = null;
+    const makeListPdf = async () => {
+      if (pdfCache) return pdfCache;
+      const covers = [];
+      for (let n = 0; n < entries.length; n += 12) {
+        say(`Loading covers ${Math.min(n + 12, entries.length)} of ${entries.length}…`, "busy");
+        covers.push(...await loadCoversFor(entries.slice(n, n + 12), getImage));
+      }
+      const C = themeColors();
+      say("Building PDF…", "busy");
+      const { bytes } = await window.SplitAppListPdf.build({ title, entries: entries.map(e => ({ title: e.title, tags: e.tagsText || e.subtitle, rating: e.rating ? e.rating.replace("★", "").trim() : "", hours: e.progressText })), covers, theme: { page: C.page, text: C.text, muted: C.muted, line: C.line, accent: C.accent, card2: C.card2 }, onProgress: (n, total) => say(`Building PDF… ${n} of ${total}`, "busy") });
+      pdfCache = bytes; return bytes;
     };
     const setMode = next => {
-      mode = next; page = 0; cache = new Map(); images = buildImages(entries, mode);
+      mode = next; page = 0; cache = new Map(); images = buildImages(entries, mode, perPage); shareCount = images.length;
+      q("[data-share-options]").hidden = mode !== "pages";
       dialog.querySelectorAll("[data-share-mode]").forEach(b => b.classList.toggle("active", b.dataset.shareMode === mode));
       paint();
     };
@@ -173,12 +249,21 @@
     dialog.addEventListener("click", event => {
       const t = event.target;
       if (t === dialog || t.closest("[data-share-close]")) return closePopup(dialog);
+      const kb = t.closest("[data-share-kind]"); if (kb) { kind = kb.dataset.shareKind; return applyKind(); }
+      if (t.closest("[data-share-pdf-save]")) return guard(async () => saveBytes(await makeListPdf(), "application/pdf", "pdf", slug(title)), r => `Saved to ${r}.`, "Preparing…");
+      if (t.closest("[data-share-pdf-share]")) return guard(async () => { const bytes = await makeListPdf(); say("Opening share…", "busy"); await shareBytes(bytes, "application/pdf", "pdf", slug(title), title); }, null, "Preparing…");
+      const st = t.closest("[data-step]");
+      if (st) { const [k, d] = st.dataset.step.split(":"); const delta = Number(d);
+        if (k === "per") { perPage = Math.min(40, Math.max(3, perPage + delta * (perPage >= 15 ? 5 : 1))); shareCount = 0; setMode("pages"); }
+        else { shareCount = Math.min(images.length, Math.max(1, shareCount + delta)); paint(); }
+        return; }
       const m = t.closest("[data-share-mode]"); if (m) return setMode(m.dataset.shareMode);
       if (t.closest("[data-share-prev]")) { page = Math.max(0, page - 1); return paint(); }
       if (t.closest("[data-share-next]")) { page = Math.min(images.length - 1, page + 1); return paint(); }
       if (t.closest("[data-share-save]")) return guard(async () => saveImage(await render(page), fileName(page)), r => `Saved to ${r}.`, "Saving…");
       if (t.closest("[data-share-send]")) return guard(async () => shareImage(await render(page), fileName(page)), null, "Opening share…");
-      if (t.closest("[data-share-save-all]")) return guard(async () => { let ahead = render(0); for (let i = 0; i < images.length; i++) { const url = await ahead; ahead = i + 1 < images.length ? render(i + 1) : null; await saveImage(url, fileName(i)); } return images.length; }, n => `Saved ${n} images to Downloads.`, "Saving all images…");
+      if (t.closest("[data-share-send-all]")) return guard(async () => { const urls = []; let ahead = render(0); for (let i = 0; i < shareCount; i++) { urls.push(await ahead); ahead = i + 1 < shareCount ? render(i + 1) : null; say(`Preparing ${i + 1} of ${shareCount}…`, "busy"); } return shareAllImages(urls, slug(title)); }, null, "Preparing images…");
+      if (t.closest("[data-share-save-all]")) return guard(async () => { let ahead = render(0); for (let i = 0; i < shareCount; i++) { const url = await ahead; ahead = i + 1 < shareCount ? render(i + 1) : null; await saveImage(url, fileName(i)); } return shareCount; }, n => `Saved ${n} images to Downloads.`, "Saving all images…");
     });
     dialog.addEventListener("close", () => setTimeout(() => dialog.remove(), 300));
     showPopup(dialog);
@@ -186,5 +271,5 @@
     // Warm the remaining covers a few at a time so later pages are ready.
     (async () => { const queue = entries.slice(PER_PAGE); const worker = async () => { while (queue.length && dialog.isConnected) { await coverOf(queue.shift(), getImage); } }; await new Promise(r => setTimeout(r, 1500)); await Promise.all([worker(), worker(), worker()]); })();
   }
-  window.SplitAppShare = Object.freeze({ open });
+  window.SplitAppShare = Object.freeze({ open, helpers: { themeColors, withAlpha, roundRect, fit, loadImage, saveBytes, shareBytes } });
 })();
