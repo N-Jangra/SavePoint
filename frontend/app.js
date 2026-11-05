@@ -191,7 +191,7 @@
   let localMutationRevision = 0;
   const mixEnrichmentByItem = new Map();
   const detailRefreshByItem = new Map();
-  let discoverCache = null, discoverSubmitted = "", discoverSubmittedAt = 0;
+  let discoverCache = null, discoverSubmitted = "", discoverSubmittedAt = 0, discoverInFlight = "";
   let timelineThumbnailLookup = null;
   const timelineLocalThumbnailChecked = new Set();
   const timelineOnlineThumbnailRequested = new Set();
@@ -984,7 +984,7 @@
     if (keepScrollY) window.scrollTo({ top: keepScrollY, behavior: "auto" });
     if (topbarActions) window.lucide?.createIcons({ root: topbarActions, attrs: { "aria-hidden": "true" } });
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
-    else if (page === "discover" && discoverQuery.trim() && discoverQuery === discoverSubmitted) discover();
+    else if (page === "discover" && discoverQuery.trim() && discoverQuery === discoverSubmitted) { if (!discoverInFlight || discoverInFlight !== `${discoverSource}|${discoverQuery}`) discover(); }
     else if (page === "discover") loadDiscoverSuggestions();
     if (page === "mix") paintMixResults();
     if (page === "statistics") { const chart = $(".stats-activity-chart-month"); if (chart) chart.scrollLeft = chart.scrollWidth; }
@@ -1913,6 +1913,7 @@
     if (query) suggestionsRequest += 1;
     const requestId = ++discoverRequestId; const sourceKey = discoverSource;
     const message = $("#discover-message");
+    if (query) discoverInFlight = `${sourceKey}|${query}`;
     if (!query) { message.textContent = ""; loadDiscoverSuggestions(); return; }
     const initialBox = $("#discover-results"), initialEmpty = $("#discover-empty");
     if (initialBox?.isConnected) initialBox.innerHTML = "";
@@ -1938,8 +1939,9 @@
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
       const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
       if (!paintDiscoverResults(results, sourceKey)) return;
-      discoverCache = { source: sourceKey, query, results };
+      discoverCache = { source: sourceKey, query, results }; discoverInFlight = "";
     } catch (error) {
+      if (requestId === discoverRequestId) discoverInFlight = "";
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
       if (initialBox?.isConnected) initialBox.setAttribute("aria-busy", "false");
       const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
@@ -2246,7 +2248,8 @@
           let loaded, upgradedToMix = false;
           // A stale single-source game checks all enabled catalogs. Multiple matches
           // upgrade it to Mix; otherwise its original provider remains authoritative.
-          if (!isPreview && item.category === "game" && item.metadataSource !== "mix" && window.SplitAppMix?.load) {
+          // Only when something is already on screen: with nothing cached, waiting for every catalog would keep the page loading.
+          if (!isPreview && hasCachedDetails && item.category === "game" && item.metadataSource !== "mix" && window.SplitAppMix?.load) {
             try {
               const combined = await window.SplitAppMix.load(item, settings);
               if ((combined?.facts?.sources || []).length > 1) { loaded = combined; upgradedToMix = true; }

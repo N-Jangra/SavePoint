@@ -2384,3 +2384,6 @@ body[data-theme="dark"] .ios-action-group button[data-sheet-action=Upcoming],bod
 body[data-theme="dark"] .ios-action-group button[data-sheet-action=Dropped],body[data-theme="amoled"] .ios-action-group button[data-sheet-action=Dropped]{color:#fb923c !important}
 body[data-theme="dark"] .ios-action-group button[data-sheet-action=remove],body[data-theme="amoled"] .ios-action-group button[data-sheet-action=remove]{color:#f87171 !important}
 body[data-theme="amoled"] .ios-action-group .neutral,body[data-theme="amoled"] .ios-action-group .success,body[data-theme="amoled"] .ios-action-group .warning{filter:none}
+
+/* 0.1.2+: the Home top bar is a real fixed bar — shaded, blurred and bordered like the other page headers */
+body[data-page="dashboard"] .topbar{position:sticky;top:0;z-index:12;margin:0 calc(var(--gutter,16px) * -1);padding-left:var(--gutter,16px);padding-right:var(--gutter,16px);border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface) 90%,transparent);-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px)}
