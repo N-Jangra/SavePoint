@@ -2184,3 +2184,9 @@ body[data-dashboard-view="compact-grid"] .dashboard-card .item-copy h3 { font-si
 .ios-buy a.button:active{transform:scale(.96)}
 @media (max-width:420px){.ios-buy{flex-wrap:wrap}.ios-buy-copy{flex:1 1 100%}.ios-buy strong{margin-right:auto}}
 body[data-page="dashboard"] .dashboard-status-group > .item-list > .dashboard-card .status-pill[data-status="upcoming"],.timeline-event-status[data-status="upcoming"]{background:color-mix(in srgb,var(--status-color-upcoming) 14%,var(--surface));color:color-mix(in srgb,var(--status-color-upcoming) 74%,var(--legacy-text))}
+
+/* 0.1.2: Home pills hug their content (no trailing space after the count) */
+.home-collection-page .collection-status-pills > button{inline-size:max-content;width:auto;min-width:0;flex:0 0 auto;padding-inline:12px;gap:6px;justify-content:flex-start}
+.home-collection-page .collection-status-pills > button > span{margin:0;padding-inline-end:0}
+.home-collection-page .collection-status-pill-label{flex:none;line-height:1.2}
+.home-collection-page .collection-status-pill-count{display:inline-grid;place-items:center;flex:none;min-width:0;padding:2px 6px;line-height:1.2}
