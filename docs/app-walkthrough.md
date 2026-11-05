@@ -34,3 +34,13 @@ The app stores library items, activity history, and preferences locally. Android
 ## Backups and imports
 
 Settings provides export and restore flows. JSON exports can include library items, history, and preferences (ratings and reviews can be left out with a toggle); names-only TXT and CSV exports list just titles so they can be re-imported and synced from sources later. Import accepts `.json`, `.txt` and `.csv`, restores history for added games and fills blank fields of games already in the library. Folder backups may include a database tree and artwork. Treat exports and folder backups as sensitive because they may contain API credentials and are plaintext. The exact persisted fields are documented in [the data schema](db-schema.md).
+
+
+## Library tools (0.1.3)
+
+- **Select games:** tap the select button on Home (or hold a card and release in place), tick games, then use Status, the heart, Delete, All or Done in the bar at the bottom.
+- **Merge:** hold a card, drag it onto another and confirm to merge both into one Mix game; progress shows on the Sync page.
+- **Undo:** removing, bulk actions, merges and imports show an Undo toast for a few seconds; an automatic backup runs before bulk changes.
+- **Fix match / Change cover:** on a game's details page, link or unlink a source or search a source for the right entry, and pick a different cover.
+- **Sync page:** failed games have Retry and Ignore. Pull-to-refresh on Home syncs only games that need it; pull again within 20 seconds to re-check all.
+- **Import List:** near-duplicates are listed under "Looks like duplicates" so you can skip or keep them.

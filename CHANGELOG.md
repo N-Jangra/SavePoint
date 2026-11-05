@@ -25,6 +25,7 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Going Back from a Settings sub-page returns to the position you left instead of the top.
 - The floating sync button hides on the Add page and disappears shortly after a sync finishes.
 - Explore no longer has a search box for the three metadata sources.
+- Select mode, the Fix match dialog, the details Fix match / Change cover buttons and the Settings search focus ring were tidied.
 
 ### Fixed
 
