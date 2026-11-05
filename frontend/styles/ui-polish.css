@@ -2177,3 +2177,8 @@ body[data-dashboard-view="compact-grid"] .dashboard-card .item-copy h3 { font-si
 .entry-status-options{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 -4px;padding:4px 4px 8px;scroll-snap-type:x proximity;touch-action:pan-x pan-y}
 .entry-status-options::-webkit-scrollbar{display:none}
 .entry-status-options .entry-status-option{flex:none;white-space:nowrap;scroll-snap-align:start}
+
+/* 0.1.2: Steam buy/play button is a link — no underline, centred label, never wraps */
+.ios-buy a.button,.ios-buy a.button:hover,.ios-buy a.button:visited{display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap;color:#fff;border:0;box-shadow:0 6px 14px -6px color-mix(in srgb,var(--accent) 70%,transparent)}
+.ios-buy a.button:active{transform:scale(.96)}
+@media (max-width:420px){.ios-buy{flex-wrap:wrap}.ios-buy-copy{flex:1 1 100%}.ios-buy strong{margin-right:auto}}
