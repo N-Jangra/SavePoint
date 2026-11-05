@@ -983,7 +983,67 @@
     return { fileName, uri: opened?.uri || "" };
   }
 
+
+  // ---- Logcat and library history live in savepoint-db/ as logcat.json and library-history.json (whole history, newest first) ----
+  const LOG_FILES = { logcat: "logcat.json", history: "library-history.json" };
+  const LOG_LOCAL = { logcat: `${storageKey}_log`, history: `${storageKey}_changes` };
+  const LOG_MAX = 20000;
+  const logCache = {}, logPending = { logcat: [], history: [] }, logTimers = {};
+  let logQueue = Promise.resolve();
+  const localLog = kind => { try { const list = JSON.parse(localStorage.getItem(LOG_LOCAL[kind]) || "[]"); return Array.isArray(list) ? list : []; } catch (_) { return []; } };
+  async function logTarget() {
+    const plugin = window.Capacitor?.Plugins?.BackupFolder;
+    const uri = activeFolderUri || await getFolderUri({ prompt: false }).catch(() => "");
+    if (!uri || !plugin?.listFiles || !plugin?.writeNestedFile) return null;
+    return { plugin, uri };
+  }
+  async function loadLogFile(kind, target) {
+    try {
+      const root = (await target.plugin.listFiles({ uri: target.uri }))?.files || [];
+      const tree = root.find(entry => entry.name === folderTreeName && entry.uri);
+      if (!tree) return null;
+      const file = ((await target.plugin.listFiles({ uri: tree.uri }))?.files || []).find(entry => entry.name === LOG_FILES[kind] && entry.uri);
+      if (!file) return null;
+      const list = JSON.parse((await target.plugin.readFile({ uri: file.uri })).content || "[]");
+      return Array.isArray(list) ? list : null;
+    } catch (_) { return null; }
+  }
+  const writeLogFile = (kind, target, list) => target.plugin.writeNestedFile({ uri: target.uri, dirPath: [folderTreeName], fileName: LOG_FILES[kind], content: JSON.stringify(list) });
+  function flushLog(kind) {
+    logQueue = logQueue.catch(() => {}).then(async () => {
+      const target = await logTarget(); if (!target) return;
+      const fresh = logPending[kind].splice(0);
+      if (!logCache[kind]) {
+        const fromFile = await loadLogFile(kind, target);
+        // First write: start from what this device already holds (it includes the entries just queued).
+        logCache[kind] = fromFile || localLog(kind);
+        if (!fromFile) fresh.length = 0;
+      }
+      if (fresh.length) logCache[kind] = [...fresh.reverse(), ...logCache[kind]];
+      logCache[kind] = logCache[kind].slice(0, LOG_MAX);
+      await writeLogFile(kind, target, logCache[kind]);
+    }).catch(() => {});
+    return logQueue;
+  }
+  function appendLog(kind, entry) {
+    if (!LOG_FILES[kind]) return;
+    logPending[kind].push(entry);
+    clearTimeout(logTimers[kind]); logTimers[kind] = setTimeout(() => flushLog(kind), 2500);
+  }
+  async function readLog(kind) {
+    await flushLog(kind);
+    const target = await logTarget();
+    if (!target) return localLog(kind);
+    if (!logCache[kind]) logCache[kind] = (await loadLogFile(kind, target)) || localLog(kind);
+    return logCache[kind];
+  }
+  async function clearLog(kind) {
+    try { localStorage.removeItem(LOG_LOCAL[kind]); } catch (_) {}
+    logPending[kind].length = 0; logCache[kind] = [];
+    const target = await logTarget(); if (target) await writeLogFile(kind, target, []).catch(() => {});
+  }
   window.SplitAppBackend = Object.freeze({
+    appendLog, readLog, clearLog,
     exportLibrary,
     exportTextFile,
     name: app.name,
