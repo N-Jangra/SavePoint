@@ -82,9 +82,9 @@
       const sameTitle = row => row.category === item.category && String(row.title || "").trim().toLocaleLowerCase() === String(item.title || "").trim().toLocaleLowerCase();
       const sameYear = row => String(row.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
       const titleMatches = detailPreview ? items.filter(sameTitle) : [];
-      const alreadySaved = detailPreview && (previewYear
-        ? titleMatches.some(row => sameYear(row) === previewYear) || (titleMatches.length === 1 && !sameYear(titleMatches[0]))
-        : titleMatches.length === 1);
+      const alreadySaved = detailPreview ? (previewYear
+        ? titleMatches.find(row => sameYear(row) === previewYear) || (titleMatches.length === 1 && !sameYear(titleMatches[0]) ? titleMatches[0] : null)
+        : (titleMatches.length === 1 ? titleMatches[0] : null)) : null;
       const source = window.SplitAppMetadata.providers.find(row => row.key === (item.metadataSource || item.source));
       const loaded = detailData || {};
       const image = safeImage(item.localImageData?.["cachedDetails.portraitImage"] || loaded.portraitImage || item.cachedDetails?.portraitImage || item.localThumbnailData || item.localImageData?.["image"] || item.localImageData?.["cachedDetails.image"] || loaded.image || item.image);
