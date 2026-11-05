@@ -123,7 +123,7 @@
     const paceText = toGo <= 0 ? "Nothing left to play" : toGo <= 14 * 1 ? `~${Math.max(1, Math.ceil(toGo))} ${Math.ceil(toGo) === 1 ? "day" : "days"} left (${hoursText(toGo)})` : `~${Math.round(toGo / 7)} weeks left (${hoursText(toGo)})`;
     const barSegments = activeSpecs.map(spec => ({ spec, n: inStatus(spec.status).length })).filter(row => row.n).map(({ spec, n }) => `<span title="${esc(spec.status)}: ${n}" style="flex:${n};background:var(--status-color-${spec.tone})"></span>`).join("");
     const timePanel = `<article class="stats-panel stats-time-panel">
-      <header class="stats-panel-heading"><div><span class="stats-eyebrow">PLAY TIME</span><h3>Time to beat</h3></div><span class="stats-total-chip">${items.length} games · ${known.length} with data</span></header>
+      <header class="stats-panel-heading"><div><span class="stats-eyebrow">PLAY TIME</span><h3>Time to beat</h3></div></header>
       <div class="stats-time-total"><span><small>Logged in total</small><strong>${hoursText(loggedHours)}</strong><em>${hoursText(toGo)} left · ${hoursText(savedHours)} saved</em></span><span><small>Library value</small><strong class="is-accent">${formatMoney(libraryValue)}</strong><em>Across ${items.length} games</em></span></div>
       <div class="stats-status-bar" role="img" aria-label="Games by status">${barSegments}</div>
       <div class="stats-pace-row"><span>Est. pace at <b>1 h / day</b></span><b>${esc(paceText)}</b></div>
