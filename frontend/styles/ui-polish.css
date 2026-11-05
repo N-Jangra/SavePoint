@@ -2315,3 +2315,10 @@ body[data-icon-style=inline] .group-share-btn{border:0;background:transparent}
 .stats-pager{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 4px 2px;color:var(--muted);font-size:.74rem;font-variant-numeric:tabular-nums}
 .stats-pager button{width:38px;height:38px;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:inherit;font-size:1.3rem;cursor:pointer}
 .stats-pager button:disabled{opacity:.35}
+
+/* 0.1.2+: smoother Play time scrolling */
+.stats-subpage-playtime .stats-status-card,.stats-subpage-playtime .stats-playtime-row{content-visibility:auto;contain-intrinsic-size:auto 110px}
+.stats-subpage-playtime .stats-playtime-row{contain-intrinsic-size:auto 72px}
+.stats-subpage-playtime .stats-panel,.stats-subpage-playtime .stats-status-card{contain:layout paint}
+.stats-subpage-playtime{overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}
+.stats-subpage-playtime .stats-playtime-copy,.stats-subpage-playtime .stats-playtime-track i{transition:none}

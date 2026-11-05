@@ -37,13 +37,14 @@
     }).join("");
     const unrated = items.filter(item => !(Number(item.rating) > 0));
     const quickRateRows = unrated.slice(0, limits.quick).map(item => `<div class="stats-unrated-entry">${gameArtwork(item)}<span class="stats-rated-copy"><strong>${esc(item.title)}</strong><small>${esc(item.status || "In your library")}</small></span><span class="stats-quick-rate" role="group" aria-label="Rate ${esc(item.title)}">${Array.from({ length: ratingMax }, (_, index) => index + 1).map(score => `<button type="button" data-stats-rating="${esc(item.id)}" data-score="${score}" aria-label="Rate ${score} out of ${ratingMax}">${ratingMax === 5 ? `<i data-lucide="star" aria-hidden="true"></i>` : score}</button>`).join("")}</span></div>`).join("");
-    const lengthOf = item => Number(item.completionTargetHours)
+    const memo = fn => { const cache = new WeakMap(); return item => { let v = cache.get(item); if (v === undefined) { v = fn(item); cache.set(item, v); } return v; }; };
+    const lengthOf = memo(item => Number(item.completionTargetHours)
       || Number(item.facts?.[item.completionTarget])
       || (String(item.status).toLowerCase() === "completed" ? Number(item.goal) : 0)
-      || Number(item.facts?.mainHours) || Number(item.facts?.averageHours) || 0;
+      || Number(item.facts?.mainHours) || Number(item.facts?.averageHours) || 0);
     // Older saves may have a Completed status but no progress value. Count a
     // known target as finished so the totals stay useful after a cache reset.
-    const loggedOf = item => Number(item.progress) || (String(item.status).toLowerCase() === "completed" ? lengthOf(item) : 0);
+    const loggedOf = memo(item => Number(item.progress) || (String(item.status).toLowerCase() === "completed" ? lengthOf(item) : 0));
     const humanReadable = prefs.humanReadableStats === true;
     const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
     const rawHours = value => `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10} h`;
@@ -79,7 +80,7 @@
     const knownPlayed = known.reduce((sum, item) => sum + Math.min(loggedOf(item), lengthOf(item)), 0);
     const remainingHours = known.filter(item => !finished(item)).reduce((sum, item) => sum + Math.max(0, lengthOf(item) - loggedOf(item)), 0);
     const priceCurrency = item => item.facts?.priceCurrency || currency.detect(item.facts?.price) || "USD";
-    const displayPrice = item => currency.convert(Number(item.facts?.priceValue) || 0, priceCurrency(item), targetCurrency, prefs);
+    const displayPrice = memo(item => currency.convert(Number(item.facts?.priceValue) || 0, priceCurrency(item), targetCurrency, prefs));
     const libraryValue = items.reduce((sum, item) => sum + displayPrice(item), 0);
     const missingFacts = items.filter(item => item.metadataSource && item.providerId && !item.facts?.fetchedAt).length;
     const missingHours = items.filter(item => lengthOf(item) === 0 && (item.metadataSource || item.title)).length;
@@ -93,7 +94,8 @@
     const pace = remainingHours <= 0 ? "" : remainingHours <= 14 ? `About ${plural(Math.ceil(remainingHours), "day")} left at 1 hour a day.` : `About ${plural(Math.round(remainingHours / 7), "week")} left at 1 hour a day.`;
     const note = !items.length ? "Add games to see play time and totals here." : !known.length ? "No game has play-time data yet. Use the button below to look it up." : [remainingHours <= 0 && !unknownOpen.length ? "Nothing left to play. 🎉" : pace, unknownOpen.length ? `${plural(unknownOpen.length, "unfinished game")} ${unknownOpen.length === 1 ? "has" : "have"} no play-time data, so ${unknownOpen.length === 1 ? "it isn't" : "they aren't"} counted in the time left.` : ""].filter(Boolean).join(" ");
     // Play time and money split by status so each number answers one question.
-    const inStatus = name => items.filter(item => String(item.status).toLowerCase() === name.toLowerCase());
+    const statusIndex = new Map(); for (const item of items) { const k = String(item.status).toLowerCase(); (statusIndex.get(k) || statusIndex.set(k, []).get(k)).push(item); }
+    const inStatus = name => statusIndex.get(name.toLowerCase()) || [];
     const sumOf = (list, fn) => list.reduce((sum, item) => sum + fn(item), 0);
     const left = list => sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item)));
     const lenOf = list => sumOf(list.filter(item => lengthOf(item) > 0), lengthOf);
