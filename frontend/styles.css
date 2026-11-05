@@ -774,3 +774,25 @@ body[data-page="sync"] .topbar { display:none; }
 .sync-row { align-items:center; }
 .sync-row .sync-row-actions { display:flex; flex-direction:row !important; gap:6px; flex:none; }
 .sync-row .sync-row-actions .button { width:auto !important; min-height:0 !important; padding:6px 12px !important; font-size:.8rem !important; line-height:1.2; }
+
+/* ---- UI fixes: search focus ring, select bar, detail tool chips, fix-match search ---- */
+.settings-search input, .settings-search input:focus, .settings-search input:focus-visible,
+.collection-search input:focus-visible, .explore-source-search input:focus-visible { outline:none !important; box-shadow:none !important; border-radius:0; background:transparent !important; }
+.settings-search { overflow:hidden; }
+.detail-tools { display:flex !important; flex-direction:row !important; flex-wrap:wrap; gap:8px; margin-top:10px; width:100%; }
+.detail-tools .detail-tool-chip { flex:0 0 auto; width:auto !important; min-height:0 !important; padding:7px 14px !important; }
+.fix-match-search { display:grid !important; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.fix-match-search select { grid-column:1 / -1; width:100%; flex:none; }
+.fix-match-search input { grid-column:1; width:100%; min-width:0; }
+.fix-match-search .button { grid-column:2; }
+.select-mode .item-card { border-radius:var(--card-radius,18px); }
+.select-mode .item-card.is-selected { outline:2px solid var(--accent,#6355f5); outline-offset:-2px; border-radius:var(--card-radius,18px); background:color-mix(in srgb,var(--accent,#6355f5) 8%,var(--surface,#fff)); }
+.select-mode .item-card::after { top:50%; left:auto; right:62px; transform:translateY(-50%); }
+.select-bar { bottom:calc(92px + env(safe-area-inset-bottom)); max-width:720px; margin:0 auto; }
+.select-mode #page-content { padding-bottom:150px; }
+.select-mode .item-card::after { top:6px !important; left:6px !important; right:auto !important; transform:none !important; width:20px; height:20px; box-shadow:0 1px 4px rgba(0,0,0,.35); }
+.select-mode .item-card.is-selected { outline:none !important; box-shadow:inset 0 0 0 2px var(--accent,#6355f5) !important; }
+.select-mode .item-card.is-selected::after { font-size:12px; line-height:16px; }
+.select-mode .dashboard-card { content-visibility:visible; }
+.detail-tools { gap:6px !important; flex-wrap:nowrap !important; }
+.detail-tools .detail-tool-chip { padding:5px 10px !important; font-size:.74rem !important; line-height:1.2; white-space:nowrap; }
