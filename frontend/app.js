@@ -1316,17 +1316,27 @@
   async function shareImageFor(entry) {
     const item = itemById(String(entry.id)); if (!item) return null;
     const load = url => new Promise(resolve => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = url; });
-    const local = item.localPortraitData || item.localThumbnailData;
-    if (local) { const img = await load(local); if (img) return img; }
-    try { const hit = (await cachedThumbUrls([[thumbKeyOf(item, false), thumbSigOf(item)]])).get(thumbKeyOf(item, false)); if (hit) { const img = await load(hit); if (img) return img; } } catch (_) {}
-    const remote = item.image || item.cachedDetails?.portraitImage;
-    if (/^https?:/i.test(remote || "")) {
-      const response = await requestTimelineImage(remote);
-      if (response) {
-        const blob = await response.blob(); const url = URL.createObjectURL(blob); const img = await load(url); setTimeout(() => URL.revokeObjectURL(url), 30000);
-        if (img) { try { const c = document.createElement("canvas"), k = Math.min(1, 240 / img.width); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); cacheThumbFromItem(item, c.toDataURL("image/jpeg", .8)); } catch (_) {} }
+    const tryLocal = async source => { if (!source) return null; return load(source); };
+    // Same order the Home card uses, so the share image shows the cover you see in the list.
+    let img = await tryLocal(item.localPortraitData || item.localThumbnailData || item.localImageData?.image || item.localImageData?.["cachedDetails.portraitImage"]);
+    if (img) return img;
+    try { const hit = (await cachedThumbUrls([[thumbKeyOf(item, false), thumbSigOf(item)]])).get(thumbKeyOf(item, false)); if (hit) { img = await load(hit); if (img) return img; } } catch (_) {}
+    const remotes = [...new Set([item.cachedDetails?.portraitImage, item.image, item.cachedDetails?.image].filter(url => /^https?:/i.test(url || "")))];
+    for (const remote of remotes) {
+      // A plain <img> can't be exported from a canvas without CORS, so read the bytes first.
+      let blob = null;
+      try { const r = await fetch(remote, { mode: "cors", credentials: "omit" }); if (r.ok) blob = await r.blob(); } catch (_) {}
+      if (!blob) { const response = await requestTimelineImage(remote); if (response) blob = await response.blob(); }
+      if (!blob) continue;
+      const url = URL.createObjectURL(blob); img = await load(url); setTimeout(() => URL.revokeObjectURL(url), 30000);
+      if (img) {
+        try { const c = document.createElement("canvas"), k = Math.min(1, 240 / img.width); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); cacheThumbFromItem(item, c.toDataURL("image/jpeg", .8)); } catch (_) {}
         return img;
       }
+    }
+    // Covers saved in the device folder only exist as files until hydrated.
+    if ((item.thumbnailPath || item.localImageFiles?.length) && window.SplitAppBackend?.hydrateThumbnails) {
+      try { const clone = { ...item, localPortraitData: "", localThumbnailData: "" }; await window.SplitAppBackend.hydrateThumbnails([clone]); img = await tryLocal(clone.localPortraitData || clone.localThumbnailData); if (img) return img; } catch (_) {}
     }
     return null;
   }

@@ -13,9 +13,17 @@
   const loadImage = url => new Promise(resolve => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = url; });
   const statusColor = status => { const key = String(status || "").toLowerCase().replace(/\s+/g, "-"); return css(`--status-color-${key}`) || css("--accent") || "#6355f5"; };
 
+  // Covers load once per game; a slow cover keeps loading in the background and is reused by the next draw.
+  const coverJobs = new Map();
+  const coverOf = (entry, getImage) => { if (!coverJobs.has(entry.id)) coverJobs.set(entry.id, getImage(entry).catch(() => null)); return coverJobs.get(entry.id); };
+  const waitFor = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(undefined), ms))]);
   async function drawSheet({ title, entries, start, total, page, pages, showHead, getImage }) {
-    const withTimeout = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(null), ms))]);
-    const images = await Promise.all(entries.map(entry => withTimeout(getImage(entry), 3500).catch(() => null)));
+    const jobs = entries.map(entry => coverOf(entry, getImage));
+    let images = await Promise.all(jobs.map(job => waitFor(job, 4000)));
+    // Give covers that are only slow (not failed) one longer chance so a big list doesn't end up with blanks.
+    if (images.some(img => img === undefined)) images = await Promise.all(jobs.map((job, i) => images[i] === undefined ? waitFor(job, 9000) : images[i]));
+    const missing = images.filter(img => img === undefined).length;
+    images = images.map(img => img || null);
     const head = showHead ? HEAD : 24, rows = entries.length;
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = head + rows * ROW + FOOT;
@@ -54,14 +62,15 @@
     ctx.textBaseline = "middle"; ctx.fillStyle = "#8a90a2"; ctx.font = `600 26px ${font}`; ctx.textAlign = "left";
     ctx.fillText("Shared from SavePoint", PAD, head + rows * ROW + FOOT / 2);
     if (pages > 1) { ctx.textAlign = "right"; ctx.fillText(`${page} / ${pages}`, W - PAD, head + rows * ROW + FOOT / 2); }
-    return encode(canvas);
+    const url = encode(canvas);
+    return { url, complete: missing === 0 };
   }
   // The Android bridge gets very slow with payloads above ~250 KB, so keep the encoded image small.
   function encode(canvas) {
     const LIMIT = 235000;
     let source = canvas, quality = .86, url = source.toDataURL("image/jpeg", quality);
     for (let guard = 0; url.length > LIMIT && guard < 12; guard++) {
-      if (quality > .6) quality -= .08;
+      if (quality > .7) quality -= .1;
       else { const next = document.createElement("canvas"); next.width = Math.round(source.width * .85); next.height = Math.round(source.height * .85); next.getContext("2d").drawImage(source, 0, 0, next.width, next.height); source = next; }
       url = source.toDataURL("image/jpeg", quality);
     }
@@ -86,6 +95,7 @@
 
   function open({ title, entries, getImage }, { showPopup, closePopup, toast, esc, cacheGet, cachePut }) {
     document.getElementById("share-dialog")?.remove();
+    coverJobs.clear();
     const dialog = document.createElement("dialog");
     dialog.id = "share-dialog"; dialog.className = "choice-dialog share-dialog";
     let mode = "pages", page = 0, images = [], cache = new Map(), token = 0;
@@ -100,15 +110,16 @@
     // Rendered pages live in IndexedDB (keyed by the page's content), so reopening a group is instant.
     const hash = text => { let h = 5381; for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
     const blobToDataUrl = blob => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob); });
-    const pageSig = d => "v2:" + hash(JSON.stringify([title, count, d.index, d.pages, d.group.map(e => [e.id, e.title, e.subtitle, e.rating, e.status])]));
+    const pageSig = d => "v3:" + hash(JSON.stringify([title, count, d.index, d.pages, d.group.map(e => [e.id, e.title, e.subtitle, e.rating, e.status])]));
     const render = index => {
       const key = `${mode}:${index}`;
       if (!cache.has(key)) {
         const d = images[index], idbKey = `share:${slug(title)}:${mode}:${index}`, sig = pageSig(d);
         cache.set(key, (async () => {
           try { const blob = cacheGet && await cacheGet(idbKey, sig); if (blob) return await blobToDataUrl(blob); } catch (_) {}
-          const url = await drawSheet({ title, entries: d.group, start: d.start, total: count, page: index + 1, pages: d.pages, showHead: index === 0, getImage });
-          try { if (cachePut) cachePut(idbKey, sig, await (await fetch(url)).blob()); } catch (_) {}
+          const { url, complete } = await drawSheet({ title, entries: d.group, start: d.start, total: count, page: index + 1, pages: d.pages, showHead: index === 0, getImage });
+          // Only complete pages are stored; a page with missing covers is redrawn next time.
+          if (!complete) cache.delete(key); else { try { if (cachePut) cachePut(idbKey, sig, await (await fetch(url)).blob()); } catch (_) {} }
           return url;
         })());
       }
@@ -149,11 +160,13 @@
       if (t.closest("[data-share-next]")) { page = Math.min(images.length - 1, page + 1); return paint(); }
       if (t.closest("[data-share-save]")) return guard(async () => saveImage(await render(page), fileName(page)), r => `Saved to ${r}.`, "Saving…");
       if (t.closest("[data-share-send]")) return guard(async () => shareImage(await render(page), fileName(page)), null, "Opening share…");
-      if (t.closest("[data-share-save-all]")) return guard(async () => { for (let i = 0; i < images.length; i++) await saveImage(await render(i), fileName(i)); return images.length; }, n => `Saved ${n} images to Downloads.`, "Saving all images…");
+      if (t.closest("[data-share-save-all]")) return guard(async () => { let ahead = render(0); for (let i = 0; i < images.length; i++) { const url = await ahead; ahead = i + 1 < images.length ? render(i + 1) : null; await saveImage(url, fileName(i)); } return images.length; }, n => `Saved ${n} images to Downloads.`, "Saving all images…");
     });
     dialog.addEventListener("close", () => setTimeout(() => dialog.remove(), 300));
     showPopup(dialog);
     setTimeout(() => setMode("pages"), 30);
+    // Warm the remaining covers a few at a time so later pages are ready.
+    (async () => { const queue = entries.slice(PER_PAGE); const worker = async () => { while (queue.length && dialog.isConnected) { await coverOf(queue.shift(), getImage); } }; await new Promise(r => setTimeout(r, 1500)); await Promise.all([worker(), worker(), worker()]); })();
   }
   window.SplitAppShare = Object.freeze({ open });
 })();
