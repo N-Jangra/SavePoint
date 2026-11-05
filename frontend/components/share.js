@@ -1,6 +1,6 @@
 // Share a Home group as images that look like the Home list (cover, title, subtitle, rating, status).
 (() => {
-  const PER_PAGE = 15, LONG_CHUNK = 100, W = 1080, ROW = 176, HEAD = 200, FOOT = 84, PAD = 40;
+  const PER_PAGE = 15, LONG_CHUNK = 45, W = 1080, ROW = 176, HEAD = 200, FOOT = 84, PAD = 40;
   const native = () => window.Capacitor?.Plugins?.ShareIntent;
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const fit = (ctx, text, max) => {
@@ -53,7 +53,18 @@
     ctx.textBaseline = "middle"; ctx.fillStyle = "#8a90a2"; ctx.font = `600 26px ${font}`; ctx.textAlign = "left";
     ctx.fillText("Shared from SavePoint", PAD, head + rows * ROW + FOOT / 2);
     if (pages > 1) { ctx.textAlign = "right"; ctx.fillText(`${page} / ${pages}`, W - PAD, head + rows * ROW + FOOT / 2); }
-    return canvas.toDataURL("image/jpeg", .9);
+    return encode(canvas);
+  }
+  // The Android bridge gets very slow with payloads above ~250 KB, so keep the encoded image small.
+  function encode(canvas) {
+    const LIMIT = 235000;
+    let source = canvas, quality = .86, url = source.toDataURL("image/jpeg", quality);
+    for (let guard = 0; url.length > LIMIT && guard < 12; guard++) {
+      if (quality > .6) quality -= .08;
+      else { const next = document.createElement("canvas"); next.width = Math.round(source.width * .85); next.height = Math.round(source.height * .85); next.getContext("2d").drawImage(source, 0, 0, next.width, next.height); source = next; }
+      url = source.toDataURL("image/jpeg", quality);
+    }
+    return url;
   }
   const chunk = (list, size) => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, i * size + size));
   const buildImages = (entries, mode) => { const size = mode === "pages" ? PER_PAGE : LONG_CHUNK, groups = chunk(entries, size); return groups.map((group, index) => ({ group, index, pages: groups.length, start: index * size })); };
