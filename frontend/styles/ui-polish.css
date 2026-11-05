@@ -2346,3 +2346,25 @@ dialog.share-dialog[open]{display:flex;flex-direction:column;max-height:92dvh}
 .home-collection-page #collection-results>.dashboard-status-group:first-child,.home-collection-page .dashboard-status-group:first-child{margin-top:4px !important}
 .dashboard-status-group>h2{margin-bottom:6px !important}
 .group-share-btn{width:30px;height:30px}
+
+/* 0.1.2+: ⋮ menu — solid sheet and clear, theme-aware option colours */
+dialog.ios-action-sheet::backdrop{background:#0b0e1a8c;backdrop-filter:blur(3px)}
+.ios-action-group{background:var(--surface) !important;border:1px solid var(--line);box-shadow:0 18px 50px #0006}
+.ios-action-cancel{background:var(--surface) !important;border:1px solid var(--line) !important;border-radius:16px;color:var(--legacy-text,inherit);font-weight:700}
+.ios-action-group p{color:var(--legacy-text,inherit);font-size:.82rem}
+.ios-action-group button{justify-content:flex-start;padding:14px 18px;font-size:.88rem;font-weight:650;color:var(--legacy-text,inherit);opacity:1}
+.ios-action-group button svg{width:19px;height:19px;flex:none}
+.ios-action-group button[data-sheet-action=edit],.ios-action-group button[data-sheet-action=details]{color:var(--accent-text,var(--accent))}
+.ios-action-group button[data-sheet-action=favorite]{color:#e0245e}
+.ios-action-group .neutral{color:var(--status-color-backlog) !important}
+.ios-action-group .accent{color:var(--accent-text,var(--accent)) !important}
+.ios-action-group .success{color:var(--status-color-completed) !important}
+.ios-action-group .warning{color:var(--status-color-on-hold) !important}
+.ios-action-group .danger{color:var(--status-color-dropped) !important}
+.ios-action-group button[data-sheet-action=remove]{color:#dc2626 !important;font-weight:700}
+.ios-action-group button:active{background:color-mix(in srgb,currentColor 10%,var(--surface))}
+body[data-theme="dark"] .ios-action-group .neutral{color:#5eead4 !important}
+body[data-theme="dark"] .ios-action-group .success{color:#4ade80 !important}
+body[data-theme="dark"] .ios-action-group .warning{color:#fbbf24 !important}
+body[data-theme="dark"] .ios-action-group .danger,body[data-theme="dark"] .ios-action-group button[data-sheet-action=remove]{color:#fb7185 !important}
+body[data-theme="dark"] .ios-action-group button[data-sheet-action=favorite]{color:#fb7185}
