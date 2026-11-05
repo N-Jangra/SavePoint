@@ -268,6 +268,7 @@
   //   persist({ meta: true })      preferences and history only
   // Bursts are coalesced into one write ~250ms after the last change.
   let persistTimer = 0, persistWaiters = [], persistFull = false;
+  let selectMode = false, lastAutoBackup = 0; const selectedIds = new Set();
   const persistIds = new Set(), persistRemoved = new Set();
   function persist(scope) {
     localMutationRevision += 1;
@@ -307,7 +308,9 @@
     }));
   }
   function toast(message) {
-    const node = $("#toast"); node.textContent = message; node.classList.add("show");
+    // Background notices (backup, sync finished) must not hide an Undo that is still on screen.
+    if (/^(Backup saved|Exporting|Metadata sync finished|Sync finished|Syncing |Saved details)/.test(message) && document.querySelector("#toast.has-action.show")) return;
+    const node = $("#toast"); node.classList.remove("has-action"); node.textContent = message; node.classList.add("show");
     clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("show"), 2300);
   }
   function applyPreferences() {
@@ -434,7 +437,17 @@
       button.setAttribute("aria-current", String(active ? "page" : "false"));
     });
   }
-  function goto(next, updateHistory = true) {
+  // Scroll position per page, so Back returns to the spot you left (e.g. the Metadata row in the middle of Settings).
+  const scrollMemory = new Map();
+  const scrollKey = () => page === "settings" ? `settings/${settingsGroup || ""}` : page === "details" ? `details/${detailItemId || ""}` : page;
+  const rememberScroll = () => scrollMemory.set(scrollKey(), window.scrollY);
+  const restoreScroll = () => {
+    const top = scrollMemory.get(scrollKey()) || 0;
+    window.scrollTo({ top, behavior: "auto" });
+    if (top) requestAnimationFrame(() => window.scrollTo({ top, behavior: "auto" }));
+  };
+  function goto(next, updateHistory = true, back = false) {
+    if (!back) rememberScroll();
     if (next === "search") next = "dashboard";
     const [nextPage, nextSection] = String(next).split("/");
     if (page === "details" && nextPage !== "details") { detailRequest++; detailLoading = false; }
@@ -444,8 +457,9 @@
     if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
     if (page !== "settings") settingsGroup = null;
     if (updateHistory) historyPush();
-    document.body.dataset.navDir = "forward";
-    render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
+    document.body.dataset.navDir = back ? "back" : "forward";
+    render(); syncPageNavigation();
+    if (back) restoreScroll(); else window.scrollTo({ top: 0, behavior: "auto" });
   }
   function historyPush() {
     const route = currentHistoryRoute();
@@ -473,12 +487,13 @@
   }
   function navigateBackTo(route) {
     const [path, query = ""] = String(route || "dashboard").replace(/^#/, "").split("?");
+    rememberScroll(); // before the target page/group replaces the current one
     if (path.split("/")[0] === "settings") {
       const section = path.split("/")[1] || "";
       settingsGroup = section === "manage-backups" ? "backups" : section || null;
       settingsParam = new URLSearchParams(query).get("id") || "";
     }
-    goto(path || "dashboard", false);
+    goto(path || "dashboard", false, true);
     historyReplace();
   }
   function currentPageBackRoute() {
@@ -938,7 +953,7 @@
   }
   function render() {
     document.body.dataset.page = page;
-    { const fab = document.getElementById("sync-fab"); if (fab) fab.hidden = !syncJob || page === "sync"; }
+    { const fab = document.getElementById("sync-fab"); if (fab) fab.hidden = !syncJob || syncJob.fabHidden || page === "sync" || page === "add"; }
     $("#page-title").textContent = titles[page];
     const topbarActions = $("#topbar-actions");
     if (topbarActions) topbarActions.hidden = page !== "dashboard";
@@ -985,6 +1000,7 @@
     if (page === "dashboard") context.dashboardSortedItems = dashboardSortedItems(context);
     const keepScrollY = preservePageState && page === "dashboard" ? window.scrollY : null;
     content.innerHTML = window.SplitAppPages[page](context);
+    if (selectMode) { if (page !== "dashboard") exitSelectMode(); else applySelectionUI(); }
     if (keepScrollY) window.scrollTo({ top: keepScrollY, behavior: "auto" });
     if (topbarActions) window.lucide?.createIcons({ root: topbarActions, attrs: { "aria-hidden": "true" } });
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
@@ -1325,10 +1341,10 @@
     const load = url => new Promise(resolve => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = url; });
     const tryLocal = async source => { if (!source) return null; return load(source); };
     // Same order the Home card uses, so the share image shows the cover you see in the list.
-    let img = await tryLocal(item.localPortraitData || item.localThumbnailData || item.localImageData?.image || item.localImageData?.["cachedDetails.portraitImage"]);
+    let img = item.customCover ? null : await tryLocal(item.localPortraitData || item.localThumbnailData || item.localImageData?.image || item.localImageData?.["cachedDetails.portraitImage"]);
     if (img) return img;
-    try { const hit = (await cachedThumbUrls([[thumbKeyOf(item, false), thumbSigOf(item)]])).get(thumbKeyOf(item, false)); if (hit) { img = await load(hit); if (img) return img; } } catch (_) {}
-    const remotes = [...new Set([item.cachedDetails?.portraitImage, item.image, item.cachedDetails?.image].filter(url => /^https?:/i.test(url || "")))];
+    if (!item.customCover) { try { const hit = (await cachedThumbUrls([[thumbKeyOf(item, false), thumbSigOf(item)]])).get(thumbKeyOf(item, false)); if (hit) { img = await load(hit); if (img) return img; } } catch (_) {} }
+    const remotes = [...new Set([item.customCover, item.cachedDetails?.portraitImage, item.image, item.cachedDetails?.image].filter(url => /^https?:/i.test(url || "")))];
     for (const remote of remotes) {
       // A plain <img> can't be exported from a canvas without CORS, so read the bytes first.
       let blob = null;
@@ -1720,7 +1736,7 @@
     if (old) items[items.indexOf(old)] = entry; else items.unshift(entry);
     if (entry.status !== "Backlog" && entry.status !== old?.status) history.unshift({ itemId: entry.id, title: entry.title, action: entry.status, status: entry.status, at: Date.now() });
     await persist({ ids: [entry.id] }); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
-    if (!old && key === "game") enrichLibraryEntryWithMix(entry, { ...entry, source: entry.metadataSource }, "Add Game");
+    if (!old && key === "game" && !startSyncJob([entry])) enrichLibraryEntryWithMix(entry, { ...entry, source: entry.metadataSource }, "Add Game");
   }
   async function saveAddForm(form) {
     if (!form?.isConnected || !form.reportValidity()) return;
@@ -1737,7 +1753,9 @@
   }
   function finishDeletingItem(id, returnPage) {
     const exists = id != null && items.some(entry => String(entry.id) === String(id));
-    if (exists && prefs.backupBeforeDestructive) exportList({ silent: true });
+    const removedEntry = exists ? items.find(entry => String(entry.id) === String(id)) : null;
+    const removedIndex = removedEntry ? items.indexOf(removedEntry) : -1, removedCopy = removedEntry ? cloneJson(removedEntry) : null;
+    if (exists) backupBeforeBulk();
     if (exists) items = items.filter(entry => String(entry.id) !== String(id));
     const requestedPage = returnPage === "details" ? detailReturnPage : returnPage;
     const destination = requestedPage && requestedPage !== "details" && requestedPage in titles ? requestedPage : "dashboard";
@@ -1745,7 +1763,9 @@
     detailItemId = null; detailPreview = null; detailData = null; detailError = ""; detailLoading = false; detailEditMode = false; detailRequest++;
     detailReturnPage = "dashboard";
     if (exists) persist();
-    goto(destination); toast(exists ? "Entry deleted." : "This entry was already removed.");
+    goto(destination);
+    if (exists && removedCopy) toastUndo("Entry deleted.", () => { items.splice(Math.min(removedIndex, items.length), 0, removedCopy); persist({ ids: [removedCopy.id] }); render(); toast("Restored."); });
+    else toast(exists ? "Entry deleted." : "This entry was already removed.");
   }
   function redirectHomeIfDetailMissing() {
     if (page !== "details" || !detailItemId || detailPreview || items.some(entry => String(entry.id) === String(detailItemId))) return false;
@@ -1814,7 +1834,7 @@
     const keys = libraryOriginKeys(result);
     const sourceKey = keys.find(key => key.startsWith("id:"));
     if (sourceKey) {
-      const byId = items.find(item => (item.originKeys || []).includes(sourceKey) || (item.providerId && item.providerId === result.providerId && (item.metadataSource || item.source) === (result.source || result.metadataSource)));
+      const byId = items.find(item => (item.originKeys || []).includes(sourceKey) || (item.providerId && item.providerId === result.providerId && (item.metadataSource || item.source) === (result.source || result.metadataSource)) || (item.sourceIds && result.providerId != null && String(item.sourceIds[result.source || result.metadataSource]) === String(result.providerId)));
       if (byId) return byId;
     }
     const yearOf = value => String(value || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
@@ -2035,6 +2055,7 @@
     ];
     const sourceLabels = [...asList(item.mixSources), ...asList(result.mixSources), ...asList(result.cachedDetails?.mixSources)];
     const knownSourceName = key => window.SplitAppSources.list().find(source => source.key === key)?.name || key;
+    if (item.metadataSource && item.metadataSource !== "mix" && item.providerId) item.mixPrimary = { key: item.metadataSource, providerId: item.providerId };
     item.source = item.metadataSource = "mix";
     item.providerId = result.providerId || result.key || item.providerId || "";
     item.mixSourceKeys = [...new Set(sourceKeys.filter(Boolean))];
@@ -2058,7 +2079,8 @@
     updateDiscoverLibraryActions();
     if (page === "mix") paintMixResults();
     toast(wasSaved ? "Refreshing this library entry from enabled sources…" : `Added to your library. Fetching details from enabled sources…`);
-    enrichLibraryEntryWithMix(item, result, origin);
+    // Shown on the Sync page like any other background sync; falls back to a direct fetch when sync is unavailable (offline, no sources).
+    if (!startSyncJob([item])) enrichLibraryEntryWithMix(item, result, origin);
     return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
@@ -2077,12 +2099,15 @@
       current.mixSourceKeys = [...new Set(loaded.facts?.sources || [])];
       current.mixSources = [...new Set(loaded.mixSources || current.mixSourceKeys.map(key => window.SplitAppSources.list().find(source => source.key === key)?.name || key))];
     }
+    // Per-game index of source -> provider id; only ever grows, so later syncs fetch by id and a flaky source can't drop out.
+    if (loaded.sourceIds) current.sourceIds = { ...(current.sourceIds || {}), ...loaded.sourceIds };
+    if (mixed) current.mixSourceKeys = [...new Set([...(current.mixSourceKeys || []), ...(loaded.facts?.sources || [])])];
     current.cachedDetails = loaded;
     current.facts = mergeFacts(current.facts, loaded.facts);
     current.description = loaded.description || current.description;
     current.year = loaded.year || current.year;
     current.url = loaded.url || current.url;
-    current.image = current.localThumbnailData || loaded.portraitImage || loaded.image || current.image;
+    current.image = current.customCover || current.localThumbnailData || loaded.portraitImage || loaded.image || current.image;
     current.backdrop = loaded.landscapeImage || loaded.backgroundImage || current.backdrop;
     current.updatedAt = Date.now();
   }
@@ -2106,14 +2131,18 @@
         if (!options.quiet) recordLog("warning", `Mix fetch could not load ${saved.title}: ${mixError?.message || mixError}`);
         const sourceKey = sourceResult.metadataSource || sourceResult.source || saved.metadataSource;
         const providerId = sourceResult.providerId || saved.providerId;
-        if (sourceKey && sourceKey !== "mix" && providerId && window.SplitAppDetailController?.load) {
+        // A game that already has merged details keeps them when a known source is down; the single-source fallback is only for games with nothing saved.
+        if (!saved.cachedDetails && sourceKey && sourceKey !== "mix" && providerId && window.SplitAppDetailController?.load) {
           try { loaded = await window.SplitAppDetailController.load({ ...saved, ...sourceResult, metadataSource: sourceKey, providerId, title: saved.title, category: saved.category }, detailSettings()); }
           catch (error) { if (!options.quiet) recordLog("warning", `Could not load source details for ${saved.title}: ${error?.message || error}`); }
         }
       }
       const current = itemById(itemId);
+      if (current && !loaded) current.mixFailedAt = Date.now();
       if (!current || !loaded) return null;
       applyEnrichedDetails(current, loaded, mixed);
+      // Remember when and against which sources this game was last checked, so a later refresh can skip it.
+      current.mixCheckedAt = Date.now(); current.mixCheckedSources = loaded.checkedSources || enabledGameSourceKeys(); delete current.mixFailedAt;
       if (options.persist !== false) await persist({ ids: [itemId] });
       if (options.loadImages !== false) {
         try {
@@ -2436,8 +2465,7 @@
         else if (action === "favorite") toggleFavorite(target.id);
         else if (action === "remove") {
           if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
-          if (prefs.backupBeforeDestructive) exportList({ silent: true });
-          items = items.filter(entry => entry.id !== target.id); persist({ removed: [target.id] }); render(); toast("Entry removed.");
+          removeItemsWithUndo([target], `Removed “${target.title}”.`);
         } else if (action !== "cancel") { if (await setItemStatus(target, action)) { render(); toast(`Marked as ${action}.`); } }
       });
     }
@@ -2892,6 +2920,9 @@
         seen.add(identity);
         return true;
       });
+      // Near-duplicates (edition names, one side missing a year) are held back for the user to confirm.
+      const split = splitSimilarImports(fresh);
+      fresh.length = 0; fresh.push(...split.kept);
       const freshIdentity = new Set(fresh.map(item => item.id));
       const byIdentity = new Map(items.map(item => [importIdentity(item), item]));
       const patches = [];
@@ -2901,7 +2932,7 @@
       const fileHistory = Array.isArray(data.history) ? data.history : [];
       let importedHistory = fileHistory.filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
       if (!importedHistory.length) importedHistory = fresh.filter(item => ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
-      importState = { ...importState, phase: "preview", incoming: normalized, fresh, patches, importedHistory, skipped: normalized.length - fresh.length };
+      importState = { ...importState, phase: "preview", incoming: normalized, fresh, similar: split.similar, patches, importedHistory, skipped: normalized.length - fresh.length - split.similar.length };
       render();
       if (prefs.restorePreview === false && fresh.length) continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not finish the restore."; render(); } });
     } catch (error) {
@@ -2928,7 +2959,9 @@
   }
   async function continueImport() {
     if (!importState || importState.phase !== "preview") return;
-    const fresh = importState.fresh;
+    const keptSimilar = (importState.similar || []).filter(row => row.keep).map(row => row.item);
+    const fresh = [...importState.fresh, ...keptSimilar];
+    backupBeforeBulk();
     importState = { ...importState, phase: "saving", total: fresh.length, completed: 0, synced: 0, failed: 0, currentTitle: "" };
     render();
     await new Promise(resolve => requestAnimationFrame(resolve));
@@ -2944,7 +2977,14 @@
     importState = null;
     goto("dashboard");
     const started = startSyncJob(fresh.filter(item => !hasSavedMetadata(item)));
-    toast(started ? `Added ${count} ${count === 1 ? "game" : "games"}. Syncing metadata in the background.` : `Added ${count} ${count === 1 ? "game" : "games"}.`);
+    const undoImport = () => {
+      const ids = new Set(fresh.map(item => String(item.id)));
+      items = items.filter(item => !ids.has(String(item.id))); history = history.filter(entry => !ids.has(String(entry.itemId)));
+      if (syncJob) { syncJob.queue = syncJob.queue.filter(item => !ids.has(String(item.id))); syncJob.entries = syncJob.entries.filter(entry => !ids.has(String(entry.id))); }
+      persist({ removed: [...ids] }); render(); toast("Import undone.");
+    };
+    if (count) toastUndo(started ? `Added ${count} ${count === 1 ? "game" : "games"}. Syncing in the background.` : `Added ${count} ${count === 1 ? "game" : "games"}.`, undoImport, 10000);
+    else toast("Nothing was added.");
   }
   // ---- Background metadata sync -------------------------------------------
   let syncJob = null, syncHideTimer = 0, syncPersistCount = 0;
@@ -3006,7 +3046,10 @@
     // Extra workers are parked while the adaptive limit is lower than their number.
     const workers = Array.from({ length: 8 }, async (_, index) => {
       while (true) {
-        while (job.paused || index >= syncConcurrency()) {
+        // A worker is parked only while the allowed slots are busy. Parking by index alone deadlocked: games added
+        // moments after the active workers finished were left "Waiting" because only parked workers were still alive.
+        const slotsFull = () => job.entries.filter(x => x.status === "syncing").length >= syncConcurrency();
+        while (job.paused || (index >= syncConcurrency() && slotsFull())) {
           if (!job.queue.length && !job.entries.some(x => x.status === "syncing")) return;
           if (job.paused) await new Promise(resolve => job.waiters.push(resolve));
           else await new Promise(resolve => setTimeout(resolve, 1500));
@@ -3039,6 +3082,8 @@
     updateSyncUI();
     const c = syncCounts();
     toast(c.failed ? `Sync finished · ${c.done} updated, ${c.failed} failed.` : `Metadata sync finished · ${c.done} updated.`);
+    // A finished sync stops floating over the app after a while (failures stay listed on the Sync page).
+    setTimeout(() => { if (syncJob === job) { job.fabHidden = true; updateSyncUI(); } }, 12000);
     if (!c.failed) syncHideTimer = setTimeout(() => { if (syncJob === job) { syncJob = null; updateSyncUI(); if (page === "sync") render(); } }, 6000);
   }
   let syncActionListener = null;
@@ -3070,7 +3115,7 @@
   function paintSyncUI() {
     let fab = $("#sync-fab");
     const c = syncCounts();
-    const show = Boolean(syncJob) && page !== "sync";
+    const show = Boolean(syncJob) && !syncJob.fabHidden && page !== "sync" && page !== "add"; // never cover the add/edit form
     if (!fab && syncJob) {
       fab = document.createElement("a"); fab.id = "sync-fab"; fab.className = "sync-fab"; fab.href = "#sync";
       fab.innerHTML = '<span class="sync-fab-pie"><b></b></span>';
@@ -3414,6 +3459,8 @@
     }
     if (event.target.closest("[data-sync-toggle]")) { setSyncPaused(!syncJob?.paused); return; }
     if (event.target.closest("[data-sync-retry]")) { retrySyncFailures(); return; }
+    const keepSimilar = event.target.closest("[data-import-keep]");
+    if (keepSimilar && importState?.similar) { const row = importState.similar[Number(keepSimilar.dataset.importKeep)]; if (row) row.keep = !row.keep; render(); return; }
     if (event.target.closest("[data-sync-dismiss]")) { if (syncJob?.finished) { syncJob = null; updateSyncUI(); goto("dashboard"); } return; }
     if (event.target.closest("[data-continue-import]")) { continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not restore this library."; render(); } }); return; }
     const exportFormat = event.target.closest("[data-export-format]");
@@ -3656,13 +3703,362 @@
     if (page === "dashboard") syncUnsyncedGames();
     render();
   }
-  // Pull-to-refresh on the library: queue every game that has no saved metadata yet.
+  // Long-press a Home card and drop it on another card to merge them into one Mix game
+  // (e.g. a Steam entry onto its HowLongToBeat entry); the merged game re-fetches every pinned source, shown on the Sync page.
+  function mergeIntoMix(sourceId, targetId) {
+    const from = itemById(sourceId), to = itemById(targetId);
+    if (!from || !to || from === to) return;
+    backupBeforeBulk();
+    const undoState = { from: cloneJson(from), to: cloneJson(to), fromIndex: items.indexOf(from), moved: history.filter(entry => String(entry.itemId) === String(from.id)) };
+    const pinsOf = item => {
+      const out = { ...(item.mixPins || {}) };
+      if (item.metadataSource && item.metadataSource !== "mix" && item.providerId) out[item.metadataSource] = item.providerId;
+      if (item.mixPrimary?.key) out[item.mixPrimary.key] = item.mixPrimary.providerId;
+      return out;
+    };
+    const primary = to.metadataSource === "mix" ? to.mixPrimary : (to.metadataSource && to.providerId ? { key: to.metadataSource, providerId: to.providerId } : null);
+    to.mixPins = { ...pinsOf(from), ...pinsOf(to) };
+    if (primary) to.mixPrimary = primary;
+    to.source = to.metadataSource = "mix";
+    to.mixSourceKeys = [...new Set([...(to.mixSourceKeys || []), ...(from.mixSourceKeys || []), ...Object.keys(to.mixPins)])];
+    to.progress = Math.max(Number(to.progress) || 0, Number(from.progress) || 0);
+    if (!Number(to.rating) && Number(from.rating)) to.rating = from.rating;
+    to.favorite = Boolean(to.favorite || from.favorite);
+    history.forEach(entry => { if (String(entry.itemId) === String(from.id)) entry.itemId = to.id; });
+    items = items.filter(entry => entry !== from);
+    to.updatedAt = Date.now();
+    persist();
+    if (!startSyncJob([to])) enrichLibraryEntryWithMix(to, { ...to, source: "mix" }, "Merge");
+    render();
+    toastUndo(`Merged into “${to.title}”. Fetching from all enabled sources…`, () => {
+      if (syncJob) { syncJob.queue = syncJob.queue.filter(entry => String(entry.id) !== String(to.id)); syncJob.entries = syncJob.entries.filter(entry => String(entry.id) !== String(to.id)); }
+      const index = items.findIndex(entry => String(entry.id) === String(to.id));
+      if (index >= 0) items[index] = undoState.to;
+      items.splice(Math.min(undoState.fromIndex, items.length), 0, undoState.from);
+      undoState.moved.forEach(entry => { entry.itemId = undoState.from.id; });
+      persist({ ids: [undoState.to.id, undoState.from.id] }); render(); toast("Merge undone.");
+    }, 10000);
+  }
+  (() => {
+    let timer = 0, drag = null, start = null;
+    const cardAt = (x, y, exceptId) => { const el = document.elementFromPoint(x, y)?.closest?.(".item-card[data-item]"); return el && el.dataset.item !== exceptId ? el : null; };
+    const clear = () => { document.querySelectorAll(".mix-drop-target").forEach(el => { el.classList.remove("mix-drop-target"); el.style.outline = ""; }); };
+    let finish = async (x, y, cancelled) => {
+      clearTimeout(timer);
+      if (!drag) { start = null; return; }
+      const { id, ghost, source, moved } = drag; drag = null; start = null;
+      ghost.remove(); source.style.opacity = ""; clear();
+      if (cancelled) return;
+      const target = cardAt(x, y, id);
+      if (!target) { if (!moved) enterSelectMode(id); return; } // hold and release in place = select
+      const from = itemById(id), to = itemById(target.dataset.item); if (!from || !to) return;
+      if (await appConfirm(`Merge “${from.title}” into “${to.title}” as one Mix game? “${from.title}” will be removed and “${to.title}” fetches from both sources.`, { title: "Merge as Mix", confirmLabel: "Merge" })) mergeIntoMix(id, to.id);
+    };
+    document.addEventListener("pointerdown", event => {
+      if (page !== "dashboard" || selectMode || (event.pointerType === "mouse" && event.button !== 0)) return;
+      const card = event.target.closest?.(".item-card[data-item]"); if (!card || event.target.closest("[data-item-menu], .item-menu")) return;
+      start = { x: event.clientX, y: event.clientY };
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const rect = card.getBoundingClientRect(), ghost = card.cloneNode(true);
+        Object.assign(ghost.style, { position: "fixed", left: rect.left + "px", top: rect.top + "px", width: rect.width + "px", margin: "0", zIndex: 9999, pointerEvents: "none", opacity: ".92", transform: "scale(.94)", boxShadow: "0 12px 30px rgba(0,0,0,.3)" });
+        document.body.appendChild(ghost); card.style.opacity = ".4";
+        drag = { id: card.dataset.item, ghost, source: card, dx: start.x - rect.left, dy: start.y - rect.top, sx: start.x, sy: start.y, moved: false };
+        navigator.vibrate?.(25);
+      }, 500);
+    }, true);
+    document.addEventListener("pointermove", event => {
+      if (!drag) { if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) { clearTimeout(timer); start = null; } return; }
+      if (Math.hypot(event.clientX - drag.sx, event.clientY - drag.sy) > 14) drag.moved = true;
+      drag.ghost.style.left = event.clientX - drag.dx + "px"; drag.ghost.style.top = event.clientY - drag.dy + "px";
+      clear(); const target = cardAt(event.clientX, event.clientY, drag.id);
+      if (target) { target.classList.add("mix-drop-target"); target.style.outline = "3px solid var(--accent, #6355f5)"; }
+    }, true);
+    document.addEventListener("touchmove", event => { if (drag && event.cancelable) event.preventDefault(); }, { passive: false });
+    document.addEventListener("pointerup", event => finish(event.clientX, event.clientY, false), true);
+    document.addEventListener("pointercancel", event => finish(event.clientX, event.clientY, true), true);
+    document.addEventListener("contextmenu", event => { if (drag || start) event.preventDefault(); }, true);
+    // A drag must not also open the card it started on.
+    document.addEventListener("click", event => { if (Date.now() - dragEndedAt < 400) { event.preventDefault(); event.stopPropagation(); } }, true);
+    let dragEndedAt = 0;
+    const baseFinish = finish; finish = async (...args) => { if (drag) dragEndedAt = Date.now(); return baseFinish(...args); };
+  })();
+
+  // ================= Library tools: undo, bulk select, fix match, cover picker, import duplicates =================
+  function cloneJson(value) { return JSON.parse(JSON.stringify(value)); }
+  // Toast with an Undo button (a few seconds to take the action back).
+  function toastUndo(message, undo, ms = 8000) {
+    const node = $("#toast"); node.textContent = "";
+    const label = document.createElement("span"); label.textContent = message;
+    const button = document.createElement("button"); button.type = "button"; button.className = "toast-undo"; button.textContent = "Undo";
+    button.addEventListener("click", async event => {
+      event.stopPropagation(); node.classList.remove("show", "has-action");
+      try { await undo(); } catch (error) { recordLog("error", `Undo failed: ${error?.message || error}`); toast("Could not undo that."); }
+    });
+    node.append(label, button); node.classList.add("show", "has-action");
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("show", "has-action"), ms);
+  }
+  // Automatic backup before bulk changes (throttled; follows the "Backup before destructive actions" setting).
+  function backupBeforeBulk() {
+    if (!prefs.backupBeforeDestructive || Date.now() - lastAutoBackup < 60000) return;
+    lastAutoBackup = Date.now();
+    try { exportList({ silent: true }); } catch (_) {}
+  }
+  function removeItemsWithUndo(list, message) {
+    const removed = list.map(entry => ({ item: cloneJson(entry), index: items.indexOf(entry) })).filter(row => row.index >= 0);
+    if (!removed.length) return;
+    backupBeforeBulk();
+    const ids = new Set(removed.map(row => String(row.item.id)));
+    items = items.filter(entry => !ids.has(String(entry.id)));
+    if (syncJob) { syncJob.queue = syncJob.queue.filter(entry => !ids.has(String(entry.id))); syncJob.entries = syncJob.entries.filter(entry => !ids.has(String(entry.id))); }
+    persist({ removed: [...ids] }); render();
+    toastUndo(message || `Removed ${removed.length} ${removed.length === 1 ? "game" : "games"}.`, () => {
+      removed.sort((a, b) => a.index - b.index).forEach(row => items.splice(Math.min(row.index, items.length), 0, row.item));
+      persist({ ids: [...ids] }); render(); toast("Restored.");
+    });
+  }
+
+  // ---- Bulk select (hold a card and release without moving, or use the select button) ----
+  function enterSelectMode(id) {
+    selectMode = true; selectedIds.clear(); if (id != null) selectedIds.add(String(id));
+    document.body.classList.add("select-mode"); applySelectionUI(); navigator.vibrate?.(15);
+  }
+  function exitSelectMode() { selectMode = false; selectedIds.clear(); document.body.classList.remove("select-mode"); applySelectionUI(); }
+  function applySelectionUI() {
+    document.querySelectorAll(".item-card[data-item]").forEach(card => card.classList.toggle("is-selected", selectMode && selectedIds.has(card.dataset.item)));
+    let bar = $("#select-bar");
+    if (!selectMode) { bar?.remove(); $("#select-toggle")?.classList.remove("is-active"); return; }
+    $("#select-toggle")?.classList.add("is-active");
+    if (!bar) {
+      bar = document.createElement("div"); bar.id = "select-bar"; bar.className = "select-bar"; bar.setAttribute("role", "toolbar");
+      bar.innerHTML = '<span class="select-count" data-select-count></span><button type="button" data-select-act="status">Status</button><button type="button" data-select-act="favorite">♥</button><button type="button" data-select-act="delete" class="danger">Delete</button><button type="button" data-select-act="all">All</button><button type="button" data-select-act="done">Done</button>';
+      document.body.appendChild(bar); bar.addEventListener("click", onSelectBarClick);
+    }
+    const countNode = bar.querySelector("[data-select-count]"); countNode.textContent = `${selectedIds.size} ✓`; countNode.setAttribute("aria-label", `${selectedIds.size} selected`);
+    bar.querySelectorAll('[data-select-act="status"],[data-select-act="favorite"],[data-select-act="delete"]').forEach(button => { button.disabled = selectedIds.size === 0; });
+  }
+  const selectedItems = () => items.filter(item => selectedIds.has(String(item.id)));
+  async function onSelectBarClick(event) {
+    const act = event.target.closest("[data-select-act]")?.dataset.selectAct; if (!act) return;
+    const list = selectedItems();
+    if (act === "done") { exitSelectMode(); return; }
+    if (act === "all") { document.querySelectorAll(".item-card[data-item]").forEach(card => selectedIds.add(card.dataset.item)); applySelectionUI(); return; }
+    if (!list.length) return;
+    if (act === "favorite") {
+      const makeFavorite = list.some(item => !item.favorite);
+      const before = list.map(item => [item, Boolean(item.favorite), item.updatedAt]);
+      list.forEach(item => { item.favorite = makeFavorite; item.updatedAt = Date.now(); });
+      persist({ ids: list.map(item => item.id) }); exitSelectMode(); render();
+      toastUndo(makeFavorite ? `Added ${list.length} to favorites.` : `Removed ${list.length} from favorites.`, () => { before.forEach(([item, fav, at]) => { item.favorite = fav; item.updatedAt = at; }); persist({ ids: list.map(item => item.id) }); render(); });
+    } else if (act === "delete") {
+      if (!(await appConfirm(`Remove ${list.length} ${list.length === 1 ? "game" : "games"} from your collection?`, { title: "Remove games", confirmLabel: "Remove", danger: true }))) return;
+      exitSelectMode(); removeItemsWithUndo(list);
+    } else if (act === "status") {
+      const statuses = [...new Set(category("game")?.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed", "Upcoming"])];
+      let dialog = $("#bulk-status-dialog");
+      if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "bulk-status-dialog"; dialog.className = "ios-action-sheet"; document.body.appendChild(dialog); }
+      dialog.innerHTML = `<div class="ios-action-group"><p>Set ${list.length} ${list.length === 1 ? "game" : "games"} to…</p>${statuses.map(status => `<button type="button" data-bulk-status="${esc(status)}">${esc(status)}</button>`).join("")}</div><div class="ios-action-group"><button type="button" data-bulk-status="">Cancel</button></div>`;
+      dialog.onclick = event2 => {
+        if (event2.target === dialog) { closePopup(dialog); return; }
+        const choice = event2.target.closest("[data-bulk-status]"); if (!choice) return;
+        const status = choice.dataset.bulkStatus; closePopup(dialog);
+        if (status) applyBulkStatus(list, status);
+      };
+      showPopup(dialog);
+    }
+  }
+  function applyBulkStatus(list, status) {
+    backupBeforeBulk();
+    const before = list.map(item => ({ item, status: item.status, progress: item.progress, updatedAt: item.updatedAt }));
+    const addedHistory = [];
+    list.forEach(item => {
+      if (item.status === status) return;
+      item.status = status; item.updatedAt = Date.now();
+      if (status === "Completed" && Number(item.goal) > 0) item.progress = Math.max(Number(item.progress) || 0, Number(item.goal));
+      if (["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(status)) { const entry = { itemId: item.id, title: item.title, action: status, status, at: Date.now() }; history.unshift(entry); addedHistory.push(entry); }
+    });
+    persist({ ids: list.map(item => item.id) }); exitSelectMode(); render();
+    toastUndo(`Marked ${list.length} as ${status}.`, () => {
+      before.forEach(row => { row.item.status = row.status; row.item.progress = row.progress; row.item.updatedAt = row.updatedAt; });
+      history = history.filter(entry => !addedHistory.includes(entry));
+      persist({ ids: list.map(item => item.id) }); render();
+    });
+  }
+  document.addEventListener("click", event => {
+    if (!selectMode || page !== "dashboard") return;
+    const card = event.target.closest?.(".item-card[data-item]");
+    if (!card) return;
+    event.preventDefault(); event.stopPropagation();
+    selectedIds.has(card.dataset.item) ? selectedIds.delete(card.dataset.item) : selectedIds.add(card.dataset.item);
+    applySelectionUI();
+  }, true);
+  document.addEventListener("click", event => {
+    if (event.target.closest?.("#select-toggle")) { event.preventDefault(); event.stopPropagation(); selectMode ? exitSelectMode() : enterSelectMode(); }
+  }, true);
+
+  // ---- Fix match: pick the right entry for any source, or unlink one ----
+  function resetMixCheck(item) { delete item.mixCheckedAt; delete item.mixCheckedSources; delete item.mixFailedAt; }
+  function resyncAfterRelink(item, message) {
+    resetMixCheck(item);
+    // Saved copies of the old source's artwork would mask the new match's cover.
+    ["localImageData", "localPortraitData", "localThumbnailData", "localLandscapeData", "thumbnailPath", "thumbnailMime", "localImageFiles", "localImageFingerprint"].forEach(key => delete item[key]); item.updatedAt = Date.now(); persist({ ids: [item.id] });
+    if (!startSyncJob([item])) enrichLibraryEntryWithMix(item, { ...item, source: item.metadataSource }, "Fix match");
+    render(); toast(message);
+  }
+  function openFixMatch(id) {
+    const item = itemById(String(id)); if (!item) return;
+    const sources = (window.SplitAppSources?.available("game", prefs) || []);
+    if (!sources.length) { toast("Enable a metadata source first."); return; }
+    let dialog = $("#fix-match-dialog");
+    if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "fix-match-dialog"; dialog.className = "choice-dialog fix-match-dialog"; document.body.appendChild(dialog); }
+    const state = { id: item.id, key: sources[0].key, rows: [], busy: false, message: "" };
+    const linkedLabel = key => { const link = (itemById(String(state.id))?.sourceIds || {})[key]; return link ? `Linked · ${esc(String(link).replace(/^app:/, "#"))}` : "Not linked"; };
+    const paint = () => {
+      const current = itemById(String(state.id)); if (!current) return;
+      const linkedCount = Object.keys(current.sourceIds || {}).length;
+      dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">FIX MATCH</p><h2>${esc(current.title)}</h2></div><button class="choice-dialog-close" type="button" data-fix-close aria-label="Close">×</button></header>
+        <div class="fix-match-body">
+          <div class="fix-match-links">${sources.map(source => `<div class="fix-match-link"><strong>${esc(source.name)}</strong><small>${linkedLabel(source.key)}${current.mixSkip?.[source.key] ? " · skipped" : ""}</small>${(current.sourceIds || {})[source.key] && linkedCount > 1 ? `<button type="button" class="button secondary small" data-fix-unlink="${esc(source.key)}">Unlink</button>` : current.mixSkip?.[source.key] ? `<button type="button" class="button secondary small" data-fix-unskip="${esc(source.key)}">Allow</button>` : ""}</div>`).join("")}</div>
+          <div class="fix-match-search"><select data-fix-source aria-label="Source">${sources.map(source => `<option value="${esc(source.key)}"${source.key === state.key ? " selected" : ""}>${esc(source.name)}</option>`).join("")}</select><input type="search" data-fix-query value="${esc(state.query ?? current.title)}" placeholder="Search this source" autocomplete="off"><button type="button" class="button primary small" data-fix-search>Search</button></div>
+          <p class="fix-match-status" role="status">${esc(state.message)}</p>
+          <ul class="fix-match-results">${state.rows.map((row, index) => `<li><span class="fix-match-art">${row.image ? `<img src="${esc(row.image)}" alt="" loading="lazy" onerror="this.hidden=true">` : ""}</span><span class="fix-match-copy"><strong>${esc(row.title)}</strong><small>${esc([row.year, row.description].filter(Boolean).join(" · ") || row.providerId)}</small></span><button type="button" class="button primary small" data-fix-use="${index}">Use</button></li>`).join("")}</ul>
+        </div>`;
+    };
+    const search = async () => {
+      const query = dialog.querySelector("[data-fix-query]")?.value.trim() || ""; state.query = query; state.key = dialog.querySelector("[data-fix-source]")?.value || state.key;
+      if (!query) return; state.message = "Searching…"; state.rows = []; paint();
+      try { state.rows = (await window.SplitAppDiscovery.searchSource(query, "game", detailSettings(), state.key)).slice(0, 15); state.message = state.rows.length ? "Pick the right one." : "No results from this source."; }
+      catch (error) { state.message = error?.message || "Search failed."; }
+      paint();
+    };
+    dialog.onclick = event => {
+      const current = itemById(String(state.id)); if (!current) return;
+      if (event.target === dialog || event.target.closest("[data-fix-close]")) { closePopup(dialog); return; }
+      if (event.target.closest("[data-fix-search]")) { search(); return; }
+      const use = event.target.closest("[data-fix-use]");
+      if (use) {
+        const row = state.rows[Number(use.dataset.fixUse)]; if (!row) return; const key = state.key, providerId = String(row.providerId);
+        current.sourceIds = { ...(current.sourceIds || {}), [key]: providerId }; current.mixPins = { ...(current.mixPins || {}), [key]: providerId };
+        if (current.mixSkip) delete current.mixSkip[key];
+        if (current.metadataSource === key) current.providerId = providerId;
+        if (current.metadataSource === "mix" && current.mixPrimary?.key === key) current.mixPrimary = { key, providerId };
+        closePopup(dialog); resyncAfterRelink(current, `Linked “${row.title}”. Fetching details…`); return;
+      }
+      const unlink = event.target.closest("[data-fix-unlink]");
+      if (unlink) {
+        const key = unlink.dataset.fixUnlink;
+        if (current.sourceIds) delete current.sourceIds[key]; if (current.mixPins) delete current.mixPins[key];
+        current.mixSkip = { ...(current.mixSkip || {}), [key]: true };
+        if (current.mixPrimary?.key === key) delete current.mixPrimary;
+        if (current.metadataSource === key) { const other = Object.entries(current.sourceIds || {})[0]; if (other) { current.metadataSource = "mix"; current.providerId = other[1]; current.mixPrimary = { key: other[0], providerId: other[1] }; } }
+        closePopup(dialog); resyncAfterRelink(current, "Source unlinked. Refreshing details…"); return;
+      }
+      const unskip = event.target.closest("[data-fix-unskip]");
+      if (unskip) { delete current.mixSkip?.[unskip.dataset.fixUnskip]; resetMixCheck(current); persist({ ids: [current.id] }); paint(); }
+    };
+    dialog.onchange = event => { if (event.target.matches("[data-fix-source]")) { state.key = event.target.value; state.rows = []; state.message = ""; paint(); } };
+    dialog.onkeydown = event => { if (event.key === "Enter" && event.target.matches("[data-fix-query]")) { event.preventDefault(); search(); } };
+    paint(); showPopup(dialog);
+  }
+
+  // ---- Cover picker ----
+  function coverCandidates(item) {
+    const details = item.cachedDetails || {}, urls = [];
+    const steamId = String((item.sourceIds || {}).steamdb || (item.metadataSource === "steamdb" ? item.providerId : "") || "").replace(/^app:/, "");
+    if (steamId) urls.push(`https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${steamId}/library_600x900.jpg`, `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamId}/library_600x900.jpg`, `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${steamId}/header.jpg`);
+    urls.push(details.portraitImage, details.image, details.landscapeImage, details.backgroundImage, item.image, item.backdrop);
+    (details.sections || []).filter(section => section.kind === "gallery").forEach(section => (section.items || []).slice(0, 6).forEach(entry => urls.push(entry.image)));
+    return [...new Set(urls.filter(url => /^https?:/i.test(url || "")))];
+  }
+  function openCoverPicker(id) {
+    const item = itemById(String(id)); if (!item) return;
+    let dialog = $("#cover-picker-dialog");
+    if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "cover-picker-dialog"; dialog.className = "choice-dialog cover-picker-dialog"; document.body.appendChild(dialog); }
+    const urls = coverCandidates(item);
+    dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">COVER</p><h2>${esc(item.title)}</h2></div><button class="choice-dialog-close" type="button" data-cover-close aria-label="Close">×</button></header>
+      <div class="cover-picker-body"><p class="fix-match-status">${item.customCover ? "Using your chosen cover." : "Pick a cover; it stays even after syncs."}</p>
+      <div class="cover-picker-grid">${urls.map(url => `<button type="button" class="cover-choice${item.customCover === url ? " is-current" : ""}" data-cover-url="${esc(url)}"><img src="${esc(url)}" alt="" loading="lazy" onerror="this.closest('button').hidden=true"></button>`).join("")}</div>
+      ${item.customCover ? '<button type="button" class="button secondary" data-cover-auto>Use automatic cover</button>' : ""}</div>`;
+    dialog.onclick = event => {
+      if (event.target === dialog || event.target.closest("[data-cover-close]")) { closePopup(dialog); return; }
+      const choice = event.target.closest("[data-cover-url]"), auto = event.target.closest("[data-cover-auto]");
+      if (!choice && !auto) return;
+      if (choice) { item.customCover = choice.dataset.coverUrl; item.image = item.customCover; } else delete item.customCover;
+      item.updatedAt = Date.now(); persist({ ids: [item.id] }); closePopup(dialog); render(); toast(auto ? "Automatic cover restored." : "Cover updated.");
+    };
+    showPopup(dialog);
+  }
+  document.addEventListener("click", event => {
+    const fix = event.target.closest?.("[data-fix-match]"); if (fix) { event.preventDefault(); event.stopPropagation(); openFixMatch(fix.dataset.fixMatch); return; }
+    const cover = event.target.closest?.("[data-change-cover]"); if (cover) { event.preventDefault(); event.stopPropagation(); openCoverPicker(cover.dataset.changeCover); return; }
+    const retry = event.target.closest?.("[data-sync-retry-one]");
+    if (retry) {
+      event.preventDefault(); event.stopPropagation();
+      const id = retry.dataset.syncRetryOne, entry = syncJob?.entries.find(row => String(row.id) === String(id)), item = itemById(String(id));
+      if (!entry || !item) return;
+      entry.status = "queued"; entry.error = ""; delete item.mixFailedAt;
+      if (syncJob.finished) { syncJob.finished = false; syncJob.queue = [item]; syncPersistCount = 0; runSyncJob(syncJob); } else syncJob.queue.push(item);
+      updateSyncUI(); render(); return;
+    }
+    const ignore = event.target.closest?.("[data-sync-ignore-one]");
+    if (ignore) {
+      event.preventDefault(); event.stopPropagation();
+      const id = ignore.dataset.syncIgnoreOne, item = itemById(String(id));
+      if (item) { item.mixFailedAt = Date.now(); persist({ ids: [item.id] }); }
+      if (syncJob) { syncJob.entries = syncJob.entries.filter(row => String(row.id) !== String(id)); if (!syncJob.entries.length) syncJob = null; }
+      updateSyncUI(); render();
+    }
+  }, true);
+
+  // ---- Import: spot near-duplicates (edition names, missing years) before they are added ----
+  const EDITION_WORDS = /\b(definitive|complete|ultimate|deluxe|enhanced|special|gold|standard|anniversary|remastered|remaster|game of the year|goty|directors cut|director s cut|digital|premium)\b( edition| cut| collection| version)?/g;
+  function dupTitleKey(title) {
+    return normalizeLibraryTitle(title).replace(/^the /, "").replace(EDITION_WORDS, " ").replace(/\s+/g, " ").trim();
+  }
+  const yearOfItem = item => String(item?.year || item?.originYear || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
+  function splitSimilarImports(fresh) {
+    const library = new Map();
+    items.forEach(entry => { const key = `${entry.category || "game"}:${dupTitleKey(entry.title)}`; if (key.length > 6 && !library.has(key)) library.set(key, entry); });
+    const kept = [], similar = [], exact = [], seen = new Map();
+    for (const entry of fresh) {
+      const key = `${entry.category || "game"}:${dupTitleKey(entry.title)}`;
+      const hit = library.get(key) || seen.get(key);
+      const compatible = hit && (!yearOfItem(hit) || !yearOfItem(entry) || yearOfItem(hit) === yearOfItem(entry));
+      if (hit && compatible && key.length > 6) {
+        // Same title once punctuation/case is ignored = plainly already there; only edition-name differences need a decision.
+        if (normalizeLibraryTitle(hit.title) === normalizeLibraryTitle(entry.title)) exact.push(entry);
+        else similar.push({ item: entry, matchTitle: hit.title, keep: false });
+      } else { kept.push(entry); seen.set(key, entry); }
+    }
+    return { kept, similar, exact };
+  }
+
+  const enabledGameSourceKeys = () => (window.SplitAppSources?.available("game", prefs) || []).map(source => source.key).sort();
+  // A game needs a (re)sync when it was never fetched, a newly enabled source hasn't been tried on it, it is older than
+  // the refresh interval, or a previous attempt failed more than a few hours ago. Everything else is skipped.
+  function needsMixSync(item, enabled = enabledGameSourceKeys()) {
+    if (!item.cachedDetails) return !item.mixFailedAt || Date.now() - item.mixFailedAt > 6 * 3600000;
+    // Merged with a source that is switched off right now: leave it alone until that source is back (its data stays).
+    if (Object.keys(item.sourceIds || {}).some(key => !enabled.includes(key))) return false;
+    if (item.mixFailedAt && Date.now() - item.mixFailedAt > 30 * 60000) return true; // a known source didn't answer last time
+    // Sources already tried on this game (older saves only know the ones that answered).
+    const tried = new Set(item.mixCheckedSources || [...(item.mixSourceKeys || []), ...(item.facts?.sources || [])]);
+    if (enabled.some(key => !tried.has(key) && !item.mixSkip?.[key])) return true;
+    const maxAge = { daily: 86400000, weekly: 604800000, monthly: 2592000000, never: Infinity }[prefs.metadataRefreshInterval] ?? 604800000;
+    const stamp = Number(item.mixCheckedAt || item.cachedDetails?.fetchedAt || item.facts?.fetchedAt) || 0;
+    return !stamp || Date.now() - stamp >= maxAge;
+  }
+  let upToDateAt = 0;
+  // Pull-to-refresh on the library: sync only what needs it. Pulling again right after "all up to date" forces every game.
   function syncUnsyncedGames() {
     const active = new Set(syncJob && !syncJob.finished ? syncJob.entries.filter(e => e.status === "queued" || e.status === "syncing").map(e => e.id) : []);
-    const pending = items.filter(item => item.category === "game" && !item.cachedDetails && !active.has(item.id));
-    if (!pending.length) { toast(active.size ? "Sync is already running." : "All games are already synced."); return; }
+    const enabled = enabledGameSourceKeys(), force = Date.now() - upToDateAt < 20000;
+    const games = items.filter(item => item.category === "game" && !active.has(item.id));
+    const pending = force ? games : games.filter(item => needsMixSync(item, enabled));
+    if (!pending.length) { upToDateAt = Date.now(); toast(active.size ? "Sync is already running." : games.length ? "Everything is up to date. Pull again to re-check all games." : "No games to sync."); return; }
+    upToDateAt = 0;
     if (!startSyncJob(pending)) { toast(prefs.metadataMode === "offline" || !navigator.onLine ? "Go online to sync metadata." : "No metadata sources are enabled."); return; }
-    toast(`Syncing ${pending.length} ${pending.length === 1 ? "game" : "games"} in the background.`);
+    toast(`Syncing ${pending.length} of ${games.length} ${games.length === 1 ? "game" : "games"}${force ? "" : " that need it"}.`);
   }
   // Pull to refresh on the requested library, activity, discovery, statistics, and source pages.
   (() => {
@@ -3720,6 +4116,7 @@
     const route = hashPath.split("/"); const next = route[0];
     if (next === "search") { page = "dashboard"; settingsGroup = null; historyPush(); render(); syncPageNavigation(); return; }
     if (!(next in titles)) return;
+    rememberScroll();
     const previousPage = page;
     if (previousPage === "details" && next !== "details") { detailRequest++; detailLoading = false; }
     if (next !== "discover") { discoverQuery = ""; discoverSubmitted = ""; discoverRequestId++; }
@@ -3738,7 +4135,7 @@
       if (!detailRestorePending && !detailPreview && !items.some(item => String(item.id) === String(detailItemId))) { redirectHomeIfDetailMissing(); return; }
       if (changedDetail || previousPage !== "details") { render(); syncPageNavigation(); loadDetails(); return; }
     }
-    render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
+    render(); syncPageNavigation(); restoreScroll();
     if (next === "discover" && previousDiscoverSource !== discoverSource && discoverQuery.trim()) submitDiscover();
   }
   document.addEventListener("keydown", event => { if (event.key === "Enter" && event.target?.id === "mix-query") { event.preventDefault(); runMixSearch(); } });

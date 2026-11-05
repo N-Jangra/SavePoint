@@ -87,7 +87,7 @@
         : (titleMatches.length === 1 ? titleMatches[0] : null)) : null;
       const source = window.SplitAppMetadata.providers.find(row => row.key === (item.metadataSource || item.source));
       const loaded = detailData || {};
-      const image = safeImage(item.localImageData?.["cachedDetails.portraitImage"] || loaded.portraitImage || item.cachedDetails?.portraitImage || item.localThumbnailData || item.localImageData?.["image"] || item.localImageData?.["cachedDetails.image"] || loaded.image || item.image);
+      const image = safeImage(item.customCover || item.localImageData?.["cachedDetails.portraitImage"] || loaded.portraitImage || item.cachedDetails?.portraitImage || item.localThumbnailData || item.localImageData?.["image"] || item.localImageData?.["cachedDetails.image"] || loaded.image || item.image);
       const landscape = safeImage(item.localImageData?.["cachedDetails.landscapeImage"] || item.localImageData?.["cachedDetails.backgroundImage"] || loaded.landscapeImage || loaded.backgroundImage);
       const summary = loaded.description || item.description || item.summary || "No description is available for this entry yet.";
       const sourceUrl = safeUrl(loaded.url || item.url || item.providerUrl);
@@ -168,7 +168,7 @@
             <div class="detail-hero-copy">
               <p class="eyebrow">${esc(item.metadataSource === "mix" ? `Mix · ${(loaded.mixSources || []).join(" + ") || "all sources"}` : source?.name || item.metadataSource || "SAVEPOINT")}${source ? ` • ${esc(source.categories.map(labelCategory).join(" / "))}` : ""}</p>
               <h2>${esc(canProgress ? item.title : (loaded.title || item.title))}</h2>
-              <div class="detail-badges">${canProgress ? `<span class="ios-status-badge">${esc(item.status)}</span>` : ""}${facts.slice(0, 3).map(([label, value]) => `<span>${esc(label === "Rating" ? value : detailValue(value))}</span>`).join("")}${loaded.badge ? `<span class="detail-age-badge">${esc(loaded.badge)}</span>` : ""}${sourceUrl ? `<a class="detail-source-link" href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer">Open source page ↗</a>` : ""}</div>
+              <div class="detail-badges">${canProgress ? `<span class="ios-status-badge">${esc(item.status)}</span>` : ""}${facts.slice(0, 3).map(([label, value]) => `<span>${esc(label === "Rating" ? value : detailValue(value))}</span>`).join("")}${loaded.badge ? `<span class="detail-age-badge">${esc(loaded.badge)}</span>` : ""}${sourceUrl ? `<a class="detail-source-link" href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer">Open source page ↗</a>` : ""}</div>${canProgress && item.category === "game" ? `<div class="detail-tools"><button type="button" class="detail-tool-chip" data-fix-match="${esc(item.id)}">Fix match</button><button type="button" class="detail-tool-chip" data-change-cover="${esc(item.id)}">Change cover</button></div>` : ""}
             </div>
           </div>
           ${purchase}
