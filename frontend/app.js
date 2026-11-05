@@ -2359,6 +2359,7 @@
     if (!dialog) return;
     const opener = detailImageOpener;
     detailImageOpener = null;
+    dialog.classList.remove("is-rotated");
     closePopup(dialog);
     requestAnimationFrame(() => { if (opener?.isConnected) opener.focus({ preventScroll: true }); });
   }
@@ -3012,6 +3013,7 @@
       showDetailImage($$("[data-detail-image-src]", $("#page-content")).indexOf(detailImage));
       return;
     }
+    if (event.target.closest("[data-detail-image-rotate]")) { const modal = $("#detail-image-modal"); if (modal) { const on = modal.classList.toggle("is-rotated"); modal.setAttribute("data-rotated", String(on)); } return; }
     if (event.target.closest("[data-detail-image-close]")) { closeDetailImage(); return; }
     if (event.target.closest("[data-detail-image-prev]")) { showDetailImage(detailImagePosition - 1); return; }
     if (event.target.closest("[data-detail-image-next]")) { showDetailImage(detailImagePosition + 1); return; }
