@@ -2387,3 +2387,15 @@ body[data-theme="amoled"] .ios-action-group .neutral,body[data-theme="amoled"] .
 
 /* 0.1.2+: the Home top bar is a real fixed bar — shaded, blurred and bordered like the other page headers */
 body[data-page="dashboard"] .topbar{position:sticky;top:0;z-index:12;margin:0 calc(var(--gutter,16px) * -1);padding-left:var(--gutter,16px);padding-right:var(--gutter,16px);border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface) 90%,transparent);-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px)}
+
+/* 0.1.2+: Explore heading is a fixed, shaded top bar like Home */
+body[data-page="explore"] .explore-heading{position:sticky;top:0;z-index:12;margin:0 calc(var(--gutter,16px) * -1);padding:calc(14px + env(safe-area-inset-top)) var(--gutter,16px) 12px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface) 90%,transparent);-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px)}
+body[data-page="explore"] .explore-intro{margin:14px 2px 6px}
+body[data-page="explore"] .app-shell,body[data-page="explore"] #page-content{padding-top:0 !important}
+
+/* 0.1.2+: Home search bar matches the Discover search bar */
+.home-collection-page .collection-search-row{margin:14px 0 10px;gap:10px}
+.home-collection-page .collection-search-row .collection-search{min-height:50px;padding:0 14px;gap:10px;border:1px solid var(--line);border-radius:15px;background:var(--surface);box-shadow:none}
+.home-collection-page .collection-search-row .collection-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.home-collection-page .collection-search-row .collection-search>i svg{width:18px;height:18px;stroke-width:1.8}
+.home-collection-page .collection-search-row .collection-search input{height:48px;font-size:1rem;min-width:0;width:100%}

@@ -25,7 +25,7 @@
         <a href="#settings/metadata-sources">Manage sources <i data-lucide="chevron-right" aria-hidden="true"></i></a>
       </div>`;
     return `<section class="explore-page">
-      <header class="explore-heading"><div><h1>Explore</h1><p class="explore-description">Browse activity and discover games from your sources.</p></div><a class="explore-icon-btn" href="#settings/metadata-sources" aria-label="Manage metadata sources" title="Manage metadata sources"><i data-lucide="wrench" aria-hidden="true"></i></a></header>
+      <header class="explore-heading"><h1>Explore</h1><a class="explore-icon-btn" href="#settings/metadata-sources" aria-label="Manage metadata sources" title="Manage metadata sources"><i data-lucide="wrench" aria-hidden="true"></i></a></header>
       <h2 class="explore-group-title">Insights &amp; Activity</h2>
       <div class="explore-list-group">
         <button class="explore-list-row" type="button" data-go="timeline"><span class="explore-list-icon" style="background:#34c759"><i data-lucide="clock" aria-hidden="true"></i></span><span class="explore-list-body"><span class="explore-list-name">Timeline</span></span><i data-lucide="chevron-right" class="explore-list-chevron" aria-hidden="true"></i></button>
