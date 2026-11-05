@@ -99,7 +99,7 @@
       { status: "Dropped", icon: "circle-minus", tone: "dropped", blurb: "Stopped early — time saved", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["Time saved", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
       { status: "Playing", icon: "gamepad-2", tone: "playing", blurb: "In progress right now", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["To finish", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
       { status: "On Hold", icon: "pause-circle", tone: "on-hold", blurb: "Paused for later", stats: list => [["Time spent", hoursText(sumOf(list, loggedOf))], ["Time needed", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), item => Math.max(0, lengthOf(item) - loggedOf(item))))]] },
-      { status: "Backlog", icon: "bookmark", tone: "backlog", blurb: "Not started — no time counted", stats: () => [] },
+      { status: "Backlog", icon: "bookmark", tone: "backlog", blurb: "Not started yet", stats: list => [["Time needed", hoursText(sumOf(list.filter(item => lengthOf(item) > 0), lengthOf))]] },
       { status: "Upcoming", icon: "calendar-clock", tone: "upcoming", blurb: "Not released or started — no time counted", stats: () => [] }
     ];
     const statusTimeCards = statusTimeSpec.map(spec => {
@@ -110,11 +110,11 @@
       return `<section class="stats-status-card" data-tone="${spec.tone}"><header><span class="stats-status-card-icon"><i data-lucide="${spec.icon}" aria-hidden="true"></i></span><div><h4>${esc(spec.status)}</h4><small>${esc(spec.blurb)}</small></div><b>${plural(list.length, "game")}</b></header><div class="stats-status-card-grid">${cells}</div></section>`;
     }).join("");
     const timePanel = `<article class="stats-panel stats-time-panel">
-      <header class="stats-panel-heading"><div><span class="stats-eyebrow">PLAY TIME</span><h3>Time to beat</h3></div><span class="stats-time-coverage"><strong>${known.length}/${items.length}</strong><span>games with data</span></span></header>
+      <header class="stats-panel-heading"><div><span class="stats-eyebrow">PLAY TIME</span><h3>Time to beat</h3></div></header>
       <div class="stats-time-total"><span><small>Logged in total</small><strong>${hoursText(loggedHours)}</strong></span><span><small>Library value</small><strong>${formatMoney(libraryValue)}</strong></span></div>
       <div class="stats-status-time">${statusTimeCards}</div>
       <p class="stats-time-note">${esc(note)}</p>
-      <div class="stats-time-actions">${missingFacts ? `<button type="button" class="button secondary small" data-stats-fetch-facts>Fetch details for ${plural(missingFacts, "game")}</button>` : ""}${missingHours ? `<button type="button" class="button secondary small" data-stats-find-hours>Find play times for ${plural(missingHours, "game")}</button>` : ""}</div>
+      <div class="stats-time-actions"><span class="stats-time-coverage"><strong>${known.length}/${items.length}</strong><span>games with data</span></span>${missingFacts ? `<button type="button" class="button secondary small" data-stats-fetch-facts>Fetch details for ${plural(missingFacts, "game")}</button>` : ""}${missingHours ? `<button type="button" class="button secondary small" data-stats-find-hours>Find play times for ${plural(missingHours, "game")}</button>` : ""}</div>
     </article>`;
     const perHour = loggedHours > 0 && libraryValue > 0 ? libraryValue / loggedHours : 0;
     const timeDetails = `<article class="stats-panel stats-playtime-games"><header class="stats-panel-heading"><div><span class="stats-eyebrow">GAME BY GAME</span><h3>Playtime breakdown</h3></div><span class="stats-total-chip">${known.length} tracked</span></header>${timeGameRows || `<p class="stats-empty-copy">Playtime breakdowns appear when a game has a known length. You can fetch playtime data below.</p>`}</article>${perHour ? `<article class="stats-panel stats-efficiency-panel"><span class="stats-eyebrow">VALUE EFFICIENCY</span><strong>${formatMoney(perHour)} per logged hour</strong><p>Based on ${formatMoney(libraryValue)} in saved game prices and ${hoursText(loggedHours)} logged.</p></article>` : ""}`;
@@ -212,7 +212,7 @@
       ratings: { title: "Ratings", subtitle: "Review your scores and the games you’ve rated highest.", badge: rated.length ? `${avgRating} AVG` : "NO SCORES", body: ratingsPanel }
     };
     const selected = pages[statsSubpage];
-    const subpage = selected ? `<section class="stats-subpage stats-subpage-${esc(statsSubpage)}"><header class="detail-page-heading analytics-page-heading"><button type="button" class="detail-back" data-go="statistics"><span aria-hidden="true">‹</span> All statistics</button><strong>${selected.title}</strong><span class="stats-subpage-badge">${selected.badge}</span></header><div class="stats-subpage-intro"><span class="stats-eyebrow">STATISTICS</span><h1>${selected.title}</h1><p>${selected.subtitle}</p></div>${selected.body}</section>` : "";
+    const subpage = selected ? `<section class="stats-subpage stats-subpage-${esc(statsSubpage)}"><header class="detail-page-heading analytics-page-heading"><button type="button" class="detail-back" data-go="statistics"><span aria-hidden="true">‹</span> All statistics</button><strong>${selected.title}</strong><span class="settings-subpage-icon stats-subpage-icon" aria-hidden="true"><i data-lucide="${({ playtime: "clock-3", library: "library-big", activity: "activity", ratings: "star" })[statsSubpage] || "bar-chart-3"}"></i></span></header><div class="stats-subpage-intro"><span class="stats-eyebrow">STATISTICS</span><h1>${selected.title}</h1><p>${selected.subtitle}</p></div>${selected.body}</section>` : "";
     const empty = total === 0 && !statsSubpage ? `<div class="stats-empty-state"><span aria-hidden="true">▥</span><strong>Your stats will appear here.</strong><p>Add games to your library to get started.</p><a href="#dashboard">Go to your library <span aria-hidden="true">→</span></a></div>` : "";
     return `<section class="stats-page">${statsSubpage ? subpage : overview}${empty}</section>`;
   };

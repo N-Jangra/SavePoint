@@ -2229,3 +2229,20 @@ body[data-page="dashboard"] .dashboard-status-group > .item-list > .dashboard-ca
 .stats-status-card{min-width:0;box-sizing:border-box;overflow:hidden}
 .stats-status-card-grid{grid-template-columns:repeat(auto-fit,minmax(86px,1fr))}
 .stats-status-card>header>b{white-space:nowrap}
+
+/* 0.1.2+: stats sub-page icon (follows Icon style) and coverage chip beside the fetch buttons */
+.stats-subpage .analytics-page-heading .stats-subpage-icon{display:grid;place-items:center;justify-self:end;width:34px;height:34px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--accent-text,var(--accent))}
+.stats-subpage .stats-subpage-icon svg{width:17px;height:17px}
+body[data-icon-style=inline] .stats-subpage .stats-subpage-icon{border:0;background:transparent;width:auto}
+.stats-time-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.stats-time-actions .stats-time-coverage{margin-right:auto}
+
+/* 0.1.2+: edge fades + hint so scrollable status rows are obviously scrollable */
+.entry-status-options.can-scroll-right,.detail-status-pills.can-scroll-right{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 38px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 38px),transparent)}
+.entry-status-options.can-scroll-left,.detail-status-pills.can-scroll-left{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 38px),transparent);mask-image:linear-gradient(to left,#000 calc(100% - 38px),transparent)}
+.entry-status-options.can-scroll-left.can-scroll-right,.detail-status-pills.can-scroll-left.can-scroll-right{-webkit-mask-image:linear-gradient(to right,transparent,#000 38px,#000 calc(100% - 38px),transparent);mask-image:linear-gradient(to right,transparent,#000 38px,#000 calc(100% - 38px),transparent)}
+.scroll-hint{display:flex;align-items:center;gap:4px;margin-top:2px;color:var(--muted);font-size:.7rem;font-weight:600}
+.scroll-hint span{color:var(--accent);font-size:1rem;line-height:1;animation:hint-nudge 1.4s ease-in-out infinite}
+@keyframes hint-nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(4px)}}
+@media (prefers-reduced-motion:reduce){.scroll-hint span{animation:none}}
+.detail-status-pills>.ios-pill{min-height:40px;padding:0 14px}

@@ -1012,6 +1012,7 @@
     }
     window.lucide?.createIcons({ root: content, attrs: { "aria-hidden": "true" } });
     observeDeferredImages(content);
+    setupScrollRows(content);
     content.querySelectorAll("[data-timeline-art]").forEach(image => {
       image.addEventListener("load", () => {
         const candidate = image.dataset.onlineFallback || image.currentSrc || image.src;
@@ -1302,6 +1303,19 @@
     content.querySelector("[data-detail-image-share]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); shareDetailImage(); });
     content.querySelector("[data-detail-image-prev]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showDetailImage(detailImagePosition - 1); });
     content.querySelector("[data-detail-image-next]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showDetailImage(detailImagePosition + 1); });
+  }
+  // Sideways chip rows: fade the edge that still has content and bring the selected chip into view.
+  function setupScrollRows(root) {
+    root.querySelectorAll(".entry-status-options, .detail-status-pills").forEach(row => {
+      const update = () => {
+        row.classList.toggle("can-scroll-right", row.scrollLeft + row.clientWidth < row.scrollWidth - 4);
+        row.classList.toggle("can-scroll-left", row.scrollLeft > 4);
+      };
+      row.addEventListener("scroll", update, { passive: true });
+      const active = row.querySelector(".active, [aria-pressed=true]");
+      if (active) row.scrollLeft = Math.max(0, active.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft - (row.clientWidth - active.offsetWidth) / 2);
+      update();
+    });
   }
   function refreshSearchResults(pageKey, targetSelector) {
     const current = $(targetSelector);
