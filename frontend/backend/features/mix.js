@@ -42,34 +42,76 @@
       if (row.image && (row.source === "howlongtobeat" || !group.image)) group.image = row.image;
       if (!group.sources.includes(row.source)) group.sources.push(row.source);
     }
-    return [...groups.values()].slice(0, 40);
+    // Steam rows have no release year, so they never shared a group with HowLongToBeat's "Portal (2007)".
+    // Fold a yearless group into the first same-title group that has a year and doesn't already list its sources.
+    const ordered = [...groups.values()];
+    for (const group of ordered) {
+      if (group.year) continue;
+      const home = ordered.find(other => other !== group && other.year && norm(other.title) === norm(group.title) && !group.sources.some(src => other.sources.includes(src)));
+      if (!home) continue;
+      home.sources.push(...group.sources);
+      if (!home.image && group.image) home.image = group.image;
+      group.merged = true;
+    }
+    return ordered.filter(group => !group.merged).slice(0, 40);
   }
 
   const bestMatch = (rows, title, year = "") => {
     const target = norm(title);
     const targetYear = yearOf(year);
     const titleMatches = rows.filter(row => norm(row.title) === target);
-    if (targetYear && titleMatches.length) return titleMatches.find(row => yearOf(row.year) === targetYear) || titleMatches.find(row => !yearOf(row.year)) || null;
+    if (targetYear && titleMatches.length) {
+      const near = titleMatches.find(row => yearOf(row.year) === targetYear) || titleMatches.find(row => !yearOf(row.year));
+      if (near) return near;
+      // Sources disagree on release years (early access, re-releases): one exact title within two years is still the same game.
+      const close = titleMatches.filter(row => Math.abs(Number(yearOf(row.year)) - Number(targetYear)) <= 2);
+      return close.length === 1 ? close[0] : null;
+    }
     if (titleMatches.length) return titleMatches.length === 1 ? titleMatches[0] : null;
-    return rows.find(row => { const name = norm(row.title); return name.includes(target) || target.includes(name); }) || null;
+    // Loose fallback only for real edition/subtitle forms ("Mafia II: Definitive Edition"); "Control" must never match "Control Resonant".
+    const subtitled = (long, short) => long.startsWith(short + " ") && /^[\s]*(definitive|remastered|remake|complete|ultimate|deluxe|enhanced|special|goty|game of the year|director|anniversary|gold|standard|edition)/.test(long.slice(short.length + 1));
+    return rows.find(row => { const name = norm(row.title); return name === target || subtitled(name, target) || subtitled(target, name); }) || null;
   };
 
   // Fetch details from every enabled source that knows this game, then merge.
   async function load(item, settings = {}, onPartial = null) {
     const title = item.title;
     if (!title) throw new Error("This game has no title to look up.");
-    const sources = metadata.available(category, settings);
+    const sources = metadata.available(category, settings).filter(source => !item.mixSkip?.[source.key]);
     if (!sources.length) throw new Error("Enable at least one metadata source first.");
     const completedEntries = [];
-    const tasks = sources.map(async (source, order) => {
-      const rows = await withTimeout(searchSource(title, settings, source.key));
-      const match = bestMatch(rows, title, item.year);
-      if (!match) throw new Error("No match");
+    // The source the game was saved from stays authoritative: it is looked up by its saved id (no title search),
+    // leads the merge, and a mix that lost it is rejected so another catalog can't overwrite its data.
+    const mixed = item.metadataSource === "mix";
+    const primaryKey = (mixed ? item.mixPrimary?.key : item.metadataSource) || "";
+    const primaryId = (mixed ? item.mixPrimary?.providerId : item.providerId) || "";
+    const hasPrimary = Boolean(primaryKey && primaryId && sources.some(source => source.key === primaryKey));
+    // Sources pinned by id (e.g. after merging two library cards) are looked up directly, not by title search.
+    // item.sourceIds is the per-game index of every source that has matched before (key -> provider id): known
+    // sources are fetched by id and, like the saved source, must answer or the existing merged data is kept.
+    const pins = { ...(item.sourceIds || {}), ...(item.mixPins || {}) }; if (hasPrimary) pins[primaryKey] = primaryId;
+    // A known source that is merely switched off counts as expected too: syncing with it disabled must not strip its data.
+    const isKnownSource = key => sources.some(source => source.key === key) || (window.SplitAppSources?.list?.() || []).some(source => source.key === key);
+    const expected = new Set(Object.keys(pins).filter(isKnownSource));
+    const waiting = new Set([...expected].filter(key => sources.some(source => source.key === key)));
+    // Sources that gave a definite answer (matched, or searched and found nothing). A timeout / block is NOT an answer,
+    // so that source is retried on the next refresh instead of being recorded as "checked".
+    const answered = new Set();
+    const tasks = sources.map(async (source, rank) => {
+      const isPrimary = hasPrimary && source.key === primaryKey, order = isPrimary ? -1 : rank;
+      let match;
+      if (pins[source.key]) match = { providerId: pins[source.key], title: item.title, image: item.image, url: item.url, year: item.year, description: item.description };
+      else {
+        const rows = await withTimeout(searchSource(title, settings, source.key));
+        match = bestMatch(rows, title, item.year);
+        answered.add(source.key);
+        if (!match) throw new Error("No match");
+      }
       const data = await withTimeout(loadDetails(source.key, match.providerId, { ...item, category, metadataSource: source.key, providerId: match.providerId, title: match.title, image: match.image || item.image, url: match.url || item.url, year: match.year || item.year, description: match.description || item.description }, settings));
-      const entry = { key: source.key, name: source.name, data, order };
+      const entry = { key: source.key, name: source.name, data, order, providerId: match.providerId };
       completedEntries.push(entry);
-      if (typeof onPartial === "function") {
-        try { onPartial(merge([...completedEntries], title, item), entry); } catch (_) {}
+      if (typeof onPartial === "function" && [...expected].every(key => completedEntries.some(done => done.key === key))) {
+        try { onPartial(merge([...completedEntries].sort((a, b) => a.order - b.order), title, item), entry); } catch (_) {}
       }
       return entry;
     });
@@ -79,11 +121,17 @@
     const entries = await new Promise(resolve => {
       const ok = []; let pending = tasks.length, timer = 0, finished = false;
       const finish = () => { if (finished) return; finished = true; clearTimeout(timer); resolve(ok.slice().sort((a, b) => a.order - b.order)); };
-      tasks.forEach(task => task.then(entry => { ok.push(entry); if (!timer && !finished) timer = setTimeout(finish, settings.background ? BACKGROUND_GRACE_MS : SOURCE_GRACE_MS); }, () => {}).finally(() => { if (--pending === 0) finish(); }));
+      const arm = () => { if (!timer && !finished && ok.length && !waiting.size) timer = setTimeout(finish, settings.background ? BACKGROUND_GRACE_MS : SOURCE_GRACE_MS); };
+      tasks.forEach((task, n) => task.then(entry => { ok.push(entry); waiting.delete(entry.key); arm(); }, () => { waiting.delete(sources[n].key); arm(); }).finally(() => { if (--pending === 0) finish(); }));
     });
     if (!entries.length) throw new Error(`No enabled source had details for “${title}”.`);
+    // Never downgrade: a source that matched this game before must answer again, otherwise keep what is saved.
+    const missing = [...expected].filter(key => !entries.some(entry => entry.key === key));
+    if (missing.length) throw new Error(`Known source${missing.length > 1 ? "s" : ""} (${missing.join(", ")}) did not answer, keeping the existing data.`);
     // Background sync merges in the data worker so the page stays responsive.
-    return settings.background && window.SplitAppIDB?.merge ? window.SplitAppIDB.merge(entries, title, item) : merge(entries, title, item);
+    const result = await (settings.background && window.SplitAppIDB?.merge ? window.SplitAppIDB.merge(entries, title, item) : merge(entries, title, item));
+    result.checkedSources = [...new Set([...answered, ...entries.map(entry => entry.key)])].sort();
+    return result;
   }
 
   // Play-time only lookup for games whose saved provider (e.g. Steam) has no hours: HowLongToBeat first, then RAWG.

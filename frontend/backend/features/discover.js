@@ -357,12 +357,17 @@
     const { results, errors, pending } = await collectProviderJobs(sources.map(source => ({
       name: source.name || source.key,
       run: () => runSourceSearch(source, query.trim(), category, settings)
-    })));
+    })), sources.some(source => source.key === "howlongtobeat") && Date.now() >= howLongToBeatBlockedUntil
+      // HowLongToBeat answers in several seconds; a 1.2s grace dropped it from combined (Mix / All sources) results.
+      ? { timeoutMs: 14000, graceMs: 9000 } : undefined);
     if (pending) errors.push(`${pending} source(s) still responding.`);
     const unique = new Map();
     for (const item of results) if (item?.title) unique.set(`${item.source}:${item.providerId || item.title.toLowerCase()}`, item);
     if (!unique.size && errors.length) throw new Error(errors.join("; "));
-    const output = [...unique.values()].slice(0, 36);
+    // Exact title first, then titles that start with the query, then the rest in source order (sort is stable).
+    const clean = text => String(text || "").toLowerCase().replace(/[™®©]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+    const wanted = clean(query), rank = item => { const title = clean(item.title); return title === wanted ? 0 : title.startsWith(wanted + " ") || title.startsWith(wanted) ? 1 : 2; };
+    const output = [...unique.values()].sort((a, b) => rank(a) - rank(b)).slice(0, 36);
     output.warnings = errors;
     return output;
   }

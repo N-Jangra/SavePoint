@@ -48,6 +48,7 @@
       badge: first(part => part.badge), ratingBreakdown: first(part => part.ratingBreakdown) || [], ratingCount: Number(first(part => part.ratingCount)) || 0,
       stores: unique(parts.flatMap(part => part.stores || []), store => store.name),
       facts: { ...facts, source: "mix", sources: entries.map(entry => entry.key), fetchedAt: Date.now() },
+      sourceIds: Object.fromEntries(entries.filter(entry => entry.providerId != null && entry.providerId !== "").map(entry => [entry.key, String(entry.providerId)])),
       schemaVersion: 2, fetchedAt: Date.now()
     };
   }
