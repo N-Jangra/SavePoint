@@ -2262,3 +2262,5 @@ body[data-icon-style=inline] .stats-subpage .stats-subpage-icon{border:0;backgro
 .export-summary{margin:4px 2px;color:var(--muted);font-size:.8rem}
 .export-run{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;width:100%}
 .export-run svg{width:18px;height:18px}
+.detail-status-pills>.ios-pill{font-size:.78rem;font-weight:650;letter-spacing:0;color:var(--muted)}
+.detail-status-pills>.ios-pill.active{color:#fff}
