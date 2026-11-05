@@ -2280,7 +2280,7 @@ body[data-icon-style=inline] .group-share-btn{border:0;background:transparent}
 .share-modes{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--surface-2)}
 .share-modes button{min-height:40px;padding:0 8px;border:0;border-radius:11px;background:transparent;color:var(--muted);font:650 .78rem var(--font-family);cursor:pointer}
 .share-modes button.active{background:var(--surface);color:var(--accent-text,var(--accent));box-shadow:var(--shadow)}
-.share-preview{display:grid;place-items:center;min-height:180px;max-height:46dvh;overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.share-preview{display:grid;place-items:start center;min-height:150px;max-height:28dvh;overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
 .share-preview img{display:block;width:100%;height:auto}
 .share-pager{display:flex;align-items:center;justify-content:center;gap:16px}
 .share-pager button{width:40px;height:40px;border:1px solid var(--line);border-radius:50%;background:var(--surface);font-size:1.3rem;cursor:pointer}
