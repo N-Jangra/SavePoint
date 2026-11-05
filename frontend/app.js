@@ -3203,6 +3203,8 @@
     const statsMore = event.target.closest("[data-stats-more]");
     if (statsMore) { const kind = statsMore.dataset.statsMore === "rated" ? "rated" : "quick"; statsLimits = { ...statsLimits, [kind]: statsLimits[kind] + (kind === "rated" ? 15 : 10) }; render(); return; }
     if (event.target.closest("[data-clear-all-ratings]")) { clearAllRatings(); return; }
+    const ptBtn = event.target.closest("[data-stats-pt]");
+    if (ptBtn) { statsLimits = { ...statsLimits, playtimePage: Math.max(0, (statsLimits.playtimePage || 0) + (ptBtn.dataset.statsPt === "next" ? 1 : -1)) }; render(); return; }
     const statsRating = event.target.closest("[data-stats-rating]");
     if (statsRating) {
       const item = itemById(String(statsRating.dataset.statsRating));
