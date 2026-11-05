@@ -2878,10 +2878,20 @@
     root.style.setProperty("--p", c.percent + "%");
     set("[data-sync-percent]", c.percent + "%"); set("[data-sync-completed]", `${c.completed} / ${c.total}`);
     set("[data-sync-done]", c.done); set("[data-sync-failed]", c.failed); set("[data-sync-active]", c.total - c.completed);
-    // Only the ~60 rendered rows matter; re-render (at most twice a second) when one changed state.
+    // Only the ~60 rendered rows matter. Patch changed rows in place: a full render would rebuild the list and
+    // throw the scroll position back to the top while the user is reading it.
     const byId = new Map((syncJob?.entries || []).map(entry => [entry.id, entry]));
-    const stale = [...root.querySelectorAll("[data-sync-row]")].some(row => byId.get(row.dataset.syncRow)?.status !== row.dataset.status);
-    if (stale && !syncPageRenderTimer) syncPageRenderTimer = setTimeout(() => { syncPageRenderTimer = 0; if (page === "sync") render(); }, 500);
+    const labels = { syncing: syncJob?.paused ? "Finishing…" : "Syncing…", queued: syncJob?.paused ? "Paused" : "Waiting", done: "Updated", failed: "Failed" };
+    const icons = { syncing: "loader-circle", queued: "clock", done: "circle-check", failed: "circle-alert" };
+    root.querySelectorAll("[data-sync-row]").forEach(row => {
+      const entry = byId.get(row.dataset.syncRow); if (!entry || entry.status === row.dataset.status) return;
+      row.className = `sync-row is-${entry.status}`; row.dataset.status = entry.status;
+      const label = row.querySelector("em"); if (label) label.textContent = labels[entry.status] || "";
+      const icon = row.querySelector("svg, i[data-lucide]");
+      if (icon) { const fresh = document.createElement("i"); fresh.dataset.lucide = icons[entry.status] || "clock"; fresh.setAttribute("aria-hidden", "true"); icon.replaceWith(fresh); window.lucide?.createIcons({ root: row, attrs: { "aria-hidden": "true" } }); }
+      const copy = row.querySelector("span"); copy?.querySelector("small")?.remove();
+      if (entry.error && copy) { const small = document.createElement("small"); small.textContent = entry.error; copy.appendChild(small); }
+    });
   }
   let syncPageRenderTimer = 0;
   function resetDashboard() {

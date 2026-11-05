@@ -702,7 +702,7 @@ body[data-theme=dark] .collection-welcome{background:linear-gradient(115deg,colo
 .sync-list .sync-row.is-queued em { color:var(--muted); }
 .sync-list .sync-row em { white-space:nowrap; }
 .sync-list li.sync-more { display:block; grid-template-columns:none; padding:11px 12px; color:var(--muted); font-size:.72rem; text-align:center; }
-.sync-page { overflow-x:hidden; }
+.sync-page { overflow:visible; }
 .sync-hero { min-width:0; } .sync-hero>div:last-child { min-width:0; }
 @media(max-width:390px){ .sync-hero { gap:12px; padding:14px; } .sync-pie { width:72px; height:72px; } .sync-hero h2 { font-size:1.3rem; } }
 .sync-list .sync-row.is-done svg, .sync-list .sync-row.is-done em { color:#22a06b; }
