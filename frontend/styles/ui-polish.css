@@ -2264,3 +2264,5 @@ body[data-icon-style=inline] .stats-subpage .stats-subpage-icon{border:0;backgro
 .export-run svg{width:18px;height:18px}
 .detail-status-pills>.ios-pill{font-size:.78rem;font-weight:650;letter-spacing:0;color:var(--muted)}
 .detail-status-pills>.ios-pill.active{color:#fff}
+body[data-page="export"] .topbar{display:none}
+body[data-page="export"] .app-shell,body[data-page="export"] #page-content,body[data-page="export"] .settings-page{padding-top:0 !important;margin-top:0 !important}
