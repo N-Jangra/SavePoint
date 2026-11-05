@@ -24,6 +24,14 @@
       if (!sections.has(key)) sections.set(key, { ...section, items: [] });
       sections.get(key).items.push(...section.items);
     }
+    // Every source's cover / wide art joins the Screenshots gallery so nothing is lost when only one image is used as the cover.
+    const art = [];
+    for (const entry of entries) for (const [label, url] of [["cover", entry.data?.portraitImage], ["image", entry.data?.image], ["wide art", entry.data?.landscapeImage], ["background", entry.data?.backgroundImage]]) if (/^https?:/i.test(url || "")) art.push({ title: `${entry.name} ${label}`, image: url, url });
+    if (art.length) {
+      const key = "gallery:Screenshots";
+      if (!sections.has(key)) sections.set(key, { kind: "gallery", title: "Screenshots", items: [] });
+      sections.get(key).items.unshift(...art);
+    }
     const facts = {};
     for (const part of parts) for (const [key, value] of Object.entries(part.facts || {})) if (isEmpty(facts[key]) && !isEmpty(value)) facts[key] = value;
     const description = parts.map(part => part.description || "").sort((a, b) => b.length - a.length)[0] || "";
@@ -40,7 +48,7 @@
       url: first(part => part.url),
       fields: [...fields.values()],
       links: unique(parts.flatMap(part => part.links || []), link => link.url),
-      sections: [...sections.values()].map(section => ({ ...section, items: unique(section.items, item => item.image || item.url || item.title).slice(0, 24) })).filter(section => section.items.length),
+      sections: [...sections.values()].map(section => ({ ...section, items: unique(section.items, item => item.image || item.url || item.title).slice(0, 40) })).filter(section => section.items.length),
       purchase: first(part => part.purchase) || null,
       requirements: first(part => part.requirements?.minimum?.length || part.requirements?.recommended?.length ? part.requirements : null) || null,
       languages: first(part => part.languages?.length ? part.languages : null) || [],
