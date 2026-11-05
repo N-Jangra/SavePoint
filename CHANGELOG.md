@@ -24,6 +24,7 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 ### Changed
 
 - Selected cards in select mode have a rounded frame.
+- The date filters on Logcat and Library history are laid out as two equal fields with a full-width Clear dates button.
 - Pull-to-refresh on Home syncs only games that need it (never fetched, a newly enabled source not yet tried, older than the refresh interval, or a failed lookup); pull again within 20 seconds to re-check everything.
 - A game saved from HowLongToBeat (or any source) stays led by that source; Steam can no longer overwrite it when a sync runs.
 - Mix and "All sources" search wait longer for HowLongToBeat and merge the same game from Steam and HowLongToBeat into one row; exact title matches are listed first.
