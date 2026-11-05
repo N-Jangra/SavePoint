@@ -21,7 +21,7 @@
     metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg", "igdb"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1, humanReadableStats: false, currencyDisplay: "USD", usdToInrRate: 94.8,
-    backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, backupIncludeRatings: true, folderSyncDelay: 30, restorePreview: true,
+    backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, pauseSyncInBackground: true, backupIncludeRatings: true, folderSyncDelay: 30, restorePreview: true,
     metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false, igdb: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
     imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
@@ -2964,13 +2964,13 @@
     if (!c.failed) syncHideTimer = setTimeout(() => { if (syncJob === job) { syncJob = null; updateSyncUI(); if (page === "sync") render(); } }, 6000);
   }
   let syncActionListener = null;
-  function setSyncPaused(paused) {
+  function setSyncPaused(paused, { quiet = false } = {}) {
     if (!syncJob || syncJob.finished || syncJob.paused === paused) return;
     syncJob.paused = paused;
     if (!paused) { const waiters = syncJob.waiters; syncJob.waiters = []; waiters.forEach(resolve => resolve()); }
     updateSyncUI();
     if (page === "sync") render();
-    toast(paused ? "Sync paused." : "Sync resumed.");
+    if (!quiet) toast(paused ? "Sync paused." : "Sync resumed.");
   }
   function retrySyncFailures() {
     if (!syncJob || !syncJob.finished) return;
@@ -3676,7 +3676,16 @@
   window.addEventListener("hashchange", syncRouteFromHash);
   window.addEventListener("storage", event => { if (event.key === storageKey) toast("Library changed in another tab."); });
   window.addEventListener("beforeunload", flushPersist);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPersist(); });
+  // Save battery: metadata sync stops while the app is in the background and resumes when it comes back.
+  let syncAutoPaused = false;
+  function applyBackgroundState(hidden) {
+    if (hidden) {
+      flushPersist();
+      if (prefs.pauseSyncInBackground !== false && syncJob && !syncJob.finished && !syncJob.paused) { syncAutoPaused = true; setSyncPaused(true, { quiet: true }); }
+    } else if (syncAutoPaused) { syncAutoPaused = false; if (syncJob && !syncJob.finished && syncJob.paused) setSyncPaused(false, { quiet: true }); }
+  }
+  document.addEventListener("visibilitychange", () => applyBackgroundState(document.visibilityState === "hidden"));
+  try { window.Capacitor?.Plugins?.App?.addListener?.("appStateChange", state => applyBackgroundState(!state?.isActive)); } catch (_) {}
   window.addEventListener("error", event => recordLog("error", event.message || "Unknown page error"));
   window.addEventListener("unhandledrejection", event => recordLog("error", event.reason?.message || event.reason || "Unhandled promise rejection"));
   async function restoreNativeData({ fast = false } = {}) {
