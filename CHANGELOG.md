@@ -12,7 +12,10 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Statistics: Library breakdown, Ratings and Activity lists are paginated (10 per page).
 - Statistics → Ratings: a Clear all button that removes every rating (with a confirmation).
 - Settings → Backups → Export opens an Export page: pick JSON, TXT or CSV, then tick what to include (names always, ratings, reviews). Import List also accepts `.txt` and `.csv` lists (a CSV `Rating` column is read), which are then synced from your sources.
-- Home: a share button on each group header (e.g. Playing) opens a popup that shares the group as images that look like the Home list (cover, name, developer · genres, rating, status): pages of 15 games with pagination, or one long picture (parts of 45 games), then Save or Share with on-screen progress. Covers and finished pages are cached in IndexedDB, so reopening is fast, and the next page is prepared in the background.
+- Home sharing: every group header (for example Playing) has a labelled **Share** button. Its popup has an **Images | PDF** switch. Images: pages that look like the Home list (cover, name, developer · genres, rating, status, hours and a progress bar) in your theme colours, with "Games per page" and "Pages to share" steppers, a paged preview, and Save / Share for the current page or for all chosen pages ("Share all" sends them together). Every page has the group header. Covers and finished pages are cached in IndexedDB, so reopening is fast.
+- Home PDF: a real text PDF (not pictures of pages) listing every game in the group in one continuous list: number, cover (or a letter tile when there is none), name, tags, rating and hours, in your theme colours, with Save (to Downloads) and Share.
+- Game details: a Share button in the top bar shares that game as a PDF (2–3 A4 pages) or one long image, with checkboxes for details & stats, time to beat, overview, system requirements, tags & languages and all screenshots. It uses the saved metadata (developer, publisher, release date, price, scores, DLC, achievements, HowLongToBeat times and counts, requirements, tags, languages) and has Save and Share.
+- Explore has a fixed, shaded top bar like Home; Home and Explore, Details and Settings sub-page headers are translucent and blurred.
 - Metadata sync pauses while the app is in the background and resumes when you return (Settings → Metadata → Pause Sync In Background).
 - Statistics sub-pages use an icon (following Icon style) instead of a text badge.
 - Status chip rows on Add and Details fade at the scrolling edge, show a swipe hint on Add, and start scrolled to the selected status.
@@ -27,13 +30,18 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Logcat times are shown in the device's own time zone with seconds, newest first.
 - Progress and Goal accept decimals (for example 62.4), and the quick progress step can be below 1.
 - Removed the Games / Sources / Library data tiles from App Info, and the extra helper texts on Discover.
-- Home status pills hug their content and the gap between the pills and the first group is smaller.
+- Home status pills hug their content, the gap between the pills and the first group is smaller, and their order is Playing, Completed, Backlog, Upcoming, On Hold, Dropped, All. The Timeline filter order is This week, This month, All time.
 - Quick Rate lists only Completed, Dropped and On Hold games that have no score.
+- Home search bar uses the same box as Discover; the Discover header no longer shows the source count or tagline; Back from Metadata Sources returns to Explore or Discover when it was opened from there.
+- The ⋮ menu has a solid sheet, centred options and a fixed colour per action that stays distinct with any Main color or theme.
+- Every Android device now uses the lighter visual effects (no card entrance animations or layered blur), images far off screen are the only ones unloaded, and sticky bars sit on their own layer, so scrolling is smoother on fast phones.
+- A game from a single source now keeps trying to become Mix: new games wait longer for slow sources such as HowLongToBeat, opening details retries in the background (at most every 6 hours), and pull-to-refresh or the refresh button always checks every source.
 - Settings → Backups & sync is reordered: storage folder, Export/Import/Restore Preview, Backup schedule, then Include Ratings & Reviews (the default for the Export page checkboxes).
 - The Play on Steam / Buy on Steam button no longer shows an underline and fits narrow screens.
 
 ### Fixed
 
+- Android launch no longer fetches the whole encrypted library over the native bridge when the database already has it; that call blocked saving, sharing and exporting for about a minute after every start.
 - Saving or sharing a share image now shows its result inside the popup; large images no longer stall Android saves (images are kept under about 235 KB and Capacitor payload logging is off).
 - Names exports write through the native side so the file is complete even if Android discards the page while Save As is open.
 - Discover → Details → "In library · Open" opened "That entry is no longer in your library"; it now opens the saved game.

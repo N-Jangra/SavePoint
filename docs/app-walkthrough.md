@@ -19,6 +19,7 @@ The bottom bar can be configured for visible destinations, ordering, alignment, 
 - **Mix fetch (`#mix`):** experimental combined search across enabled sources. Results retain provider references; adding a result merges available provider metadata into one library record.
 - **Details (`#details?id=…`):** review and edit tracking status, rating, playtime and goal, plus cached/provider details such as artwork, screenshots, tags, links, requirements, and achievements when supplied.
 - **Add Game (`#add`):** create or edit a game manually, or search enabled metadata providers to autofill its fields.
+- **Sharing:** the Share button on each Home group opens an Images | PDF popup (themed image pages with per-page and page-count controls, or one PDF list of every game). The Share button in a game's details top bar builds a PDF or image of that game from its saved metadata. Saving writes to Downloads; sharing uses the Android share sheet.
 - **Timeline (`#timeline`):** browse status-change activity, with date and game filters.
 - **Statistics (`#statistics`):** collection overview with dedicated playtime, library, activity, and ratings views.
 - **Explore (`#explore`):** entry point for metadata providers, Mix fetch, Timeline, and Statistics.

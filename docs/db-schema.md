@@ -20,6 +20,9 @@ The add/edit flow writes these core fields. Additional source fields are retaine
 | `title` | Required game title. |
 | `category` | `game` for every current entry. |
 | `status` | One of the configured game statuses: Backlog, Playing, On Hold, Dropped, Completed, or Upcoming. |
+| `originKeys`, `originYear` | Catalog identity captured when a game is added from Discover (`id:<source>:<providerId>` and `t:<title>`), used to keep "In library" matching after enrichment renames it. |
+| `mixTriedAt` | Timestamp of the last attempt to upgrade a single-source game to Mix; details retry at most every 6 hours. |
+| `ratingExact` | The exact 10-point score kept while ratings are shown as 5 stars, so switching back restores it. |
 | `progress` | Nonnegative playtime value, in hours. |
 | `rating` | Numeric rating; the UI uses 1–5 or 1–10 according to the rating preference. Zero means no rating. |
 | `goal` | Nonnegative playtime goal, in hours; zero means no goal. |
