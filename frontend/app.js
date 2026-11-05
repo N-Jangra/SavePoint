@@ -1613,7 +1613,7 @@
   }
   async function updateProgress(id) {
     const item = itemById(id); if (!item) return;
-    const step = Math.max(1, Number(prefs.progressIncrement) || 1); item.progress = (Number(item.progress) || 0) + step; item.updatedAt = Date.now();
+    const step = Number(prefs.progressIncrement) > 0 ? Number(prefs.progressIncrement) : 1; item.progress = Math.round(((Number(item.progress) || 0) + step) * 1000) / 1000; item.updatedAt = Date.now();
     const previousStatus = item.status;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = "Completed";
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = "Completed";
