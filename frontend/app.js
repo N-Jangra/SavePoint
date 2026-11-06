@@ -22,7 +22,7 @@
     dashboardView: "list", dashboardDefaultCategory: "remember", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1, humanReadableStats: false, currencyDisplay: "USD", usdToInrRate: 94.8,
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, pauseSyncInBackground: true, backupIncludeRatings: true, folderSyncDelay: 30, restorePreview: true,
-    metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false, igdb: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
+    metadataMode: "online", metadataSources: { freetogame: true, steamdb: true, howlongtobeat: true, rawg: false, igdb: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, syncScope: "needed", syncRetries: 1, syncRetryDelay: 3, syncAutoRetry: true, syncTimeout: 20, syncRequestDelay: 0, syncMaxSources: 0, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
     imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
   };
@@ -524,9 +524,10 @@
     if (onLogPage) loadFullLog(settingsGroup);
     try { const savedChanges = JSON.parse(localStorage.getItem(changeKey) || "[]"); if (Array.isArray(savedChanges)) changeLog = savedChanges; } catch (_) {}
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    if (fullLogs.logcat && settingsGroup === "logcat") logEntries = fullLogs.logcat;
-    if (fullLogs.history && settingsGroup === "history") changeLog = fullLogs.history;
-    return { logQuery, logFrom, logTo, changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    // The saved file may be older (or empty) next to what this device holds locally, e.g. on a phone that stays open for days: show both.
+    if (fullLogs.logcat && settingsGroup === "logcat") logEntries = mergeLogLists(fullLogs.logcat, logEntries);
+    if (fullLogs.history && settingsGroup === "history") changeLog = mergeLogLists(fullLogs.history, changeLog);
+    return { logQuery, logFrom, logTo, changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, syncShown, reviewShown, syncBackHref, reviewItems: page === "sync" ? items.filter(item => item.matchReview?.length).map(item => ({ ...item, matchReview: item.matchReview.map(flag => ({ ...flag, name: window.SplitAppSources?.list?.().find(source => source.key === flag.key)?.name || flag.key })) })) : [], config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
@@ -1001,12 +1002,14 @@
         content.classList.add("page-route-enter");
       }
       if (renderedRoute !== null) inAppNav = true;
+      // The Sync page's Back returns to wherever it was opened from (Home via the floating button, Settings → Metadata Sync, a game…).
+      if (route === "sync" && renderedRoute && renderedRoute !== "sync") syncBackHref = renderedRoute === "settings/index" ? "#settings" : renderedRoute === "details" ? `#details?id=${encodeURIComponent(detailItemId || "")}` : `#${renderedRoute}`;
       renderedRoute = route;
     }
     content.querySelectorAll("[data-timeline-cache-object-url]").forEach(image => URL.revokeObjectURL(image.dataset.timelineCacheObjectUrl));
     const context = pageContext();
     if (page === "dashboard") context.dashboardSortedItems = dashboardSortedItems(context);
-    const keepScrollY = preservePageState && page === "dashboard" ? window.scrollY : null;
+    const keepScrollY = preservePageState && (page === "dashboard" || page === "sync") ? window.scrollY : null;
     content.innerHTML = window.SplitAppPages[page](context);
     if (selectMode) { if (page !== "dashboard") exitSelectMode(); else applySelectionUI(); }
     if (keepScrollY) window.scrollTo({ top: keepScrollY, behavior: "auto" });
@@ -1285,7 +1288,8 @@
       if (button.type === "file") return; // let the file picker open
       event.preventDefault(); event.stopPropagation();
       const key = button.dataset.settingAction;
-      if (key === "resetDashboard") resetDashboard();
+      if (key.startsWith("syncRun")) runSyncAction(key);
+      else if (key === "resetDashboard") resetDashboard();
       else if (key === "resetAnimations") resetAnimations();
       else if (key === "previewAnimations") previewAnimations();
       else if (key === "resetAppearance") resetAppearance();
@@ -2115,9 +2119,23 @@
     }
     // Per-game index of source -> provider id; only ever grows, so later syncs fetch by id and a flaky source can't drop out.
     if (loaded.sourceIds) current.sourceIds = { ...(current.sourceIds || {}), ...loaded.sourceIds };
+    // What each source matched (name shown in Fix match), sources that have no such game (not searched again every refresh), and matches to double-check.
+    if (loaded.sourceMeta) current.sourceMeta = { ...(current.sourceMeta || {}), ...loaded.sourceMeta };
+    if (loaded.noMatchSources || loaded.sourceMeta) {
+      const noMatch = { ...(current.mixNoMatch || {}) };
+      Object.keys(loaded.sourceMeta || {}).forEach(key => delete noMatch[key]);
+      (loaded.noMatchSources || []).forEach(key => { noMatch[key] = noMatch[key] || Date.now(); });
+      current.mixNoMatch = noMatch;
+    }
+    if (loaded.reviewFlags) {
+      const flags = loaded.reviewFlags.filter(flag => String((current.matchOk || {})[flag.key] ?? "") !== String(flag.providerId));
+      if (flags.length) current.matchReview = flags.map(({ key, title }) => ({ key, title })); else delete current.matchReview;
+    }
     if (mixed) current.mixSourceKeys = [...new Set([...(current.mixSourceKeys || []), ...(loaded.facts?.sources || [])])];
     current.cachedDetails = loaded;
-    current.facts = mergeFacts(current.facts, loaded.facts);
+    // After Fix match / Unlink the old match's facts (hours, price, genres) must not linger next to the new game's.
+    current.facts = current.relinkFresh ? { ...(loaded.facts || {}) } : mergeFacts(current.facts, loaded.facts);
+    delete current.relinkFresh;
     current.description = loaded.description || current.description;
     current.year = loaded.year || current.year;
     current.url = loaded.url || current.url;
@@ -2143,6 +2161,7 @@
         });
         mixed = true;
       } catch (mixError) {
+        saved.mixError = mixError?.message || "Request failed"; saved.mixTransient = mixError?.transient !== false;
         if (!options.quiet) recordLog("warning", `Mix fetch could not load ${saved.title}: ${mixError?.message || mixError}`);
         const sourceKey = sourceResult.metadataSource || sourceResult.source || saved.metadataSource;
         const providerId = sourceResult.providerId || saved.providerId;
@@ -2157,7 +2176,7 @@
       if (!current || !loaded) return null;
       applyEnrichedDetails(current, loaded, mixed);
       // Remember when and against which sources this game was last checked, so a later refresh can skip it.
-      current.mixCheckedAt = Date.now(); current.mixCheckedSources = loaded.checkedSources || enabledGameSourceKeys(); delete current.mixFailedAt;
+      current.mixCheckedAt = Date.now(); current.mixCheckedSources = loaded.checkedSources || enabledGameSourceKeys(); delete current.mixFailedAt; delete current.mixError; delete current.mixTransient;
       if (options.persist !== false) await persist({ ids: [itemId] });
       if (options.loadImages !== false) {
         try {
@@ -2213,17 +2232,24 @@
     if (factsRunning) return; factsRunning = true; button.disabled = true;
     const hasHours = item => Number(item.facts?.mainHours) || Number(item.facts?.averageHours);
     const pending = items.filter(item => !hasHours(item));
-    let found = 0, completed = 0;
+    const status = document.querySelector("[data-hours-status]");
+    const rowFor = item => document.querySelector(`[data-hours-row="${CSS.escape(String(item.id))}"]`);
+    let found = 0, completed = 0; const notFound = [];
     await runWithConcurrency(pending, prefs.metadataWorkers, async item => {
       button.textContent = `Looking up ${Math.min(pending.length, completed + 1)} of ${pending.length}…`;
+      const row = rowFor(item); row?.classList.add("is-looking");
+      if (status) { status.hidden = false; status.textContent = `Looking up “${item.title}” (${Math.min(pending.length, completed + 1)} of ${pending.length})…`; }
       try {
         const hours = await window.SplitAppMix.hours(item.title, detailSettings());
-        if (hours) { item.facts = mergeFacts(item.facts, hours); item.updatedAt = Date.now(); found += 1; }
-      } catch (error) { recordLog("warning", `Play-time lookup failed for ${item.title}: ${error?.message || error}`); }
+        if (hours) { item.facts = mergeFacts(item.facts, hours); delete item.hoursCheckedAt; item.updatedAt = Date.now(); found += 1; row?.classList.add("is-found"); }
+        else { item.hoursCheckedAt = Date.now(); notFound.push(item.title); row?.classList.add("is-missing"); }
+      } catch (error) { notFound.push(item.title); row?.classList.add("is-missing"); recordLog("warning", `Play-time lookup failed for ${item.title}: ${error?.message || error}`); }
+      row?.classList.remove("is-looking");
       completed += 1;
     });
-    if (found) await persist();
-    factsRunning = false; render(); toast(found ? `Found play times for ${found} of ${pending.length} games.` : "No play times found. Enable HowLongToBeat (Android) or add a RAWG key.");
+    if (found || notFound.length) await persist();
+    factsRunning = false; render();
+    toast(found ? `Found play times for ${found} of ${pending.length} games${notFound.length ? `. Nothing for ${notFound.slice(0, 3).join(", ")}${notFound.length > 3 ? ` and ${notFound.length - 3} more` : ""}.` : "."}` : "No play times found. Enable HowLongToBeat (Android) or add a RAWG key.");
   }
   // Saves provider details (play time, price, team, requirements, images) for games that never opened their details page.
   let factsRunning = false;
@@ -2286,7 +2312,8 @@
     delete prefs.metadataSources[`custom:${id}`]; refreshSourceRegistry();
     persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
   }
-  function detailSettings({ forceRefresh = false } = {}) { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval, forceRefresh }; }
+  const syncSourceOn = key => prefs[`syncSrc_${key}`] !== false;
+  function detailSettings({ forceRefresh = false } = {}) { return { syncTimeout: prefs.syncTimeout, syncRetries: prefs.syncRetries, syncRetryDelay: prefs.syncRetryDelay, syncMaxSources: prefs.syncMaxSources, syncOnly: (window.SplitAppSources?.available?.("game", prefs) || []).map(source => source.key).filter(syncSourceOn), metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval, forceRefresh }; }
   function detailCacheIsFresh(item) {
     const stamp = Number(item?.cachedDetails?.fetchedAt || item?.cachedDetails?.facts?.fetchedAt || item?.facts?.fetchedAt) || 0;
     if (!stamp) return false;
@@ -2727,7 +2754,13 @@
       metadataRetryLimit: { 1: "rotate-cw", 3: "repeat", 5: "refresh-ccw-dot" },
       offlineFallback: { cached: "database", none: "ban" },
       metadataSyncFrequency: { immediate: "zap", hourly: "clock-3", daily: "calendar-days", manual: "hand" },
-      metadataWorkers: { 1: "cpu", 2: "server", 5: "workflow", 10: "network" },
+      metadataWorkers: { 1: "cpu", 2: "server", 3: "layers", 5: "workflow", 8: "network", 10: "network" },
+      syncScope: { needed: "list-checks", missing: "database-zap", all: "refresh-ccw-dot" },
+      syncMaxSources: { 0: "infinity", 1: "square", 2: "copy", 3: "layers" },
+      syncRequestDelay: { 0: "zap", 250: "timer", 1000: "clock-3", 2000: "hourglass" },
+      syncTimeout: { 10: "gauge", 20: "timer", 30: "clock-3", 45: "alarm-clock", 60: "hourglass" },
+      syncRetries: { 0: "ban", 1: "rotate-cw", 2: "repeat", 3: "refresh-ccw-dot" },
+      syncRetryDelay: { 1: "zap", 3: "timer", 10: "alarm-clock", 30: "hourglass" },
       thumbnailCleanup: { never: "image", daily: "calendar-check", weekly: "calendar-range" },
       thumbnailSize: { small: "image", medium: "images", large: "gallery-horizontal" },
       thumbnailQuality: { low: "battery-low", balanced: "circle-gauge", high: "scan-eye" },
@@ -3005,7 +3038,7 @@
     else toast("Nothing was added.");
   }
   // ---- Background metadata sync -------------------------------------------
-  let syncJob = null, syncHideTimer = 0, syncPersistCount = 0;
+  let syncJob = null, syncHideTimer = 0, syncPersistCount = 0, syncShown = 60, reviewShown = 15, syncBackHref = "#dashboard";
   const syncNotifier = () => window.Capacitor?.Plugins?.SyncNotification;
   function syncCounts() {
     const e = syncJob?.entries || [];
@@ -3019,8 +3052,15 @@
     const games = list.filter(item => item.category === "game");
     if (!canSync || !games.length) return false;
     if (syncJob && !syncJob.finished) {
-      syncJob.entries.push(...games.map(i => ({ id: i.id, title: i.title, status: "queued", error: "" })));
-      syncJob.queue.push(...games);
+      // A game already in the list is re-queued (never listed twice); one being fetched right now is fetched again when it finishes, so a Fix match is not lost.
+      for (const game of games) {
+        const existing = syncJob.entries.find(entry => entry.id === game.id);
+        if (!existing) { syncJob.entries.push({ id: game.id, title: game.title, status: "queued", error: "" }); syncJob.queue.push(game); }
+        else if (existing.status === "syncing") existing.requeue = true;
+        else if (existing.status !== "queued") { existing.status = "queued"; existing.error = ""; existing.retried = false; syncJob.queue.push(game); }
+        else if (!syncJob.queue.some(queued => queued.id === game.id)) syncJob.queue.push(game);
+      }
+      updateSyncUI();
       return true;
     }
     clearTimeout(syncHideTimer);
@@ -3060,7 +3100,8 @@
       go();
     });
   }
-  async function runSyncJob(job) {
+  // One pass over the queue. Returns when no worker has anything left to do.
+  async function runSyncPass(job) {
     // Extra workers are parked while the adaptive limit is lower than their number.
     const workers = Array.from({ length: 8 }, async (_, index) => {
       while (true) {
@@ -3079,14 +3120,17 @@
         const item = job.queue.shift();
         const entry = job.entries.find(x => x.id === item.id);
         if (!entry) continue;
+        // Settings → Metadata Sync → Pause between games: game starts are spaced out one after another (not all waiting the same time in parallel).
+        { const gap = Number(prefs.syncRequestDelay) || 0; if (gap > 0) { const startAt = Math.max(Date.now(), job.nextStart || 0); job.nextStart = startAt + gap; if (startAt > Date.now()) await new Promise(resolve => setTimeout(resolve, startAt - Date.now())); } }
         entry.status = "syncing"; updateSyncUI();
         try {
           const current = itemById(item.id) || item;
           const loaded = await enrichLibraryEntryWithMix(current, { ...current, source: current.metadataSource }, "Background sync", { persist: false, loadImages: false, quiet: true, background: true });
           entry.status = loaded ? "done" : "failed";
-          if (!loaded) entry.error = "No metadata found";
+          if (!loaded) { const latest = itemById(item.id); entry.error = latest?.mixError || "No metadata found"; entry.transient = latest ? latest.mixTransient !== false : true; }
         } catch (error) { entry.status = "failed"; entry.error = error?.message || "Request failed"; }
         mixEnrichmentByItem.delete(String(item.id));
+        if (entry.requeue) { entry.requeue = false; entry.status = "queued"; entry.error = ""; job.queue.push(itemById(item.id) || item); }
         // Paused with nothing left to fetch: finish instead of waiting for a resume.
         if (job.paused && !job.queue.length && !job.entries.some(x => x.status === "syncing" || x.status === "queued")) { job.paused = false; const waiters = job.waiters; job.waiters = []; waiters.forEach(resolve => resolve()); }
         job.dirty.push(item.id);
@@ -3095,6 +3139,21 @@
       }
     });
     await Promise.all(workers);
+  }
+  async function runSyncJob(job) {
+    await runSyncPass(job);
+    // Failures are usually a timeout or a rate limit that clears a moment later (they "fixed themselves on retry"), so every failed game
+    // gets one automatic second pass with a short cool-down before it is reported as failed.
+    const again = job.entries.filter(entry => entry.status === "failed" && entry.transient !== false && !entry.retried);
+    if (again.length && !job.cancelled && prefs.syncAutoRetry !== false) {
+      const games = again.map(entry => itemById(entry.id)).filter(Boolean);
+      again.forEach(entry => { entry.retried = true; entry.status = "queued"; entry.error = ""; });
+      games.forEach(game => delete game.mixFailedAt);
+      job.queue.push(...games); job.retrying = true; updateSyncUI();
+      await new Promise(resolve => setTimeout(resolve, Math.max(1, Number(prefs.syncRetryDelay) || 3) * 1000 + 1000));
+      job.retrying = false;
+      await runSyncPass(job);
+    }
     job.finished = true;
     await persist({ ids: job.dirty.splice(0) });
     updateSyncUI();
@@ -3113,12 +3172,30 @@
     if (page === "sync") render();
     if (!quiet) toast(paused ? "Sync paused." : "Sync resumed.");
   }
+  // Settings → Metadata Sync buttons: choose exactly which games a sync run covers.
+  function runSyncAction(key) {
+    const games = items.filter(item => item.category === "game");
+    const enabled = enabledGameSourceKeys();
+    const pick = {
+      syncRunNeeded: () => games.filter(item => needsMixSync(item, enabled)),
+      syncRunMissing: () => games.filter(item => !item.cachedDetails),
+      syncRunFailed: () => games.filter(item => item.mixFailedAt),
+      syncRunAll: () => games
+    }[key]; if (!pick) return false;
+    const list = pick().filter(item => !(syncJob && !syncJob.finished && syncJob.entries.some(entry => entry.id === item.id && (entry.status === "queued" || entry.status === "syncing"))));
+    if (!list.length) { toast("No games match. Nothing to sync."); return true; }
+    if (key === "syncRunAll" || key === "syncRunFailed") list.forEach(item => { delete item.mixNoMatch; delete item.mixFailedAt; });
+    if (!startSyncJob(list)) { toast(prefs.metadataMode === "offline" || !navigator.onLine ? "Go online to sync metadata." : "No metadata sources are enabled."); return true; }
+    toast(`Syncing ${list.length} ${list.length === 1 ? "game" : "games"}.`); goto("sync");
+    return true;
+  }
   function retrySyncFailures() {
     if (!syncJob || !syncJob.finished) return;
     const failed = syncJob.entries.filter(x => x.status === "failed");
     const games = failed.map(x => itemById(x.id)).filter(Boolean);
     if (!games.length) return;
-    failed.forEach(x => { x.status = "queued"; x.error = ""; });
+    failed.forEach(x => { x.status = "queued"; x.error = ""; x.retried = true; });
+    games.forEach(game => delete game.mixNoMatch); // a manual retry also re-searches sources that said "no match
     syncJob.finished = false; syncJob.queue = games; syncPersistCount = 0;
     runSyncJob(syncJob); render();
   }
@@ -3172,7 +3249,11 @@
     root.querySelectorAll("[data-sync-row]").forEach(row => {
       const entry = byId.get(row.dataset.syncRow); if (!entry || entry.status === row.dataset.status) return;
       row.className = `sync-row is-${entry.status}`; row.dataset.status = entry.status;
-      const label = row.querySelector("em"); if (label) label.textContent = labels[entry.status] || "";
+      // Failed rows carry Retry / Ignore buttons instead of a status label (and lose them again when retried).
+      const actions = row.querySelector(".sync-row-actions"); let label = row.querySelector("em");
+      if (entry.status === "failed" && !actions) { label?.remove(); label = null; const box = document.createElement("span"); box.className = "sync-row-actions"; box.innerHTML = `<button type="button" class="button secondary small" data-sync-retry-one="${esc(entry.id)}">Retry</button><button type="button" class="button secondary small" data-sync-ignore-one="${esc(entry.id)}">Ignore</button>`; row.appendChild(box); }
+      else if (entry.status !== "failed" && actions) { actions.remove(); label = document.createElement("em"); row.appendChild(label); }
+      if (label) label.textContent = labels[entry.status] || "";
       const icon = row.querySelector("svg, i[data-lucide]");
       if (icon) { const fresh = document.createElement("i"); fresh.dataset.lucide = icons[entry.status] || "clock"; fresh.setAttribute("aria-hidden", "true"); icon.replaceWith(fresh); window.lucide?.createIcons({ root: row, attrs: { "aria-hidden": "true" } }); }
       const copy = row.querySelector("span"); copy?.querySelector("small")?.remove();
@@ -3357,6 +3438,7 @@
       if (item) { item.rating = Number(statsRating.dataset.score) || 0; delete item.ratingExact; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
       return;
     }
+    if (event.target.closest("[data-stats-nohours-more]")) { statsLimits.noHoursShown = (Number(statsLimits.noHoursShown) || 8) + 20; render(); return; }
     const findHours = event.target.closest("[data-stats-find-hours]");
     if (findHours) { findMissingHours(findHours); return; }
     const fetchFacts = event.target.closest("[data-stats-fetch-facts]");
@@ -3468,7 +3550,7 @@
     const settingAction = event.target.closest("[data-setting-action]");
     if (settingAction && settingAction.type !== "file") {
       const key = settingAction.dataset.settingAction;
-      if (key === "export") goto("export"); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
+      if (key.startsWith("syncRun")) runSyncAction(key); else if (key === "export") goto("export"); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary");
         toast("Temporary cache cleared.");
@@ -3477,7 +3559,13 @@
     }
     if (event.target.closest("[data-sync-toggle]")) { setSyncPaused(!syncJob?.paused); return; }
     if (event.target.closest("[data-sync-retry]")) { retrySyncFailures(); return; }
+    if (event.target.closest("[data-sync-more]")) { syncShown += 100; render(); return; }
+    if (event.target.closest("[data-review-more]")) { reviewShown += 15; render(); return; }
+    const matchOk = event.target.closest("[data-match-ok]");
+    if (matchOk) { acceptMatches([matchOk.dataset.matchOk]); return; }
+    if (event.target.closest("[data-match-ok-all]")) { acceptMatches(items.filter(item => item.matchReview?.length).map(item => item.id)); return; }
     if (event.target.closest("[data-log-dates-clear]")) { logFrom = ""; logTo = ""; render(); return; }
+    if (event.target.closest("[data-log-filter-open]")) { openLogFilter(); return; }
     const keepSimilar = event.target.closest("[data-import-keep]");
     if (keepSimilar && importState?.similar) { const row = importState.similar[Number(keepSimilar.dataset.importKeep)]; if (row) row.keep = !row.keep; render(); return; }
     if (event.target.closest("[data-sync-dismiss]")) { if (syncJob?.finished) { syncJob = null; updateSyncUI(); goto("dashboard"); } return; }
@@ -3641,9 +3729,7 @@
       if (globalResults) globalResults.hidden = !hasGlobalMatch;
       return;
     }
-    if (event.target.matches?.("[data-log-search]")) { logQuery = event.target.value; render(); return; }
-    if (event.target.matches?.("[data-log-from]")) { logFrom = event.target.value; render(); return; }
-    if (event.target.matches?.("[data-log-to]")) { logTo = event.target.value; render(); return; }
+    if (event.target.matches?.("[data-log-search]")) { logQuery = event.target.value; clearTimeout(logSearchTimer); logSearchTimer = setTimeout(render, 220); return; } // debounced: a full page render per keystroke made typing laggy on phones
     if (event.target.id === "explore-source-search") {
       const query = event.target.value.trim().toLowerCase();
       const rows = $$("[data-explore-search]");
@@ -3818,17 +3904,48 @@
       list.unshift(entry);
       localStorage.setItem(changeKey, JSON.stringify(list.slice(0, 400)));
       window.SplitAppBackend?.appendLog?.("history", entry);
+      fullLogs.history = null; // the page re-reads the file so the new entry shows without restarting the app
     } catch (_) {}
   }
   const titlesOf = list => { const names = list.map(entry => entry.title || entry).filter(Boolean); return names.slice(0, 6).join(", ") + (names.length > 6 ? ` and ${names.length - 6} more` : ""); };
   // Full logs come from savepoint-db/ (all history); the page shows the recent local copy first and swaps in the full list when it arrives.
   const fullLogs = { logcat: null, history: null }, fullLogLoading = new Set();
-  let logQuery = "", logFrom = "", logTo = "";
+  let logQuery = "", logFrom = "", logTo = "", logSearchTimer = 0;
+  const logStamp = entry => Date.parse(entry?.at) || Number(entry?.at) || 0;
+  function mergeLogLists(fromFile, local) {
+    if (!Array.isArray(fromFile) || !fromFile.length) return Array.isArray(local) ? local : [];
+    if (!Array.isArray(local) || !local.length) return fromFile;
+    const seen = new Set(fromFile.map(entry => `${logStamp(entry)}|${entry.action || entry.level || ""}|${entry.detail || entry.message || ""}`));
+    const extra = local.filter(entry => !seen.has(`${logStamp(entry)}|${entry.action || entry.level || ""}|${entry.detail || entry.message || ""}`));
+    return extra.length ? [...extra, ...fromFile].sort((a, b) => logStamp(b) - logStamp(a)) : fromFile;
+  }
+  // Date filter popup (From / To) opened by the filter button next to the search box.
+  function openLogFilter() {
+    let dialog = $("#log-filter-dialog");
+    if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "log-filter-dialog"; dialog.className = "choice-dialog log-filter-dialog"; document.body.appendChild(dialog); }
+    dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">FILTER</p><h2>Date range</h2></div><button class="choice-dialog-close" type="button" data-lf-close aria-label="Close">×</button></header>
+      <div class="log-filter-body"><label><span>From</span><input type="date" data-lf-from value="${esc(logFrom)}"></label><label><span>To</span><input type="date" data-lf-to value="${esc(logTo)}"></label>
+      <div class="log-filter-quick"><button type="button" class="button secondary small" data-lf-days="1">Today</button><button type="button" class="button secondary small" data-lf-days="7">Last 7 days</button><button type="button" class="button secondary small" data-lf-days="30">Last 30 days</button></div>
+      <div class="log-filter-actions"><button type="button" class="button secondary" data-lf-clear>Clear</button><button type="button" class="button primary" data-lf-apply>Apply</button></div></div>`;
+    const day = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    dialog.onclick = event => {
+      if (event.target === dialog || event.target.closest("[data-lf-close]")) { closePopup(dialog); return; }
+      const quick = event.target.closest("[data-lf-days]");
+      if (quick) { const to = new Date(), from = new Date(); from.setDate(from.getDate() - (Number(quick.dataset.lfDays) - 1)); dialog.querySelector("[data-lf-from]").value = day(from); dialog.querySelector("[data-lf-to]").value = day(to); return; }
+      if (event.target.closest("[data-lf-clear]")) { logFrom = ""; logTo = ""; closePopup(dialog); render(); return; }
+      if (event.target.closest("[data-lf-apply]")) {
+        logFrom = dialog.querySelector("[data-lf-from]").value; logTo = dialog.querySelector("[data-lf-to]").value;
+        if (logFrom && logTo && logFrom > logTo) [logFrom, logTo] = [logTo, logFrom];
+        closePopup(dialog); render();
+      }
+    };
+    showPopup(dialog);
+  }
   function loadFullLog(kind) {
     const read = window.SplitAppBackend?.readLog;
     if (!read || fullLogs[kind] || fullLogLoading.has(kind)) return;
     fullLogLoading.add(kind);
-    read(kind).then(list => { fullLogs[kind] = Array.isArray(list) ? list : []; }).catch(() => {}).finally(() => { fullLogLoading.delete(kind); if (page === "settings" && settingsGroup === kind) render(); });
+    read(kind).then(list => { fullLogs[kind] = Array.isArray(list) ? list : []; }).catch(() => { fullLogs[kind] = []; /* unreadable file: show this device's entries, and don't retry in a render loop */ }).finally(() => { fullLogLoading.delete(kind); if (page === "settings" && settingsGroup === kind) render(); });
   }
   async function clearLogKind(kind) {
     fullLogs[kind] = null;
@@ -4000,7 +4117,7 @@
   // ---- Fix match: pick the right entry for any source, or unlink one ----
   function resetMixCheck(item) { delete item.mixCheckedAt; delete item.mixCheckedSources; delete item.mixFailedAt; }
   function resyncAfterRelink(item, message) {
-    resetMixCheck(item);
+    resetMixCheck(item); delete item.matchReview; delete item.mixNoMatch; item.relinkFresh = true;
     // Saved copies of the old source's artwork would mask the new match's cover.
     ["localImageData", "localPortraitData", "localThumbnailData", "localLandscapeData", "thumbnailPath", "thumbnailMime", "localImageFiles", "localImageFingerprint"].forEach(key => delete item[key]); item.updatedAt = Date.now(); persist({ ids: [item.id] });
     if (!startSyncJob([item])) enrichLibraryEntryWithMix(item, { ...item, source: item.metadataSource }, "Fix match");
@@ -4013,21 +4130,35 @@
     let dialog = $("#fix-match-dialog");
     if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "fix-match-dialog"; dialog.className = "choice-dialog fix-match-dialog"; document.body.appendChild(dialog); }
     const state = { id: item.id, key: sources[0].key, rows: [], busy: false, message: "" };
-    const linkedLabel = key => { const link = (itemById(String(state.id))?.sourceIds || {})[key]; return link ? `Linked · ${esc(String(link).replace(/^app:/, "#"))}` : "Not linked"; };
+    // Shows the name of the game each source is linked to (not only its id) so a wrong link is visible at a glance.
+    const linkedLabel = key => { const current = itemById(String(state.id)), link = (current?.sourceIds || {})[key], name = current?.sourceMeta?.[key]?.title; return link ? `Linked${name ? ` · ${esc(name)}` : ""} <span class="fix-match-id">(${esc(String(link).replace(/^app:/, "#"))})</span>` : current?.mixNoMatch?.[key] ? "No match found" : "Not linked"; };
     const paint = () => {
       const current = itemById(String(state.id)); if (!current) return;
       const linkedCount = Object.keys(current.sourceIds || {}).length;
+      const row = state.preview != null ? state.rows[state.preview] : null;
+      if (row) {
+        const sourceName = sources.find(source => source.key === state.key)?.name || state.key;
+        const facts = [["Source", sourceName], ["Year", row.year], ["ID", String(row.providerId).replace(/^app:/, "#")], ["Platforms", Array.isArray(row.platforms) ? row.platforms.join(", ") : row.platforms], ["Developer", row.developer], ["Genre", Array.isArray(row.genres) ? row.genres.join(", ") : row.genre]].filter(([, value]) => value);
+        dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">IS THIS THE RIGHT GAME?</p><h2>${esc(current.title)}</h2></div><button class="choice-dialog-close" type="button" data-fix-close aria-label="Close">×</button></header>
+          <div class="fix-match-body fix-match-preview">
+            <div class="fix-match-preview-head">${row.image ? `<img src="${esc(row.image)}" alt="" onerror="this.hidden=true">` : `<span class="fix-match-preview-noart">No cover</span>`}<div><small>${esc(sourceName)} result</small><h3>${esc(row.title)}</h3><dl>${facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl></div></div>
+            ${row.description || row.subtitle ? `<p class="fix-match-preview-desc">${esc(row.description || row.subtitle)}</p>` : `<p class="fix-match-status">This source gave no description. Check the title, year and cover.</p>`}
+            <div class="fix-match-preview-compare"><span>Your game</span><strong>${esc(current.title)}${current.year ? ` · ${esc(current.year)}` : ""}</strong></div>
+            <div class="fix-match-preview-actions">${row.url ? `<a class="button secondary" href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">Open source page ↗</a>` : ""}<button type="button" class="button secondary" data-fix-back>Back</button><button type="button" class="button primary" data-fix-use="${state.preview}">Use this match</button></div>
+          </div>`;
+        return;
+      }
       dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">FIX MATCH</p><h2>${esc(current.title)}</h2></div><button class="choice-dialog-close" type="button" data-fix-close aria-label="Close">×</button></header>
         <div class="fix-match-body">
           <div class="fix-match-links">${sources.map(source => `<div class="fix-match-link"><strong>${esc(source.name)}</strong><small>${linkedLabel(source.key)}${current.mixSkip?.[source.key] ? " · skipped" : ""}</small>${(current.sourceIds || {})[source.key] && linkedCount > 1 ? `<button type="button" class="button secondary small" data-fix-unlink="${esc(source.key)}">Unlink</button>` : current.mixSkip?.[source.key] ? `<button type="button" class="button secondary small" data-fix-unskip="${esc(source.key)}">Allow</button>` : ""}</div>`).join("")}</div>
           <div class="fix-match-search"><select data-fix-source aria-label="Source">${sources.map(source => `<option value="${esc(source.key)}"${source.key === state.key ? " selected" : ""}>${esc(source.name)}</option>`).join("")}</select><input type="search" data-fix-query value="${esc(state.query ?? current.title)}" placeholder="Search this source" autocomplete="off"><button type="button" class="button primary small" data-fix-search>Search</button></div>
           <p class="fix-match-status" role="status">${esc(state.message)}</p>
-          <ul class="fix-match-results">${state.rows.map((row, index) => `<li><span class="fix-match-art">${row.image ? `<img src="${esc(row.image)}" alt="" loading="lazy" onerror="this.hidden=true">` : ""}</span><span class="fix-match-copy"><strong>${esc(row.title)}</strong><small>${esc([row.year, row.description].filter(Boolean).join(" · ") || row.providerId)}</small></span><button type="button" class="button primary small" data-fix-use="${index}">Use</button></li>`).join("")}</ul>
+          <ul class="fix-match-results">${state.rows.map((row, index) => `<li><span class="fix-match-art">${row.image ? `<img src="${esc(row.image)}" alt="" loading="lazy" onerror="this.hidden=true">` : ""}</span><span class="fix-match-copy"><strong>${esc(row.title)}</strong><small>${esc([row.year, row.description].filter(Boolean).join(" · ") || row.providerId)}</small></span><button type="button" class="button secondary small" data-fix-view="${index}">View</button><button type="button" class="button primary small" data-fix-use="${index}">Use</button></li>`).join("")}</ul>
         </div>`;
     };
     const search = async () => {
       const query = dialog.querySelector("[data-fix-query]")?.value.trim() || ""; state.query = query; state.key = dialog.querySelector("[data-fix-source]")?.value || state.key;
-      if (!query) return; state.message = "Searching…"; state.rows = []; paint();
+      if (!query) return; state.message = "Searching…"; state.rows = []; state.preview = null; paint();
       try { state.rows = (await window.SplitAppDiscovery.searchSource(query, "game", detailSettings(), state.key)).slice(0, 15); state.message = state.rows.length ? "Pick the right one." : "No results from this source."; }
       catch (error) { state.message = error?.message || "Search failed."; }
       paint();
@@ -4036,10 +4167,13 @@
       const current = itemById(String(state.id)); if (!current) return;
       if (event.target === dialog || event.target.closest("[data-fix-close]")) { closePopup(dialog); return; }
       if (event.target.closest("[data-fix-search]")) { search(); return; }
+      const view = event.target.closest("[data-fix-view]"); if (view) { state.preview = Number(view.dataset.fixView); paint(); dialog.scrollTop = 0; return; }
+      if (event.target.closest("[data-fix-back]")) { state.preview = null; paint(); return; }
       const use = event.target.closest("[data-fix-use]");
       if (use) {
         const row = state.rows[Number(use.dataset.fixUse)]; if (!row) return; const key = state.key, providerId = String(row.providerId);
         current.sourceIds = { ...(current.sourceIds || {}), [key]: providerId }; current.mixPins = { ...(current.mixPins || {}), [key]: providerId };
+        current.sourceMeta = { ...(current.sourceMeta || {}), [key]: { title: row.title, year: row.year || "", url: row.url || "", image: row.image || "" } };
         if (current.mixSkip) delete current.mixSkip[key];
         if (current.metadataSource === key) current.providerId = providerId;
         if (current.metadataSource === "mix" && current.mixPrimary?.key === key) current.mixPrimary = { key, providerId };
@@ -4048,7 +4182,7 @@
       const unlink = event.target.closest("[data-fix-unlink]");
       if (unlink) {
         const key = unlink.dataset.fixUnlink;
-        if (current.sourceIds) delete current.sourceIds[key]; if (current.mixPins) delete current.mixPins[key];
+        if (current.sourceIds) delete current.sourceIds[key]; if (current.mixPins) delete current.mixPins[key]; if (current.sourceMeta) delete current.sourceMeta[key];
         current.mixSkip = { ...(current.mixSkip || {}), [key]: true };
         if (current.mixPrimary?.key === key) delete current.mixPrimary;
         if (current.metadataSource === key) { const other = Object.entries(current.sourceIds || {})[0]; if (other) { current.metadataSource = "mix"; current.providerId = other[1]; current.mixPrimary = { key: other[0], providerId: other[1] }; } }
@@ -4057,7 +4191,7 @@
       const unskip = event.target.closest("[data-fix-unskip]");
       if (unskip) { delete current.mixSkip?.[unskip.dataset.fixUnskip]; resetMixCheck(current); persist({ ids: [current.id] }); paint(); }
     };
-    dialog.onchange = event => { if (event.target.matches("[data-fix-source]")) { state.key = event.target.value; state.rows = []; state.message = ""; paint(); } };
+    dialog.onchange = event => { if (event.target.matches("[data-fix-source]")) { state.key = event.target.value; state.rows = []; state.preview = null; state.message = ""; paint(); } };
     dialog.onkeydown = event => { if (event.key === "Enter" && event.target.matches("[data-fix-query]")) { event.preventDefault(); search(); } };
     paint(); showPopup(dialog);
   }
@@ -4099,7 +4233,7 @@
       event.preventDefault(); event.stopPropagation();
       const id = retry.dataset.syncRetryOne, entry = syncJob?.entries.find(row => String(row.id) === String(id)), item = itemById(String(id));
       if (!entry || !item) return;
-      entry.status = "queued"; entry.error = ""; delete item.mixFailedAt;
+      entry.status = "queued"; entry.error = ""; entry.retried = true; delete item.mixFailedAt; delete item.mixNoMatch;
       if (syncJob.finished) { syncJob.finished = false; syncJob.queue = [item]; syncPersistCount = 0; runSyncJob(syncJob); } else syncJob.queue.push(item);
       updateSyncUI(); render(); return;
     }
@@ -4136,6 +4270,17 @@
     return { kept, similar, exact };
   }
 
+  // "Looks right": remember the confirmed id per source so the same match is never flagged again.
+  function acceptMatches(ids) {
+    const done = [];
+    for (const id of ids) {
+      const item = itemById(String(id)); if (!item?.matchReview?.length) continue;
+      item.matchOk = { ...(item.matchOk || {}) };
+      item.matchReview.forEach(flag => { item.matchOk[flag.key] = String((item.sourceIds || {})[flag.key] ?? ""); });
+      delete item.matchReview; item.updatedAt = Date.now(); done.push(item.id);
+    }
+    if (done.length) { persist({ ids: done }); render(); toast(done.length === 1 ? "Match confirmed." : `${done.length} matches confirmed.`); }
+  }
   const enabledGameSourceKeys = () => (window.SplitAppSources?.available("game", prefs) || []).map(source => source.key).sort();
   // A game needs a (re)sync when it was never fetched, a newly enabled source hasn't been tried on it, it is older than
   // the refresh interval, or a previous attempt failed more than a few hours ago. Everything else is skipped.
@@ -4157,11 +4302,13 @@
     const active = new Set(syncJob && !syncJob.finished ? syncJob.entries.filter(e => e.status === "queued" || e.status === "syncing").map(e => e.id) : []);
     const enabled = enabledGameSourceKeys(), force = Date.now() - upToDateAt < 20000;
     const games = items.filter(item => item.category === "game" && !active.has(item.id));
-    const pending = force ? games : games.filter(item => needsMixSync(item, enabled));
-    if (!pending.length) { upToDateAt = Date.now(); toast(active.size ? "Sync is already running." : games.length ? "Everything is up to date. Pull again to re-check all games." : "No games to sync."); return; }
+    const scope = prefs.syncScope || "needed";
+    const pending = scope === "all" || force ? games : scope === "missing" ? games.filter(item => !item.cachedDetails) : games.filter(item => needsMixSync(item, enabled));
+    if (force) pending.forEach(item => delete item.mixNoMatch); // a deliberate full re-check searches every source again (saved ids are still fetched directly)
+    if (!pending.length) { upToDateAt = Date.now(); toast(active.size ? "Sync is already running." : games.length ? (scope === "missing" ? "Every game already has data." : "Everything is up to date. Pull again to re-check all games.") : "No games to sync."); return; }
     upToDateAt = 0;
     if (!startSyncJob(pending)) { toast(prefs.metadataMode === "offline" || !navigator.onLine ? "Go online to sync metadata." : "No metadata sources are enabled."); return; }
-    toast(`Syncing ${pending.length} of ${games.length} ${games.length === 1 ? "game" : "games"}${force ? "" : " that need it"}.`);
+    toast(`Syncing ${pending.length} of ${games.length} ${games.length === 1 ? "game" : "games"}${force || scope === "all" ? "" : scope === "missing" ? " with no data" : " that need it"}.`);
   }
   // Pull to refresh on the requested library, activity, discovery, statistics, and source pages.
   (() => {
@@ -4219,6 +4366,7 @@
     const route = hashPath.split("/"); const next = route[0];
     if (next === "search") { page = "dashboard"; settingsGroup = null; historyPush(); render(); syncPageNavigation(); return; }
     if (!(next in titles)) return;
+    if (next === "settings" && (route[1] === "history" || route[1] === "logcat")) fullLogs[route[1]] = null; // fresh read each time the page is opened
     rememberScroll();
     const previousPage = page;
     if (previousPage === "details" && next !== "details") { detailRequest++; detailLoading = false; }
