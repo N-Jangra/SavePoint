@@ -2474,3 +2474,83 @@ body .group-share-btn,body[data-icon-style=inline] .group-share-btn{border:1px s
 .share-dialog .share-modes button{min-height:38px}
 .share-dialog .share-pdf-info{padding:10px 12px}
 .share-dialog .share-pdf-info small{font-size:.72rem}
+
+/* Details top bar: every action button (edit, favourite, share, delete) is the same size. */
+.detail-heading-actions { gap:8px; flex:none; }
+.detail-heading-actions .detail-icon-button, .detail-heading-actions .detail-delete-button { box-sizing:border-box; flex:none; width:44px; height:44px; min-width:44px; padding:0; border-width:1px; border-style:solid; }
+.detail-heading-actions .detail-icon-button svg, .detail-heading-actions .detail-delete-button svg { width:19px; height:19px; }
+
+/* Metadata Sync: the list must never trap touch scrolling (overflow:auto + overscroll contain on a non-scrolling list stopped the page from scrolling on phones). */
+.sync-page .import-preview-list.sync-list, .sync-page .sync-list ul { overflow:visible; overscroll-behavior:auto; max-height:none; touch-action:pan-y; }
+.sync-page .import-preview-list.sync-list { border-radius:15px; }
+.sync-list .sync-row { grid-template-columns:20px minmax(0,1fr) auto; grid-template-areas:"icon copy status"; }
+.sync-list .sync-row.is-failed { grid-template-areas:"icon copy copy" ". actions actions"; row-gap:8px; align-items:start; }
+.sync-list .sync-row > svg, .sync-list .sync-row > i { grid-area:icon; }
+.sync-list .sync-row > span:nth-of-type(1) { grid-area:copy; }
+.sync-list .sync-row > em { grid-area:status; }
+.sync-list .sync-row .sync-row-actions { grid-area:actions; display:flex; flex-wrap:nowrap; gap:8px; min-width:0; }
+.sync-list .sync-row .sync-row-actions .button { flex:1 1 0; min-width:0; min-height:36px; padding:6px 12px; border-radius:99px; font-size:.78rem; font-weight:650; white-space:nowrap; }
+.sync-list .sync-row.is-failed small { white-space:normal; overflow-wrap:anywhere; }
+.sync-list .sync-row.is-failed strong { white-space:normal; }
+.sync-section-title { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.sync-review .sync-row { grid-template-areas:"icon copy copy" ". actions actions"; row-gap:8px; align-items:start; }
+.sync-review .sync-review-lines { display:grid; gap:2px; }
+.sync-review .sync-review-lines small b { color:var(--text,inherit); font-weight:650; }
+.sync-more-button { width:100%; margin:0; border-radius:0; }
+
+/* Fix match: result rows with View + Use, linked-name labels and the confirm preview. */
+.fix-match-results li { gap:8px; }
+.fix-match-results li .button { flex:none; }
+.fix-match-copy strong { white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.fix-match-link small { flex-basis:100%; order:3; white-space:normal; overflow-wrap:anywhere; }
+.fix-match-id { opacity:.7; }
+.fix-match-preview-head { display:flex; gap:14px; align-items:flex-start; }
+.fix-match-preview-head img, .fix-match-preview-noart { flex:none; width:96px; aspect-ratio:3/4; object-fit:cover; border-radius:12px; background:var(--surface-2); }
+.fix-match-preview-noart { display:grid; place-items:center; color:var(--muted); font-size:.72rem; }
+.fix-match-preview-head h3 { margin:2px 0 8px; font:700 1.15rem/1.2 var(--font-heading,'Outfit',sans-serif); overflow-wrap:anywhere; }
+.fix-match-preview-head small { color:var(--muted); }
+.fix-match-preview-head dl { display:grid; gap:4px; margin:0; font-size:.78rem; }
+.fix-match-preview-head dl div { display:flex; gap:8px; } .fix-match-preview-head dt { flex:none; width:70px; color:var(--muted); } .fix-match-preview-head dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.fix-match-preview-desc { margin:0; max-height:30dvh; overflow:auto; font-size:.84rem; line-height:1.5; color:var(--muted); }
+.fix-match-preview-compare { display:grid; gap:2px; padding:10px 12px; border-radius:12px; background:var(--surface-2); font-size:.8rem; } .fix-match-preview-compare span { color:var(--muted); font-size:.7rem; }
+.fix-match-preview-actions { display:flex; flex-wrap:wrap; gap:8px; } .fix-match-preview-actions .button { flex:1 1 120px; text-align:center; text-decoration:none; }
+
+/* Statistics → Play time: the games that still have no play time are listed by name. */
+.stats-nohours-list { display:grid; gap:0; margin:10px 0 4px; padding:0; list-style:none; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--surface); }
+.stats-nohours-list li { display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line); }
+.stats-nohours-list li:last-child { border-bottom:0; }
+.stats-nohours-list li > button:not(.button) { flex:1; min-width:0; display:grid; gap:2px; padding:10px 12px; border:0; background:transparent; color:inherit; text-align:left; font:inherit; }
+.stats-nohours-list strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.82rem; }
+.stats-nohours-list small { color:var(--muted); font-size:.7rem; }
+.stats-nohours-list .stats-nohours-state { flex:none; width:10px; height:10px; margin-right:12px; border-radius:50%; background:transparent; }
+.stats-nohours-list .is-looking .stats-nohours-state { background:var(--accent); animation:sp-pulse 1s ease-in-out infinite; }
+.stats-nohours-list .is-found .stats-nohours-state { background:#22a06b; }
+.stats-nohours-list .is-missing .stats-nohours-state { background:#dc6671; }
+.stats-nohours-list .stats-nohours-more { justify-content:center; padding:8px; }
+.stats-lookup-status { margin:6px 0 0; color:var(--muted); font-size:.76rem; }
+@keyframes sp-pulse { 50% { opacity:.3; } }
+
+/* Details: Fix match / Change cover live in their own card under the progress card. */
+.detail-manage-card { display:grid; border:1px solid var(--line); border-radius:16px; background:var(--surface); overflow:hidden; }
+.detail-manage-btn { display:grid; grid-template-columns:22px minmax(0,1fr) 18px; align-items:center; gap:12px; min-height:56px; padding:10px 14px; border:0; border-bottom:1px solid var(--line); background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.detail-manage-btn:last-child { border-bottom:0; }
+.detail-manage-btn > i, .detail-manage-btn > svg { width:20px; height:20px; color:var(--accent-text,var(--accent)); }
+.detail-manage-btn > i:last-child, .detail-manage-btn > svg:last-child { width:16px; height:16px; color:var(--muted); }
+.detail-manage-btn span { display:grid; gap:2px; min-width:0; }
+.detail-manage-btn strong { font-size:.88rem; }
+.detail-manage-btn small { color:var(--muted); font-size:.72rem; }
+
+/* Library history / Logcat: search box with a filter button beside it; the date range lives in a popup. */
+.log-search-row { display:flex; align-items:center; gap:10px; margin:0 0 10px; min-width:0; }
+.log-search-row .log-search { flex:1 1 auto; min-width:0; margin:0; }
+.log-filter-button { position:relative; flex:none; display:grid; place-items:center; width:50px; height:50px; padding:0; border:1px solid var(--line); border-radius:16px; background:var(--surface); color:var(--muted); cursor:pointer; }
+.log-filter-button svg { width:20px; height:20px; }
+.log-filter-button.active { color:var(--accent-text,var(--accent)); border-color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,var(--surface)); }
+.log-filter-dot { position:absolute; top:9px; right:9px; width:8px; height:8px; border-radius:50%; background:var(--accent); }
+.log-filter-chip { display:inline-flex; align-items:center; gap:8px; margin:0 0 12px; padding:5px 6px 5px 12px; border-radius:99px; background:var(--surface-2); font-size:.76rem; }
+.log-filter-chip button { width:22px; height:22px; border:0; border-radius:50%; background:var(--surface); color:inherit; cursor:pointer; line-height:1; }
+.log-filter-body { display:grid; gap:12px; padding:6px 18px calc(20px + env(safe-area-inset-bottom)); }
+.log-filter-body label { display:grid; gap:5px; font-size:.74rem; font-weight:700; color:var(--muted); }
+.log-filter-body input[type=date] { box-sizing:border-box; width:100%; min-width:0; height:46px; padding:0 14px; border:1px solid var(--line); border-radius:14px; background:var(--surface-2); color:var(--legacy-text,inherit); font:inherit; font-size:.92rem; }
+.log-filter-quick { display:flex; flex-wrap:wrap; gap:8px; }
+.log-filter-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
