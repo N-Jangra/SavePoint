@@ -55,3 +55,11 @@ Each saved game keeps `sourceIds` (source key to provider ID) alongside `mixPrim
 On a game's details, **Fix match** shows each source's linked ID, lets you unlink a source (`mixSkip`) or search a source and link the right entry, and **Change cover** stores `customCover`, which syncs never replace. Dragging one Home card onto another merges them into a Mix game using both cards' provider IDs.
 
 `goalAutoValue` marks a goal set from HowLongToBeat hours; it is only replaced while the goal still equals it. Every source's cover, image and wide art is appended to the details Screenshots gallery (`ensureCoverGallery`, and in `mix-merge.js` for fresh merges) so they are stored with the game.
+
+## Sync behaviour (0.1.3)
+
+- Saved source links (`sourceIds`) are fetched directly by ID on every sync and are never removed by a re-sync; only Fix match / Unlink change them.
+- `sourceMeta` records the title, year and URL each source matched (shown in Fix match). `matchReview` lists matches whose title differs from the game's title until the user taps Looks right (`matchOk` stores the confirmed ID per source).
+- `mixNoMatch` remembers, per source, when a search returned results but none matched; that source is skipped for 14 days unless the user re-checks every game, retries manually or uses Fix match. An empty or failed search is never remembered.
+- Each source has a small request lane (HowLongToBeat 2, Steam 4, others 3-4) so a bulk sync does not trigger timeouts or rate limits; the timeout starts when a request runs. Timeouts, retries, retry wait, sources per game and per-source sync toggles come from Settings → Metadata Sync (`syncTimeout`, `syncRetries`, `syncRetryDelay`, `syncMaxSources`, `syncSrc_<key>`, `syncScope`, `syncRequestDelay`, `syncAutoRetry`).
+- Failed games with a transient error get one automatic second pass after the retry wait. After Fix match or Unlink the next sync replaces the game's facts instead of merging them with the old match.

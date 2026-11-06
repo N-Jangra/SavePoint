@@ -42,9 +42,19 @@ Settings provides export and restore flows. JSON exports can include library ite
 - **Merge:** hold a card, drag it onto another and confirm to merge both into one Mix game; progress shows on the Sync page.
 - **Undo:** removing, bulk actions, merges and imports show an Undo toast for a few seconds; an automatic backup runs before bulk changes.
 - **Fix match / Change cover:** on a game's details page, link or unlink a source or search a source for the right entry, and pick a different cover.
-- **Sync page:** failed games have Retry and Ignore. Pull-to-refresh on Home syncs only games that need it; pull again within 20 seconds to re-check all.
+- **Sync page:** shows progress, failed games (Retry / Ignore on their own row; failed lookups get one automatic second pass first) and **Check these matches**: games whose matched title differs from yours, each with Fix match or Looks right. Pull-to-refresh on Home syncs what Settings → Metadata Sync says (default: games that need it); pull again within 20 seconds to re-check everything.
 - **Import List:** near-duplicates are listed under "Looks like duplicates" so you can skip or keep them.
 - **Time to beat:** the details page shows HowLongToBeat main / extras / completionist hours; tap one to set your goal (an automatic goal updates until you choose your own).
 - **Library history:** Settings → Library history lists adds, removals, merges, imports and bulk edits, and flags games that went missing without a recorded removal.
 - **Covers in Screenshots:** covers from all matched sources are saved in the Screenshots gallery as well as offered in Change cover.
 - **History and logs:** Logcat and Library history search through everything saved in `savepoint-db/`; clear them from their pages or Settings → Storage.
+
+## Metadata Sync settings
+
+Settings → **Metadata Sync** controls syncing: Run buttons (needs it / no data / failed / every game), what pull-to-refresh syncs, refresh interval, sources per game, which sources to look up, parallel games, pause between games, lookup timeout, retries, wait before retry, the automatic second pass and pausing in the background. Sources already linked to a game are always refreshed by ID.
+
+## Library history and Logcat
+
+Both pages have a search box with a filter button beside it; the button opens a Date range popup (From / To, quick ranges, Clear, Apply). The saved file is merged with this device's recent entries and re-read each time the page opens.
+
+The Sync page's Back button returns to the page it was opened from: Home or a game when opened from the floating sync button, Settings → Metadata Sync when opened from there.

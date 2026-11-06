@@ -13,7 +13,7 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 | Game details | View and cache provider descriptions, portrait covers, screenshots, tags, links, requirements, playtime estimates, and other available details. Steam trailers play inline in the details page. |
 | Discover | Browse suggestions and search a single catalog or enabled sources together; add games directly to the library. |
 | Mix fetch | Experimental combined search that merges matching metadata from enabled sources into one saved game. A per-game source index keeps every matched source, so syncs never shrink a Mix game. |
-| Library tools | Multi-select on Home, undo toasts, drag-to-merge, Fix match, Change cover, import duplicate detection, and per-game Retry/Ignore on the Sync page. |
+| Library tools | Multi-select on Home, undo toasts, drag-to-merge, Fix match, Change cover, import duplicate detection, and per-game Retry/Ignore, a match review list and a Settings → Metadata Sync page on the Sync page. |
 | Timeline and statistics | Review status changes by day on the Timeline, and explore a Statistics overview with Play time (split by status: time spent, time saved on dropped games, time left on playing and on-hold games, and money per status), Library breakdown, Activity and Ratings sub-pages (grouped ratings and quick rate). |
 | Sharing | Share a Home group as themed images (choose games per page and how many pages) or as a PDF list, and share any game's details page as a PDF or image with its saved metadata and screenshots; every share can be saved to Downloads or sent through Android's share sheet. |
 | Favorites | Heart a game from its details or the ⋮ menu and filter Home to favorites. |

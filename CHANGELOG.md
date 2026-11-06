@@ -23,6 +23,18 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 
 ### Changed
 
+- The Sync page's Back button returns to where it was opened from (the page under the floating button, or Settings → Metadata Sync).
+- App Info lists metadata sync, Fix match, Library history and Backups, and shows games in library, library size and sources enabled.
+
+- Settings → **Metadata Sync** (new page): run a sync for exactly the games you pick (needs it / no data / failed / every game), choose what pull-to-refresh syncs, refresh interval, sources per game, which sources to look up, parallel games, pause between games, lookup timeout, retries and wait before retry, automatic second pass, and pause in background. Open sync status links to the Sync page.
+
+- Sync: failed games get one automatic second pass after a short cool-down; HowLongToBeat/Steam lookups are throttled per source (with a quiet retry), so a full re-check no longer fails in bulk. Sources that already said "no such game" are not searched again on every refresh (a forced pull or manual retry re-checks them). Saved source ids are never removed by a re-sync.
+- Sync page: new "Check these matches" list for games whose matched title differs from yours (Fix match or "Looks right"); Retry / Ignore buttons are laid out on their own row; failed rows keep their buttons while syncing; the page scrolls again on phones; the games list can show more than 60.
+- Fix match shows the name of the game each source is linked to, and every result has a View popup (cover, year, description, source page) to confirm before using it.
+- Statistics → Play time lists the games that have no play time by name and shows which one is being looked up.
+- Details top bar: edit, favourite, share and delete buttons are the same size.
+- Library history merges the saved file with this device's recent entries and re-reads it each time the page opens.
+
 - Selected cards in select mode have a rounded frame.
 - The date filters on Logcat and Library history are laid out as two equal fields with a full-width Clear dates button.
 - Pull-to-refresh on Home syncs only games that need it (never fetched, a newly enabled source not yet tried, older than the refresh interval, or a failed lookup); pull again within 20 seconds to re-check everything.
@@ -35,6 +47,12 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Select mode, the Fix match dialog, the details Fix match / Change cover buttons and the Settings search focus ring were tidied.
 
 ### Fixed
+
+- Sync page not scrolling on phones; Retry / Ignore buttons squeezed; failed rows losing their buttons during a live sync.
+- Pull-to-recheck failing in bulk (timeouts and rate limits); a game fixed with Fix match during a sync no longer appears twice or loses the new match; facts from the old match no longer linger after Fix match / Unlink.
+- Details top-bar buttons different sizes; Fix match / Change cover moved into their own card above Playtime & Goal.
+- Library history and Logcat could loop re-reading an unreadable file and hid recent entries; date filters now live in a popup opened from a button beside search.
+- Option popups for the new sync settings had identical dots; each choice has its own icon.
 
 - Home share dialog error "PER_PAGE is not defined".
 - Games added a moment after a sync finished could stay on "Waiting" forever.
