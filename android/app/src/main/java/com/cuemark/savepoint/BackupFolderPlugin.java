@@ -155,10 +155,12 @@ public class BackupFolderPlugin extends Plugin {
     @PluginMethod
     public void writeDocumentChunk(PluginCall call) {
         String content = call.getString("content");
+        // base64 chunks carry binary data (gzip-compressed backups); plain chunks are UTF-8 text.
+        boolean base64 = Boolean.TRUE.equals(call.getBoolean("base64", false));
         exportExecutor.execute(() -> {
             try {
                 if (exportStream == null) throw new Exception("No export file is open");
-                exportStream.write(content == null ? new byte[0] : content.getBytes(StandardCharsets.UTF_8));
+                exportStream.write(content == null ? new byte[0] : base64 ? Base64.decode(content, Base64.DEFAULT) : content.getBytes(StandardCharsets.UTF_8));
                 call.resolve();
             } catch (Exception e) { closeExportStream(); call.reject("Write failed: " + e.getMessage(), e); }
         });
@@ -714,6 +716,105 @@ public class BackupFolderPlugin extends Plugin {
 
     // Writes base64Content (decoded to raw bytes) to <root>/<dirPath...>/<fileName>.
     // Used for .thumbnail files in the savepoint-db/ folder-tree mirror.
+    // ---- Streamed file writes (large library database) -------------------------------------------------------------------
+    // The portable database is written title by title instead of as one giant string: open, write chunks, close. Everything runs on
+    // the single storage thread, so chunks arrive in order and never interleave with other folder writes.
+    private final java.util.HashMap<String, OutputStream> folderStreams = new java.util.HashMap<>();
+
+    @PluginMethod
+    public void openFolderStream(PluginCall call) {
+        storageExecutor.execute(() -> {
+            try {
+                String treeUriStr = call.getString("uri"), fileName = call.getString("fileName"), id = call.getString("id");
+                if (treeUriStr == null || fileName == null || id == null) { call.reject("Missing 'uri', 'fileName' or 'id'"); return; }
+                Uri treeUri = Uri.parse(treeUriStr);
+                JSArray dirPathArr = call.getArray("dirPath");
+                Uri dirUri = dirPathArr != null && dirPathArr.length() > 0
+                    ? getOrCreateDir(treeUri, jsArrayToStringArray(dirPathArr))
+                    : DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
+                Uri fileUri = getOrCreateFile(treeUri, dirUri, fileName, "application/json");
+                OutputStream stream = getContext().getContentResolver().openOutputStream(fileUri, "wt");
+                if (stream == null) throw new Exception("Failed to open file for writing");
+                synchronized (folderStreams) { OutputStream old = folderStreams.put(id, new java.io.BufferedOutputStream(stream, 64 * 1024)); if (old != null) { try { old.close(); } catch (Exception ignored) {} } }
+                call.resolve();
+            } catch (Exception e) { call.reject("Could not open the file for streaming: " + e.getMessage(), e); }
+        });
+    }
+
+    @PluginMethod
+    public void writeFolderStream(PluginCall call) {
+        storageExecutor.execute(() -> {
+            try {
+                String id = call.getString("id"), content = call.getString("content");
+                OutputStream stream; synchronized (folderStreams) { stream = folderStreams.get(id); }
+                if (stream == null) throw new Exception("No open stream");
+                if (content != null) stream.write(content.getBytes(StandardCharsets.UTF_8));
+                call.resolve();
+            } catch (Exception e) { closeFolderStreamQuietly(call.getString("id")); call.reject("Stream write failed: " + e.getMessage(), e); }
+        });
+    }
+
+    @PluginMethod
+    public void closeFolderStream(PluginCall call) {
+        storageExecutor.execute(() -> {
+            try {
+                String id = call.getString("id");
+                OutputStream stream; synchronized (folderStreams) { stream = folderStreams.remove(id); }
+                if (stream != null) { stream.flush(); stream.close(); }
+                call.resolve();
+            } catch (Exception e) { call.reject("Could not finish the file: " + e.getMessage(), e); }
+        });
+    }
+
+    @PluginMethod
+    public void renameFolderFile(PluginCall call) {
+        storageExecutor.execute(() -> {
+            Uri previous = null;
+            try {
+                String treeUriStr = call.getString("uri"), fromName = call.getString("fromName"), toName = call.getString("toName");
+                if (treeUriStr == null || fromName == null || toName == null) throw new Exception("Missing folder or file name");
+                Uri treeUri = Uri.parse(treeUriStr);
+                JSArray dirPath = call.getArray("dirPath");
+                Uri directory = dirPath != null && dirPath.length() > 0
+                    ? getOrCreateDir(treeUri, jsArrayToStringArray(dirPath))
+                    : DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
+                Uri source = findChildDocument(treeUri, directory, fromName);
+                if (source == null) throw new Exception("Temporary database file is missing");
+                Uri old = findChildDocument(treeUri, directory, toName);
+                String previousName = toName + ".previous";
+                Uri stalePrevious = findChildDocument(treeUri, directory, previousName);
+                if (stalePrevious != null) DocumentsContract.deleteDocument(getContext().getContentResolver(), stalePrevious);
+                if (old != null) {
+                    previous = DocumentsContract.renameDocument(getContext().getContentResolver(), old, previousName);
+                    if (previous == null) throw new Exception("Could not preserve the previous database");
+                }
+                Uri published = DocumentsContract.renameDocument(getContext().getContentResolver(), source, toName);
+                if (published == null) throw new Exception("Could not publish the completed database");
+                if (previous != null) DocumentsContract.deleteDocument(getContext().getContentResolver(), previous);
+                call.resolve();
+            } catch (Exception e) {
+                try {
+                    if (previous != null) {
+                        Uri treeUri = Uri.parse(call.getString("uri"));
+                        JSArray dirPath = call.getArray("dirPath");
+                        Uri directory = dirPath != null && dirPath.length() > 0
+                            ? getOrCreateDir(treeUri, jsArrayToStringArray(dirPath))
+                            : DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
+                        Uri target = findChildDocument(treeUri, directory, call.getString("toName"));
+                        if (target == null) DocumentsContract.renameDocument(getContext().getContentResolver(), previous, call.getString("toName"));
+                    }
+                } catch (Exception ignored) {}
+                call.reject("Could not publish the completed database: " + e.getMessage(), e);
+            }
+        });
+    }
+
+    private void closeFolderStreamQuietly(String id) {
+        OutputStream stream; synchronized (folderStreams) { stream = folderStreams.remove(id); }
+        if (stream != null) { try { stream.close(); } catch (Exception ignored) {} }
+    }
+
+
     @PluginMethod
     public void writeNestedBinaryFile(PluginCall call) {
         storageExecutor.execute(() -> doWriteNestedBinaryFile(call));

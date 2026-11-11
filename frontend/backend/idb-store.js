@@ -2,9 +2,21 @@
 // so a save touches only changed games instead of rewriting one huge JSON blob
 // into localStorage (5 MB cap, synchronous, blocks the UI thread).
 (root => {
-  const DB_NAME = "savepoint_library", VERSION = 2;
+  const DB_NAME = "savepoint_library", VERSION = 3;
   let dbPromise = null;
-  const known = new Map(); // id -> JSON snapshot last written/read
+  // Keep compact signatures instead of a second full JSON copy of every game.
+  // With 10k records the old cache duplicated the complete library in JS heap.
+  const known = new Map(); // id -> compact content fingerprint
+  function signature(value) {
+    const json = JSON.stringify(value);
+    let first = 0x811c9dc5, second = 0x9e3779b9;
+    for (let index = 0; index < json.length; index++) {
+      const code = json.charCodeAt(index);
+      first = Math.imul(first ^ code, 0x01000193);
+      second = Math.imul(second ^ (code + index), 0x85ebca6b);
+    }
+    return `${json.length}:${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`;
+  }
 
   function open() {
     if (dbPromise) return dbPromise;
@@ -22,7 +34,20 @@
         }
         if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
         // Device-local artwork cache: one small Blob per game/artwork kind, read in one fast batch.
-        if (!db.objectStoreNames.contains("thumbs")) db.createObjectStore("thumbs", { keyPath: "key" });
+        const thumbs = db.objectStoreNames.contains("thumbs") ? request.transaction.objectStore("thumbs") : db.createObjectStore("thumbs", { keyPath: "key" });
+        if (!thumbs.indexNames.contains("at")) {
+          thumbs.createIndex("at", "at");
+          // Existing v2 artwork has no age field, so an index upgrade alone
+          // would leave those rows invisible to trimThumbs forever.
+          const cursorRequest = thumbs.openCursor();
+          cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result;
+            if (!cursor) return;
+            const value = cursor.value;
+            if (!Number(value.at)) { value.at = Date.now(); cursor.update(value); }
+            cursor.continue();
+          };
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -39,7 +64,7 @@
     const tx = db.transaction(["items", "meta"], "readonly");
     const [items, meta] = await Promise.all([result(tx.objectStore("items").getAll()), result(tx.objectStore("meta").get("state"))]);
     known.clear();
-    items.forEach(item => known.set(String(item.id), JSON.stringify(item)));
+    items.forEach(item => known.set(String(item.id), signature(item)));
     return { items, history: meta?.history || [], preferences: meta?.preferences || {}, empty: !items.length && !meta };
   }
 
@@ -51,7 +76,7 @@
     const next = new Map();
     for (const item of items) {
       if (item?.id == null) continue;
-      const id = String(item.id), snapshot = JSON.stringify(item);
+      const id = String(item.id), snapshot = signature(item);
       next.set(id, snapshot);
       if (known.get(id) !== snapshot) store.put({ ...item, id });
     }
@@ -69,7 +94,7 @@
     const writes = [];
     for (const item of changed) {
       if (item?.id == null) continue;
-      const id = String(item.id), snapshot = JSON.stringify(item);
+      const id = String(item.id), snapshot = signature(item);
       if (known.get(id) === snapshot) continue;
       store.put({ ...item, id }); writes.push([id, snapshot]);
     }
@@ -94,18 +119,49 @@
     const db = await open();
     const tx = db.transaction("thumbs", "readwrite");
     const store = tx.objectStore("thumbs");
-    entries.forEach(([key, sig, blob]) => store.put({ key, sig, blob }));
+    const at = Date.now();
+    entries.forEach(([key, sig, blob]) => store.put({ key, sig, blob, at }));
     await done(tx);
   }
   // Which artwork is already cached ([[key, sig]]), so background fill only touches what is missing.
   async function listThumbKeys() {
     const db = await open();
     const store = db.transaction("thumbs", "readonly").objectStore("thumbs");
-    const rows = await result(store.getAll());
-    return rows.map(row => [row.key, row.sig]);
+    return new Promise((resolve, reject) => {
+      const rows = [], request = store.openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) { resolve(rows); return; }
+        rows.push([cursor.key, cursor.value.sig]);
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+  async function trimThumbs(maxEntries = 0) {
+    const max = Math.max(0, Number(maxEntries) || 0);
+    if (!max) return 0;
+    const db = await open(), tx = db.transaction("thumbs", "readwrite"), store = tx.objectStore("thumbs");
+    let count = await result(store.count()), removed = 0;
+    if (count <= max) { await done(tx); return removed; }
+    await new Promise((resolve, reject) => {
+      const request = store.index("at").openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || count <= max) { resolve(); return; }
+        cursor.delete(); count--; removed++; cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+    });
+    await done(tx);
+    return removed;
+  }
+  async function clearThumbs() {
+    const db = await open(), tx = db.transaction("thumbs", "readwrite");
+    tx.objectStore("thumbs").clear(); await done(tx);
   }
 
-  const core = Object.freeze({ open, loadAll, save, saveSome, getThumbs, putThumbs, listThumbKeys });
+  const core = Object.freeze({ open, loadAll, save, saveSome, getThumbs, putThumbs, listThumbKeys, trimThumbs, clearThumbs });
   root.SplitAppIDBCore = core;
   if (typeof window === "undefined") return; // inside the data worker: expose the core only
 
@@ -150,6 +206,8 @@
     getThumbs: entries => call("getThumbs", entries),
     putThumbs: entries => call("putThumbs", entries),
     listThumbKeys: () => call("listThumbKeys"),
+    trimThumbs: max => call("trimThumbs", max),
+    clearThumbs: () => call("clearThumbs"),
     // Merge several sources' details off the main thread (used by background sync).
     merge: (entries, title, item) => {
       const target = ensureWorker();
