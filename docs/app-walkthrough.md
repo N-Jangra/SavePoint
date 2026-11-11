@@ -10,7 +10,7 @@ SavePoint is a responsive, local-first game tracker. It is a single-page app who
 | Tablet | Sidebar rail or bottom bar, according to display settings |
 | Desktop | Labeled sidebar, or bottom bar when the sidebar is disabled |
 
-The bottom bar can be configured for visible destinations, ordering, alignment, labels, colors, background, and corner style. Home and Settings remain fixed destinations. Android system back and browser history follow the in-app route stack; open sheets/dialogs close before navigating away.
+The bottom bar can be configured for visible destinations, ordering, alignment, labels, colors, background, and corner style. Home and Settings remain fixed destinations. Main-page headers remain pinned while content scrolls, and bottom navigation stays fixed at the screen edge; Android WebView edge stretch is disabled to keep the bars steady during overscroll. Android system back and browser history follow the in-app route stack; open sheets/dialogs close before navigating away.
 
 ## Main screens
 
@@ -58,3 +58,13 @@ Settings → **Metadata Sync** controls syncing: Run buttons (needs it / no data
 Both pages have a search box with a filter button beside it; the button opens a Date range popup (From / To, quick ranges, Clear, Apply). The saved file is merged with this device's recent entries and re-read each time the page opens.
 
 The Sync page's Back button returns to the page it was opened from: Home or a game when opened from the floating sync button, Settings → Metadata Sync when opened from there.
+
+## Navigation (ScreenMark layout)
+
+- **Games** (`#games`): Ongoing (Playing) and Backlog (backlog + upcoming) tabs, List / Posters / Cards view, "+" to add playtime (Ongoing) or move a backlog game to Ongoing, Browse all games.
+- **Explore** (`#discover`, alias `#explore`): search and per-source browsing with catalog shelves.
+- **Profile** (`#profile`): cover, photo (`#profile-cover` to edit), three-dot menu (Timeline, Sources, Settings, About), Add manually, Stats rail, and collection links in this order: **All games**, **Completed games**, **Favorites**, **On Hold**, **Dropped**. All games includes every status. The status links open lists limited to that status; Favorites (`#favorites`) stays separate. Empty Completed, On Hold and Dropped collections show an Add games card; populated collections show their games without that empty-state card.
+- **All games and status collections** (`#library`): search and choose Posters, Large, or List view. Filters cover sorting, status (All games only), platform, and saved game tags/category values. There is no favorites-only filter because Favorites has its own collection page. On Hold, Dropped, and Completed links preserve their status when opened or restored from navigation.
+- **Game details Back:** when one saved game's detail page opens another saved game's details, Back returns to the previous game first. Back from the first detail page returns to the collection that opened it.
+- **Statistics** (`#statistics`): one overview board (time spent playing, total hours, games completed, top genres, studios / platforms, biggest play sessions, games by status, average rating).
+- **Details** (`#details?id=…`): ScreenMark's title layout; progress console on the left of tablets and above the tabs on phones.

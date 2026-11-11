@@ -8,7 +8,7 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 
 | Area | What you can do |
 |---|---|
-| Library | Add games manually or from a metadata source; search, sort, filter, group, and change collection layouts. |
+| Library | Add games manually or from a metadata source; search, sort, and filter by status, platform, and tags. All Games includes every status; On Hold, Dropped, and Completed have status-specific collections. |
 | Game tracking | Set Backlog, Upcoming, Playing, On Hold, Dropped, or Completed; log playtime, set a goal, and rate games. |
 | Game details | View and cache provider descriptions, portrait covers, screenshots, tags, links, requirements, playtime estimates, and other available details. Steam trailers play inline in the details page. |
 | Discover | Browse suggestions and search a single catalog or enabled sources together; add games directly to the library. |
@@ -16,7 +16,7 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 | Library tools | Multi-select on Home, undo toasts, drag-to-merge, Fix match, Change cover, import duplicate detection, and per-game Retry/Ignore, a match review list and a Settings → Metadata Sync page on the Sync page. |
 | Timeline and statistics | Review status changes by day on the Timeline, and explore a Statistics overview with Play time (split by status: time spent, time saved on dropped games, time left on playing and on-hold games, and money per status), Library breakdown, Activity and Ratings sub-pages (grouped ratings and quick rate). |
 | Sharing | Share a Home group as themed images (choose games per page and how many pages) or as a PDF list, and share any game's details page as a PDF or image with its saved metadata and screenshots; every share can be saved to Downloads or sent through Android's share sheet. |
-| Favorites | Heart a game from its details or the ⋮ menu and filter Home to favorites. |
+| Profile collections | Open All Games, Completed, Favorites, On Hold, or Dropped games, in that order. Favorites has its own page; other collection filters do not include a favorites-only option. Empty status collections offer an Add games card. |
 | Settings | Customize appearance and navigation; configure metadata sources, storage, backups, tracking, and diagnostics. |
 | Performance | Load library batches and defer off-screen artwork until it approaches the viewport, keeping large image-heavy collections responsive. |
 | Offline use | Keep library data locally and cache provider details/artwork where the selected platform and storage settings allow. Video trailers stream when played and are not copied into the library folder. |
@@ -54,7 +54,7 @@ When Mix fetch has a HowLongToBeat match, its portrait cover is preferred for th
 | Add game | `#add` | Create or edit a library entry. |
 | Game details | `#details?id=<entry-id>` | View and update a saved game or metadata preview. |
 
-Navigation adapts to phone, tablet, and desktop widths. On phones it uses the configurable bottom bar; wider layouts can use a sidebar. The route is part of the URL hash, so screens can be linked or refreshed.
+Navigation adapts to phone, tablet, and desktop widths. On phones it uses the configurable bottom bar; wider layouts can use a sidebar. Main-page headers stay pinned during scrolling and bottom navigation stays fixed. The route is part of the URL hash, so screens can be linked or refreshed.
 
 ## Data and storage
 
@@ -97,9 +97,9 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.3` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.4` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
 
-The current 0.1.3 release APK is packaged as `dist/savepoint-0.1.3-release.apk` after a signed release build.
+The current 0.1.4 release APK is packaged as `dist/savepoint-0.1.4-release.apk` after a signed release build.
 
 ## Repository layout
 
@@ -143,7 +143,7 @@ SavePoint/
 | Property | Value |
 |---|---|
 | Package | `savepoint` |
-| Version | `0.1.3` |
+| Version | `0.1.4` |
 | Capacitor / Android application ID | `com.cuemark.savepoint` |
 | Capacitor web directory | `frontend/` |
 | Browser state key | `splitapp_savepoint_v1` |
