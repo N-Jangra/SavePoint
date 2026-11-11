@@ -5,7 +5,8 @@
     const { config, prefs, editingItem, addMetadataQuery = "", esc } = context;
     const game = config.categories[0];
     const statuses = game.statuses || ["Backlog", "Playing", "On Hold", "Dropped", "Completed", "Upcoming"];
-    const selectedStatus = editingItem?.status || prefs.defaultStatus || statuses[0];
+    const preferredStatus = editingItem?.status || prefs.defaultStatus;
+    const selectedStatus = statuses.includes(preferredStatus) ? preferredStatus : statuses[0];
     const statusOptions = statuses.map(status => `<button type="button" class="entry-status-option${status === selectedStatus ? " active" : ""}" data-entry-status="${esc(status)}" aria-pressed="${status === selectedStatus}">${esc(status)}</button>`).join("");
     const maxRating = prefs.ratingFormat === "10-point" ? 10 : 5;
     const ratingOptions = `<option value="">No rating</option>${Array.from({ length: maxRating }, (_, index) => `<option value="${index + 1}" ${Number(editingItem?.rating) === index + 1 ? "selected" : ""}>${index + 1}</option>`).join("")}`;

@@ -177,6 +177,10 @@ body[data-sidebar="shown"] .app-sidebar { border-radius: 18px; box-shadow: var(-
 .discover-results { gap: 14px; }
 .discover-empty { padding: 20px 16px; }
 .discover-empty > small { max-width: 30ch; margin-top: 6px; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+body[data-page="discover"] .discover-empty:not([hidden]) { min-height: clamp(230px, 38dvh, 360px); align-content: center; gap: 9px; margin: 18px 0 24px; padding: 26px 22px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); box-shadow: var(--shadow); }
+body[data-page="discover"] .discover-empty > p { margin: 5px 0 0; color: var(--legacy-text,inherit); font-size: 1rem; font-weight: 700; }
+body[data-page="discover"] .discover-empty > small { max-width: 34ch; margin: 0; line-height: 1.55; }
+body[data-page="discover"] .discover-empty .button { min-height: 42px; margin-top: 3px; padding-inline: 16px; }
 .discover-card-art { position:relative; display:grid; place-items:center; height:var(--discover-art-height,150px); overflow:hidden; background:var(--surface-2); color:var(--muted); }
 .discover-card-art > img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .discover-art-fallback { display:grid; place-items:center; width:100%; height:100%; }

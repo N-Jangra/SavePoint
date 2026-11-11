@@ -11,7 +11,10 @@
   // Background sync (e.g. after Import List) has no one waiting, so give slower sources such as
   // HowLongToBeat time to answer; a short grace dropped them and left only the first (Steam) data.
   const BACKGROUND_GRACE_MS = 14000;
-  const withTimeout = (promise, ms = 15000) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out")), ms))]);
+  const withTimeout = (promise, ms = 15000) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out")), ms);
+    Promise.resolve(promise).then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+  });
   // Many games are synced at once, and HowLongToBeat (and Steam) rate-limit or time out when hit by dozens of requests together;
   // that made a pull-to-recheck "fail" and then work on retry. Each source gets only a few requests in flight.
   const LIMITS = { howlongtobeat: 2, steamdb: 4, rawg: 3, igdb: 3 };
@@ -52,10 +55,12 @@
     const promise = run();
     memo.set(key, { at: Date.now(), promise });
     promise.catch(() => { if (memo.get(key)?.promise === promise) memo.delete(key); });
-    if (memo.size > 600) memo.delete(memo.keys().next().value);
+    const now = Date.now();
+    for (const [oldKey, oldValue] of memo) if (now - oldValue.at >= ttl) memo.delete(oldKey);
+    while (memo.size > 200) memo.delete(memo.keys().next().value);
     return promise;
   };
-  const waitFor = settings => settings.background ? Math.max(5, Number(settings.syncTimeout) || 20) * 1000 : 15000;
+  const waitFor = settings => settings.background ? Math.max(5, Number(settings.syncTimeout) || 20) * 1000 : (window.Capacitor?.isNativePlatform?.() ? 35000 : 25000);
   const searchSource = (title, settings, key) => memoized(`s|${key}|${norm(title)}`, () => inLane(key, () => withTimeout(discovery.searchSource(title, category, settings, key), waitFor(settings))), Boolean(settings.forceRefresh));
   const loadDetails = (key, providerId, item, settings) => memoized(`d|${key}|${providerId}|${item.title}`, () => inLane(key, () => withTimeout(controller.load(item, settings), waitFor(settings))), Boolean(settings.forceRefresh));
   const NO_MATCH_TTL = 14 * 86400000;

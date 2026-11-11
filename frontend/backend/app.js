@@ -10,7 +10,16 @@
   const folderImageHashKey = `${storageKey}_folder_image_hashes`;
   const folderArchiveHashKey = `${storageKey}_folder_archive_hashes_v2`;
   const itemIds = new Set();
-  const itemSnapshots = new Map();
+  const itemSnapshots = new Map(); // id -> compact fingerprint, never a second copy of the serialized library
+  function snapshotFingerprint(value) {
+    let first = 0x811c9dc5, second = 0x9e3779b9;
+    for (let index = 0; index < value.length; index++) {
+      const code = value.charCodeAt(index);
+      first = Math.imul(first ^ code, 0x01000193);
+      second = Math.imul(second ^ (code + index), 0x85ebca6b);
+    }
+    return `${value.length}:${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`;
+  }
   let activeFolderUri = "";
   let folderSnapshotQueue = Promise.resolve();
   let folderWriteQueue = Promise.resolve();
@@ -603,10 +612,14 @@
     // Commit the portable database snapshot immediately. Artwork downloads and
     // per-game mirrors can be slow; the library's status/details must survive
     // an app being closed while those files are syncing.
-    const content = JSON.stringify(portableData(payload));
     const snapshotWrite = folderSnapshotQueue.catch(() => {}).then(async () => {
-      if (plugin.writeNestedFile) await plugin.writeNestedFile({ uri, dirPath: [folderTreeName], fileName: "database.json", content }); invalidateGamesIndex();
-      await plugin.writeFile({ uri, fileName: databaseFileName, content });
+      if (plugin.openFolderStream && plugin.writeFolderStream && plugin.closeFolderStream && payload.items.length >= 1500) {
+        await writeDatabaseStreamed(payload, uri, plugin);
+      } else {
+        const content = JSON.stringify(portableData(payload));
+        if (plugin.writeNestedFile) await plugin.writeNestedFile({ uri, dirPath: [folderTreeName], fileName: "database.json", content }); invalidateGamesIndex();
+        await plugin.writeFile({ uri, fileName: databaseFileName, content });
+      }
     });
     // Keep portable snapshots ordered by save revision. Concurrent SAF writes
     // to the same document can otherwise finish out of order and restore stale data.
@@ -614,6 +627,36 @@
     pendingFolderSync = { payload, uri, plugin, snapshotWrite };
     scheduleFolderSyncDrain();
     return snapshotWrite;
+  }
+
+  async function writeDatabaseStreamed(payload, uri, plugin, { batchSize = 8 } = {}) {
+    const atomic = typeof plugin.renameFolderFile === "function";
+    const temporary = name => atomic ? name.replace(/\.json$/i, ".tmp.json") : name;
+    const targets = [
+      { id: `db-tree-${Date.now()}`, dirPath: [folderTreeName], fileName: temporary("database.json"), finalName: "database.json" },
+      { id: `db-root-${Date.now()}`, fileName: temporary(databaseFileName), finalName: databaseFileName }
+    ];
+    const opened = [];
+    const write = content => Promise.all(opened.map(target => plugin.writeFolderStream({ id: target.id, content })));
+    try {
+      for (const target of targets) {
+        await plugin.openFolderStream({ uri, id: target.id, dirPath: target.dirPath, fileName: target.fileName });
+        opened.push(target);
+      }
+      await write('{"items":[');
+      for (let offset = 0; offset < payload.items.length; offset += batchSize) {
+        const rows = payload.items.slice(offset, offset + batchSize);
+        let chunk = "";
+        for (let index = 0; index < rows.length; index++) chunk += `${offset || index ? "," : ""}${JSON.stringify(portableItem(rows[index]))}`;
+        await write(chunk);
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      await write(`],"history":${JSON.stringify(Array.isArray(payload.history) ? payload.history : [])},"preferences":${JSON.stringify(payload.preferences && typeof payload.preferences === "object" ? payload.preferences : {})}}`);
+    } finally {
+      await Promise.all(opened.map(target => plugin.closeFolderStream({ id: target.id }).catch(() => {})));
+    }
+    if (atomic) await Promise.all(targets.map(target => plugin.renameFolderFile({ uri, dirPath: target.dirPath, fromName: target.fileName, toName: target.finalName })));
+    invalidateGamesIndex();
   }
 
   function scheduleFolderSyncDrain() {
@@ -644,9 +687,11 @@
     if (!hashes || typeof hashes !== "object") hashes = {};
     const now = new Date();
     const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const fingerprint = folderArchiveFingerprint(payload);
     const datedHashes = hashes[uri] && typeof hashes[uri] === "object" ? hashes[uri] : {};
-    if (datedHashes[date] === fingerprint) return;
+    // The archive schedule is daily. Once today's archive exists, avoid serializing and
+    // hashing the full library on every incremental folder sync (especially costly at 10k items).
+    if (datedHashes[date]) return;
+    const fingerprint = folderArchiveFingerprint(payload);
     const prefix = `${app.key}_backup_`;
     const tarFileName = `${prefix}${date}.tar`;
     await plugin.exportTarArchive({
@@ -695,7 +740,6 @@
       return { ...data, loadedFromFolder: false, fast: true };
     }
     let folderData = null;
-    const encryptedItemIds = new Set();
     let encryptedItems = [];
     // Require a reachable shared database folder at every native app launch.
     // If the folder has not been chosen yet, or its persisted access was lost,
@@ -715,7 +759,6 @@
           if (Array.isArray(items)) {
             encryptedItems = items;
             data.items = items;
-            items.forEach(item => { if (item?.id != null) encryptedItemIds.add(String(item.id)); });
           }
         }
         if (metaResult?.exists && metaResult.data) {
@@ -767,11 +810,13 @@
     itemIds.clear();
     itemSnapshots.clear();
     // Encrypted copy skipped (IndexedDB supplied the library): treat it as in sync so a launch does not rewrite every title.
+    // IndexedDB already supplied the current library when the encrypted bridge
+    // copy was skipped. Seed only the id set in that case; serializing all 10k
+    // rows again here duplicates the records during startup reconciliation.
     (encryptedItems.length ? encryptedItems : data.items).forEach(item => {
       if (item?.id == null) return;
       const id = String(item.id);
       itemIds.add(id);
-      itemSnapshots.set(id, JSON.stringify(portableItem(item)));
     });
     // Rewriting a ~14 MB snapshot at every launch janks the app; only do it when the folder is behind this device.
     const folderStamp = new Map((folderData?.items || []).map(item => [String(item.id), Number(item.updatedAt) || 0]));
@@ -847,7 +892,8 @@
         const changedSnapshots = [];
         for (const item of payload.changed) {
           const id = String(item.id), snapshot = JSON.stringify(portableItem(item));
-          if (itemSnapshots.get(id) !== snapshot) { writes.push(plugin.setItem({ id, data: snapshot })); changedSnapshots.push([id, snapshot]); }
+          const fingerprint = snapshotFingerprint(snapshot);
+          if (itemSnapshots.get(id) !== fingerprint) { writes.push(plugin.setItem({ id, data: snapshot })); changedSnapshots.push([id, fingerprint]); }
         }
         for (const id of payload.removedIds) writes.push(plugin.deleteItem({ id }));
         const meta = JSON.stringify({ history: payload.history, preferences: payload.preferences });
@@ -884,15 +930,16 @@
         for (const item of payload.items) {
           const id = String(item.id);
           const snapshot = JSON.stringify(portableItem(item));
-          snapshots.set(id, snapshot);
-          if (itemSnapshots.get(id) !== snapshot) writes.push(plugin.setItem({ id, data: snapshot }));
+          const fingerprint = snapshotFingerprint(snapshot);
+          snapshots.set(id, fingerprint);
+          if (itemSnapshots.get(id) !== fingerprint) writes.push(plugin.setItem({ id, data: snapshot }));
         }
         for (const id of itemIds) if (!nextIds.has(id)) writes.push(plugin.deleteItem({ id }));
         await Promise.all(writes);
         const meta = JSON.stringify({ history: payload.history, preferences: payload.preferences });
         await plugin.setMeta({ data: meta }); lastMetaJson = meta;
         itemIds.clear(); nextIds.forEach(id => itemIds.add(id));
-        itemSnapshots.clear(); snapshots.forEach((snapshot, id) => itemSnapshots.set(id, snapshot));
+        itemSnapshots.clear(); snapshots.forEach((fingerprint, id) => itemSnapshots.set(id, fingerprint));
       }
     } finally {
       await folderWrite;
@@ -947,29 +994,44 @@
   // Streams the library to a file in small chunks, so a 1500-game export never builds one huge string
   // or sends one huge message across the Android bridge (that crashed the app).
   // mode "ask": Android's "Save as" screen. mode "folder": straight into the chosen backup folder.
+  // Backups name where each game came from (source + source id) so a restore can match it exactly instead of guessing by title.
+  const backupRefOf = item => ({ id: String(item?.id ?? ""), source: String(item?.metadataSource || item?.source || "manual"), providerId: String(item?.providerId ?? ""), category: String(item?.category || ""), title: String(item?.title || ""), year: String(item?.year || "") });
+  const backupEntry = item => ({ ...portableItem(item), backupRef: backupRefOf(item) });
   async function exportLibrary({ items, history, preferences }, { mode = "ask", onProgress } = {}) {
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
-    const fileName = `${app.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    // Backups are gzip-compressed when the WebView can compress; the importer opens both forms.
+    const gzip = typeof CompressionStream === "function" && typeof TextEncoder === "function";
+    const fileName = `${app.key}-backup-${new Date().toISOString().slice(0, 10)}.json${gzip ? ".gz" : ""}`;
     if (!plugin?.writeDocumentChunk) throw new Error("This build cannot save files. Update the app.");
     let opened;
     if (mode === "folder") {
       const uri = await getFolderUri({ prompt: false });
       if (!uri) throw new Error("No backup folder selected. Pick one in Settings → Backups.");
       opened = await plugin.beginFolderExport({ uri, fileName });
-    } else opened = await plugin.createDocument({ fileName, mimeType: "application/json" });
+    } else opened = await plugin.createDocument({ fileName, mimeType: gzip ? "application/gzip" : "application/json" });
+    let write = text => plugin.writeDocumentChunk({ content: text }), finishStream = async () => {}, pumpError = null;
+    if (gzip) {
+      const compressor = new CompressionStream("gzip"), writer = compressor.writable.getWriter(), reader = compressor.readable.getReader(), encoder = new TextEncoder();
+      const toBase64 = bytes => { let binary = ""; for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(at, at + 0x8000)); return btoa(binary); };
+      const pump = (async () => { for (;;) { const { done, value } = await reader.read(); if (done) break; await plugin.writeDocumentChunk({ content: toBase64(value), base64: true }); } })()
+        .catch(error => { pumpError = error; writer.abort(error).catch(() => {}); });
+      write = async text => { if (pumpError) throw pumpError; await writer.write(encoder.encode(text)); };
+      finishStream = async () => { if (!pumpError) await writer.close().catch(error => { pumpError = pumpError || error; }); await pump; if (pumpError) throw pumpError; };
+    }
     try {
       const CHUNK = 256 * 1024;
-      let buffer = `{"app":${JSON.stringify(app.name)},"version":1,"exportedAt":${JSON.stringify(new Date().toISOString())},"items":[`;
+      let buffer = `{"app":${JSON.stringify(app.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(items.map(backupRefOf))},"items":[`;
       for (let index = 0; index < items.length; index++) {
-        buffer += (index ? "," : "") + JSON.stringify(portableItem(items[index]));
+        buffer += (index ? "," : "") + JSON.stringify(backupEntry(items[index]));
         if (buffer.length >= CHUNK) {
-          await plugin.writeDocumentChunk({ content: buffer }); buffer = "";
+          await write(buffer); buffer = "";
           onProgress?.(index + 1, items.length);
           await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
       buffer += `],"history":${JSON.stringify(history || [])},"preferences":${JSON.stringify(preferences || {})}}`;
-      await plugin.writeDocumentChunk({ content: buffer });
+      await write(buffer);
+      await finishStream();
       onProgress?.(items.length, items.length);
     } finally { await plugin.closeDocument().catch(() => {}); }
     return { fileName, uri: opened?.uri || "" };
@@ -1045,6 +1107,7 @@
   window.SplitAppBackend = Object.freeze({
     appendLog, readLog, clearLog,
     exportLibrary,
+    backupRefOf,
     exportTextFile,
     name: app.name,
     key: app.key,
