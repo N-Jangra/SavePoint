@@ -4,7 +4,7 @@
   window.SplitAppPages.timeline = context => {
     const { config, history, items = [], esc, timelineFilter = "all", timelineSearch = "", timelineMonth = "", timelineYear = "" } = context;
     // Timeline now lives under Explore; older saved nav settings may still say it was a bottom tab.
-    const timelineBack = `<button type="button" class="detail-back" data-go="explore"><span aria-hidden="true">‹</span> Back to Explore</button>`;
+    const timelineBack = `<button type="button" class="detail-back" data-go="profile"><span aria-hidden="true">‹</span> Back</button>`;
     const now = new Date();
     const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7)).getTime();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();

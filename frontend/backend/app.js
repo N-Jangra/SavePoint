@@ -1108,6 +1108,7 @@
     appendLog, readLog, clearLog,
     exportLibrary,
     backupRefOf,
+    backupItem: backupEntry,
     exportTextFile,
     name: app.name,
     key: app.key,
