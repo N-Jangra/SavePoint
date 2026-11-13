@@ -39,6 +39,15 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Tests: `npm test` runs `tests/` (page renderers, filters, windowing, navigation, statistics toggle, profile collections, and syntax checks).
 - The floating sync progress control announces its updated status to assistive technology as titles finish syncing.
 - Discover source pages return to All sources correctly. Starting another search or leaving Discover cancels queued/browser requests and ignores late native responses; repeated renders reuse active suggestions work instead of queuing duplicate catalog calls.
+- **Quick setup** (`#setup`): a four-step first-run wizard (games completed, games to play, games playing, games dropped). Trending tiles come from Steam + SteamDB and the search box queries HowLongToBeat; picks are added with the matching status and queued for background sync. It opens on a fresh install (after choosing the storage folder on Android), from the Profile menu, and as a favourites picker on an empty **Favorites** page (tiles and search come from your own library; it returns until at least one favourite is chosen).
+- **Explore** tabs (Normal / Mix fetch) span the full width like the Games tabs; the search row is 50 px with an icon-only search button and a grid / list toggle that always shows an icon. **Mix fetch** uses the same search row and results as Normal (poster grid with a corner add badge, or list rows); its intro card was removed. Tapping a game's name or year in Explore opens its details, not just the poster.
+- **Games**: pull down to refresh and sync games that need it; the Backlog tab shows an **Upcoming** heading above the **Backlog** group.
+- **My games** status pages (`#library?status=…`) show the floating Filters pill (a status from the link is not treated as an applied filter); Reset is a styled button; list pages use a fade-only transition so fixed controls stay in place.
+- **Statistics** opens on Overall; the games-count badge is gone from the top bar and Detailed's status cards show a time bar plus game-count and value pills.
+- **Details**: the Share button is removed; Tracking, My rating and Tags sit flat (no boxes) and Tracking drops its heading; Screenshots is a borderless, sideways-scrolling row; the hero image is no longer blurred on phones; the Buy on Steam row is stacked with a compact button.
+- **Settings**: new **Memory** page (poster images kept in memory: Automatic 900, Low 400, Minimum 150, Large 1,500); Fonts, Icon style, Category colors, Bottom bar layout, Bottom bar corners and the Dashboard settings page were removed (bottom bar corners are always sharp); Tracking moved into the Personalize section; Bottom bar transparency appears only for the Transparent background and Bottom bar background / transparency now work on phones; the default source order is HowLongToBeat, Steam + SteamDB, IGDB, RAWG, FreeToGame; source options pages drop their helper text; decorative header icons were removed from Settings pages and Metadata Sources.
+- Back on Timeline, Metadata Sources and App Info returns to Profile; App Info is no longer listed on the Settings page.
+- Light themes use the chosen accent colour as-is, and settings toggles use the same markup as ScreenMark.
 
 ### Fixed
 
@@ -47,6 +56,7 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Restore matches a game already in the library by source + source id before falling back to title and year, so renamed or re-spelled games are not duplicated.
 - Cancelling a Discover search no longer adds a provider failure or pauses a healthy source; v2 thumbnail rows receive timestamps during the IndexedDB upgrade so cache trimming can remove them; Statistics refreshes when its displayed preferences or history change.
 - Regression tests now cover streamed backup parsing across chunk boundaries, cancelled-source health, thumbnail-index migration and Statistics cache invalidation.
+- Browser backups use the same per-game packaging as the Android export (no temporary `blob:` image links, source reference included). Restore detects gzip from the file's first bytes rather than its name and reports empty or damaged compressed files clearly.
 
 ## [0.1.3] — 2026-11-06
 

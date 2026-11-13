@@ -15,9 +15,10 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 | Mix fetch | Experimental combined search that merges matching metadata from enabled sources into one saved game. A per-game source index keeps every matched source, so syncs never shrink a Mix game. |
 | Library tools | Multi-select on Home, undo toasts, drag-to-merge, Fix match, Change cover, import duplicate detection, and per-game Retry/Ignore, a match review list and a Settings → Metadata Sync page on the Sync page. |
 | Timeline and statistics | Review status changes by day on the Timeline, and explore a Statistics overview with Play time (split by status: time spent, time saved on dropped games, time left on playing and on-hold games, and money per status), Library breakdown, Activity and Ratings sub-pages (grouped ratings and quick rate). |
-| Sharing | Share a Home group as themed images (choose games per page and how many pages) or as a PDF list, and share any game's details page as a PDF or image with its saved metadata and screenshots; every share can be saved to Downloads or sent through Android's share sheet. |
+| Sharing | Share a Home group as themed images (choose games per page and how many pages) or as a PDF list; every share can be saved to Downloads or sent through Android's share sheet. |
 | Profile collections | Open All Games, Completed, Favorites, On Hold, or Dropped games, in that order. Favorites has its own page; other collection filters do not include a favorites-only option. Empty status collections offer an Add games card. |
-| Settings | Customize appearance and navigation; configure metadata sources, storage, backups, tracking, and diagnostics. |
+| Quick setup | First-run wizard (completed, to play, playing, dropped) with Steam + SteamDB trending tiles and HowLongToBeat search; also opens from the Profile menu and as a favourites picker on an empty Favorites page. |
+| Settings | Customize appearance and navigation; configure metadata sources, storage, memory (poster cache size), backups, tracking, and diagnostics. |
 | Performance | Load library batches and defer off-screen artwork until it approaches the viewport, keeping large image-heavy collections responsive. |
 | Offline use | Keep library data locally and cache provider details/artwork where the selected platform and storage settings allow. Video trailers stream when played and are not copied into the library folder. |
 
