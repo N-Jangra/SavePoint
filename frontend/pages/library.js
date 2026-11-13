@@ -79,7 +79,7 @@
     items.forEach(item => platformsOf(item).forEach(name => platformCounts.set(name, (platformCounts.get(name) || 0) + 1)));
     const platforms = [...platformCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 14).map(([name]) => name);
     const sortKey = sorters[state.sort] ? state.sort : "alpha", sortLabel = SORTS.find(([key]) => key === sortKey)[1];
-    const filtersApplied = sortKey !== "alpha" || (statusFilter && statusFilter !== "all") || (state.platform && state.platform !== "all") || Boolean(state.tag);
+    const filtersApplied = sortKey !== "alpha" || (statusFilter && statusFilter !== "all" && !(typeof location !== "undefined" && /[?&]status=/.test(location.hash))) || (state.platform && state.platform !== "all") || Boolean(state.tag);
     const viewDef = VIEWS.find(([key]) => key === view);
     const chip = (name, value, label, current) => `<button type="button" class="library-chip${current === value ? " active" : ""}" data-library-${name}="${esc(value)}" aria-pressed="${current === value}">${esc(label)}</button>`;
     const libraryTitle = statusFilter === "all" ? "All games" : statusFilter === "Completed" ? "Completed games" : statusFilter;
