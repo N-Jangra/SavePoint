@@ -30,6 +30,8 @@
   <link rel="stylesheet" href="styles/ios-ui.css">
   <link rel="stylesheet" href="styles/motion.css">
   <link rel="stylesheet" href="styles/ui-polish.css">
+  <link rel="stylesheet" href="styles/demo-pages.css">
+  <link rel="stylesheet" href="styles/savepoint-ui.css">
   <script defer src="lucide.min.js"></script>
   <script defer src="app-config.js"></script>
   <script defer src="backend/idb-store.js"></script>
@@ -45,6 +47,10 @@
   <script defer src="components/currency.js"></script>
   <script defer src="components/library.js"></script>
   <script defer src="pages/dashboard.js"></script>
+  <script defer src="pages/profile.js"></script>
+  <script defer src="pages/games.js"></script>
+  <script defer src="pages/library.js"></script>
+  <script defer src="components/backup-stream.js"></script>
   <script defer src="pages/search.js"></script>
   <script defer src="pages/discover.js"></script>
   <script defer src="pages/explore.js"></script>
@@ -52,6 +58,7 @@
   <script defer src="pages/details.js"></script>
   <script defer src="pages/add.js"></script>
   <script defer src="pages/timeline.js"></script>
+  <script defer src="pages/statistics-detailed.js"></script>
   <script defer src="pages/statistics.js"></script>
   <script defer src="pages/settings.js"></script>
   <script defer src="pages/import-preview.js"></script>
@@ -59,8 +66,8 @@
   <script defer src="components/share-perf.js"></script>
   <script defer src="components/share-list-pdf.js"></script>
   <script defer src="components/share.js"></script>
-  <script defer src="components/share-game.js"></script>
   <script defer src="pages/sync.js"></script>
+  <script defer src="pages/setup.js"></script>
   <script defer src="app.js"></script>
 </head>
 <body>
@@ -88,12 +95,12 @@
   </script>
   <div class="app-layout">
     <aside class="app-sidebar" id="app-sidebar" aria-label="Sidebar navigation">
-      <a class="sidebar-brand" href="#dashboard" aria-label="SavePoint dashboard"><img src="icons/controller.svg" alt=""><span>SavePoint</span></a>
+      <a class="sidebar-brand" href="#games" aria-label="SavePoint games"><img src="icons/controller.svg" alt=""><span>SavePoint</span></a>
       <nav class="sidebar-nav" id="sidebar-nav" aria-label="Main navigation"></nav>
     </aside>
     <div class="app-shell">
     <header class="topbar">
-      <div><p class="eyebrow" id="app-kicker"></p><h1 id="page-title">Dashboard</h1></div>
+      <div class="topbar-title-row"><a class="icon-button topbar-back" id="topbar-back" href="#profile" aria-label="Back to profile" hidden><i data-lucide="chevron-left" aria-hidden="true"></i></a><div><p class="eyebrow" id="app-kicker"></p><h1 id="page-title">Games</h1></div></div>
       <div class="collection-header-actions topbar-actions" id="topbar-actions" hidden>
         <a class="icon-button collection-add-button" href="#add" aria-label="Add a game" title="Add a game"><i data-lucide="plus" aria-hidden="true"></i></a>
         <button type="button" class="icon-button" id="select-toggle" aria-label="Select games" title="Select games"><i data-lucide="check-square" aria-hidden="true"></i></button>
@@ -102,10 +109,9 @@
     </header>
     <main id="page-content" tabindex="-1"></main>
     <nav class="bottom-bar" id="bottom-bar" aria-label="Main navigation">
-      <button data-page="dashboard" class="nav-button active"><span class="nav-icon">⌂</span><span>Home</span></button>
-      <button data-page="discover" class="nav-button"><span class="nav-icon">✧</span><span>Discover</span></button>
-      <button data-page="explore" class="nav-button"><span class="nav-icon">◎</span><span>Explore</span></button>
-      <button data-page="settings" class="nav-button"><span class="nav-icon">⚙</span><span>Settings</span></button>
+      <button data-page="games" class="nav-button active"><span class="nav-icon">🎮</span><span>Games</span></button>
+      <button data-page="discover" class="nav-button"><span class="nav-icon">◎</span><span>Explore</span></button>
+      <button data-page="profile" class="nav-button"><span class="nav-icon">☺</span><span>Profile</span></button>
     </nav>
     </div>
   </div>

@@ -2,6 +2,62 @@
 
 Notable SavePoint changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/) (`0.x` while the app is evolving).
 
+## [0.1.4] — 2026-11-09
+
+### Changed
+
+- New look and navigation modelled on ScreenMark: the bottom bar (and tablet sidebar) has three tabs — **Games**, **Explore** and **Profile** — and the page styles come from ScreenMark's page system (`styles/demo-pages.css`, tokens follow your accent colour).
+- **Games** is the home tab with **Ongoing** (Playing) and **Upcoming** tabs in list or poster view, a round "+" to log playtime on each card, and "Browse all games".
+- **Explore** is the former Discover page with ScreenMark's shelves, catalog cards and loading placeholders that match the layout of results (one shelf per source, or a single grid for one source). `#explore` links open it.
+- **Profile** has a cover and photo, a three-dot menu (Timeline, Stats, Mix fetch, Sources, Settings, About), Add manually, a Stats rail, a Games shelf (opens the full list, formerly the Collection page, now titled My games with a back button) and a Favorites shelf.
+- Profile collections appear in this order: **All games**, **Completed games**, **Favorites**, **On Hold**, and **Dropped**. Status collections contain only games with that status; All games includes every status. Empty status collections remain available as links.
+- Empty Completed, On Hold and Dropped collections show an **Add games** card; the card appears only while that collection has no matching games.
+- **Edit profile** (pencil on the photo): choose your own photo or a cover from your games, with random / newest picks, per-filter pools and change intervals, or pick one specific game and picture (cover, screenshot or background).
+- **Favorites** page: a poster grid with hearts; with none yet it lists every game so you can tap hearts to pick.
+- **Explore** has no top bar (its own search sits at the top) and its status line ("14 results found… 1 source failed") is a calm one-line message instead of a boxed banner. **Games** tabs no longer show counts.
+- **Statistics** is ScreenMark's overview board for games: time spent playing, total hours, games completed, top genres, top studios or platforms, biggest play sessions, games by status and average rating. The Library breakdown and Activity pages were removed.
+- **Details** uses ScreenMark's title page: header buttons over a hero band with the cover, source tag, rating / status badges and genres; a progress console (hours played, goal, quick −1h / +1h / +5h) with compact Fix match / Change cover buttons; and tabs for Overview, Details, Media, Ratings, Achievements and Team & series.
+- **My games** (the full list) and the other pages share ScreenMark's top bar, surfaces and fonts, and the new pages fade and rise in with a short stagger (off with Reduce motion).
+- Main-page headers stay pinned while content scrolls and the bottom navigation remains fixed at the screen edge. Android WebView edge stretch is disabled so overscroll does not pull either bar out of position.
+- Default theme follows the system (dark uses AMOLED black, like ScreenMark).
+- Bottom bar order is **Games**, **Explore**, **Profile**.
+- **Games** has a view button (list, posters, cards). **Ongoing** shows only games you are playing; **Upcoming** shows upcoming and backlog games. Hold and Drop no longer appear there.
+- **Statistics** has an **Overall / Detailed** toggle; Detailed is the earlier play-time page with the per-category breakdown.
+- **Explore** has a **Normal / Mix fetch** toggle at the top. Mix fetch combines sources and saves the merged details to your library; Normal adds games manually.
+- **My games** (`#library`, formerly `#dashboard`) is rebuilt like ScreenMark's collection page: search, a view button (posters, large, list) that remembers your choice, Filters (sort, status, platform, tags), and Share. All games and status collections omit a favorites-only filter because Favorites has its own page. Add and multi-select moved out (Add is on Profile). Large libraries are windowed so thousands of games scroll smoothly. `#dashboard` links open it.
+- Tag filters use each game's saved tags and category values. The Favorites page remains the only collection filtered by favorite state.
+- Details: Tracking & rating (status, rating, tags) and the Add manually page were redesigned and re-spaced.
+- Metadata sources and Source options pages were tidied, and **Source options** has a **Test** button that runs a sample search with the saved key and domain.
+- Games: long backlogs show 60 games at a time with a "Show more" button.
+- Backups of 2 MB or more are restored from a stream, one game at a time, with a fallback to the whole-file path.
+- Source health: a source that fails three times in a row is paused (2 minutes, growing to 15); the Test button bypasses the pause.
+- Grid posters stored in the app database are shrunk to a 420 px WebP (new covers only).
+- Poster URL cache now matches ScreenMark: O(1) lookups, bounded (about 900, posters on screen kept) and released when the app closes; My games search caches lower-cased titles.
+- Android backups from the app are gzip-compressed (`.json.gz`, streamed so large libraries stay out of memory) and carry each game's source and ID.
+- Details: Languages is gone; Tracking, Tags and Links sit flat (no boxes); Statistics Detailed drops the game-by-game list.
+- Games: the second tab is **Backlog** (backlog and upcoming games); a + on a backlog game moves it to Ongoing. Profile menu drops Stats and Mix fetch (Explore has Mix fetch). Timeline and Metadata Sources lose their intro text; Custom sources empty card redone; Tracking and My rating are separate sections and Tags look like Links; Detailed stats use calmer colours and larger type; Android root text is larger.
+- Tests: `npm test` runs `tests/` (page renderers, filters, windowing, navigation, statistics toggle, profile collections, and syntax checks).
+- The floating sync progress control announces its updated status to assistive technology as titles finish syncing.
+- Discover source pages return to All sources correctly. Starting another search or leaving Discover cancels queued/browser requests and ignores late native responses; repeated renders reuse active suggestions work instead of queuing duplicate catalog calls.
+- **Quick setup** (`#setup`): a four-step first-run wizard (games completed, games to play, games playing, games dropped). Trending tiles come from Steam + SteamDB and the search box queries HowLongToBeat; picks are added with the matching status and queued for background sync. It opens on a fresh install (after choosing the storage folder on Android), from the Profile menu, and as a favourites picker on an empty **Favorites** page (tiles and search come from your own library; it returns until at least one favourite is chosen).
+- **Explore** tabs (Normal / Mix fetch) span the full width like the Games tabs; the search row is 50 px with an icon-only search button and a grid / list toggle that always shows an icon. **Mix fetch** uses the same search row and results as Normal (poster grid with a corner add badge, or list rows); its intro card was removed. Tapping a game's name or year in Explore opens its details, not just the poster.
+- **Games**: pull down to refresh and sync games that need it; the Backlog tab shows an **Upcoming** heading above the **Backlog** group.
+- **My games** status pages (`#library?status=…`) show the floating Filters pill (a status from the link is not treated as an applied filter); Reset is a styled button; list pages use a fade-only transition so fixed controls stay in place.
+- **Statistics** opens on Overall; the games-count badge is gone from the top bar and Detailed's status cards show a time bar plus game-count and value pills.
+- **Details**: the Share button is removed; Tracking, My rating and Tags sit flat (no boxes) and Tracking drops its heading; Screenshots is a borderless, sideways-scrolling row; the hero image is no longer blurred on phones; the Buy on Steam row is stacked with a compact button.
+- **Settings**: new **Memory** page (poster images kept in memory: Automatic 900, Low 400, Minimum 150, Large 1,500); Fonts, Icon style, Category colors, Bottom bar layout, Bottom bar corners and the Dashboard settings page were removed (bottom bar corners are always sharp); Tracking moved into the Personalize section; Bottom bar transparency appears only for the Transparent background and Bottom bar background / transparency now work on phones; the default source order is HowLongToBeat, Steam + SteamDB, IGDB, RAWG, FreeToGame; source options pages drop their helper text; decorative header icons were removed from Settings pages and Metadata Sources.
+- Back on Timeline, Metadata Sources and App Info returns to Profile; App Info is no longer listed on the Settings page.
+- Light themes use the chosen accent colour as-is, and settings toggles use the same markup as ScreenMark.
+
+### Fixed
+
+- Backups (`version: 2`) record each game's source and source id (`backupRef` plus a top-level `index`); CSV exports add Source, SourceID and ID columns and the CSV importer reads them back.
+- Browser JSON exports are gzip-compressed (`.json.gz`) and the importer opens `.json`, `.json.gz`, `.csv` and `.txt`; TXT/CSV files with a UTF-8 BOM are read correctly.
+- Restore matches a game already in the library by source + source id before falling back to title and year, so renamed or re-spelled games are not duplicated.
+- Cancelling a Discover search no longer adds a provider failure or pauses a healthy source; v2 thumbnail rows receive timestamps during the IndexedDB upgrade so cache trimming can remove them; Statistics refreshes when its displayed preferences or history change.
+- Regression tests now cover streamed backup parsing across chunk boundaries, cancelled-source health, thumbnail-index migration and Statistics cache invalidation.
+- Browser backups use the same per-game packaging as the Android export (no temporary `blob:` image links, source reference included). Restore detects gzip from the file's first bytes rather than its name and reports empty or damaged compressed files clearly.
+
 ## [0.1.3] — 2026-11-06
 
 ### Added
@@ -33,6 +89,7 @@ Notable SavePoint changes are recorded here. The project follows [Keep a Changel
 - Fix match shows the name of the game each source is linked to, and every result has a View popup (cover, year, description, source page) to confirm before using it.
 - Statistics → Play time lists the games that have no play time by name and shows which one is being looked up.
 - Details top bar: edit, favourite, share and delete buttons are the same size.
+- Game details use a nested back stack: opening another saved game's details from a details page returns to the previous game first; Back from the first details page returns to the originating collection.
 - Library history merges the saved file with this device's recent entries and re-reads it each time the page opens.
 
 - Selected cards in select mode have a rounded frame.

@@ -8,6 +8,7 @@
   const nativeHttp = window.CapacitorHttp || capacitor?.Plugins?.CapacitorHttp || capacitor?.Plugins?.Http || null;
   const localPreview = !nativeApp && location.protocol.startsWith("http") && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
   const encode = value => encodeURIComponent(String(value || "").trim());
+  const abortError = () => { const error = new Error("The operation was aborted."); error.name = "AbortError"; return error; };
   const igdbCredentials = settings => {
     const clientId = String(settings.sourceOptions?.igdb?.clientId || "").trim();
     const token = String(settings.apiKeys?.igdb || "").trim();
@@ -28,6 +29,7 @@
     return Object.assign(new Error(`${status} ${detail}`), { status, retryAfterMs });
   }
   async function wireRequest(url, options = {}, responseType = "json") {
+    if (options.signal?.aborted) throw abortError();
     const method = String(options.method || "GET").toUpperCase();
     const headers = { Accept: responseType === "text" ? "text/html,application/xhtml+xml,*/*" : "application/json", ...(options.headers || {}) };
     // Browsers refuse to set Cookie / User-Agent. The Android app sends them as-is; the local preview passes them to its proxy; a plain website drops them.
@@ -42,6 +44,7 @@
         url, method, headers, data: options.body || null,
         responseType: responseType === "text" ? "text" : "json", connectTimeout: 15000, readTimeout: 20000
       });
+      if (options.signal?.aborted) throw abortError();
       const status = Number(response?.status || 0);
       const data = response?.data;
       if (status >= 400) throw responseError(status, response.statusText, data, response.headers?.["retry-after"] || response.headers?.["Retry-After"] || "");
@@ -53,7 +56,7 @@
       return data;
     }
     const requestUrl = localPreview ? `/proxy?url=${encodeURIComponent(url)}` : url;
-    const response = await fetch(requestUrl, { method, headers, body: options.body });
+    const response = await fetch(requestUrl, { method, headers, body: options.body, ...(options.signal ? { signal: options.signal } : {}) });
     if (!response.ok) {
       const data = await response.text().catch(() => "");
       throw responseError(response.status, response.statusText, data, response.headers.get("retry-after") || "");
@@ -74,12 +77,14 @@
       if (wait) await delay(wait);
       const index = state.queue.findIndex(job => !job.background);
       const [job] = state.queue.splice(index >= 0 ? index : 0, 1);
+      job.signal?.removeEventListener("abort", job.onAbort);
       try {
+        if (job.options.signal?.aborted) throw abortError();
         const result = await wireRequest(job.url, job.options, job.responseType);
         state.nextAt = Date.now() + 1200;
         job.resolve(result);
       } catch (error) {
-        const cooldown = error?.status === 429 ? Math.max(60_000, Number(error.retryAfterMs) || 0) : 1200;
+        const cooldown = error?.status === 429 ? Math.max(60_000, Number(error.retryAfterMs) || 0) : error?.name === "AbortError" ? 0 : 1200;
         state.nextAt = Date.now() + cooldown;
         job.reject(error);
       }
@@ -92,7 +97,18 @@
     if (!hostStates.has(host)) hostStates.set(host, { queue: [], running: false, nextAt: 0 });
     const state = hostStates.get(host);
     return new Promise((resolve, reject) => {
-      state.queue.push({ url, options, responseType, resolve, reject, background: options.background === true });
+      const job = { url, options, responseType, resolve, reject, background: options.background === true, signal: options.signal, onAbort: null };
+      if (job.signal?.aborted) { reject(abortError()); return; }
+      if (job.signal) {
+        job.onAbort = () => {
+          const index = state.queue.indexOf(job);
+          if (index < 0) return; // An active fetch receives the same AbortSignal directly.
+          state.queue.splice(index, 1);
+          reject(abortError());
+        };
+        job.signal.addEventListener("abort", job.onAbort, { once: true });
+      }
+      state.queue.push(job);
       pumpHost(state);
     });
   }
@@ -107,7 +123,7 @@
   function requestJson(url, options = {}) {
     ({ url, options } = applySource(url, options));
     const method = String(options.method || "GET").toUpperCase();
-    if (method !== "GET" || options.noCache) return requestJsonDirect(url, options);
+    if (method !== "GET" || options.noCache || options.signal) return requestJsonDirect(url, options);
     const key = JSON.stringify([url, options.headers || {}, Boolean(options.forceRefresh), options.offlineFallback || "", options.background === true]);
     const active = requestFlights.get(key);
     if (active) return active;
@@ -148,6 +164,7 @@
       const requestOptions = { ...options, noCache: true };
       return responseType === "text" ? await requestText(url, requestOptions) : await requestJson(url, requestOptions);
     } catch (directError) {
+      if (options.signal?.aborted || directError?.name === "AbortError") throw directError;
       if (localPreview) throw directError; // requestJson already used the preview proxy.
       const origin = location?.origin;
       const proxyBase = location?.protocol === "file:"
@@ -277,7 +294,7 @@
   let howLongToBeatTokenRequest = null;
   let howLongToBeatBlockedUntil = 0;
   let howLongToBeatBlockedError = null;
-  async function runSourceSearch(source, query, category, settings) {
+  async function runSourceSearchRaw(source, query, category, settings) {
     if (source.key === "howlongtobeat" && Date.now() < howLongToBeatBlockedUntil) {
       throw Object.assign(new Error(howLongToBeatBlockedError?.message || "HowLongToBeat temporarily denied search requests."), { status: howLongToBeatBlockedError?.status || 403 });
     }
@@ -294,6 +311,30 @@
       throw error;
     }
   }
+  // Source health: a source that fails several times in a row is paused for a while (growing up to 15 minutes), so one dead or blocked
+  // catalog stops slowing every search. An empty result is not a failure. Testing a source from its settings page bypasses the pause.
+  const sourceHealth = new Map();
+  const HEALTH_FAILS = 3, HEALTH_BASE_MS = 120000, HEALTH_MAX_MS = 15 * 60000;
+  async function runSourceSearch(source, query, category, settings) {
+    const held = sourceHealth.get(source.key);
+    if (!settings?.bypassSourceHealth && held && held.fails >= HEALTH_FAILS && Date.now() < held.until) {
+      throw new Error(`${source.name || source.key} is paused after repeated failures; it retries in ${Math.ceil((held.until - Date.now()) / 1000)}s.`);
+    }
+    try {
+      const results = await runSourceSearchRaw(source, query, category, settings);
+      sourceHealth.set(source.key, { fails: 0, until: 0, lastOk: Date.now(), lastError: "" });
+      return results;
+    } catch (error) {
+      // A user changing screens or queries is not a provider failure. Counting
+      // cancellations here could pause a healthy source after three quick
+      // navigation changes.
+      if (error?.name === "AbortError") throw error;
+      const fails = (held?.fails || 0) + 1;
+      sourceHealth.set(source.key, { fails, until: fails >= HEALTH_FAILS ? Date.now() + Math.min(HEALTH_MAX_MS, HEALTH_BASE_MS * 2 ** (fails - HEALTH_FAILS)) : 0, lastOk: held?.lastOk || 0, lastError: String(error?.message || error) });
+      throw error;
+    }
+  }
+  const sourceHealthOf = key => { const row = sourceHealth.get(key); return row ? { ...row, paused: row.fails >= HEALTH_FAILS && Date.now() < row.until } : { fails: 0, until: 0, lastOk: 0, lastError: "", paused: false }; };
   async function collectProviderJobs(jobs, { timeoutMs = 10000, graceMs = 1200 } = {}) {
     const results = [], errors = [];
     let completed = 0, resolveFirstResult;
@@ -354,12 +395,15 @@
     if (!String(query || "").trim()) return [];
     const sources = metadata.available(category, settings).filter(source => typeof searcherFor(source) === "function");
     if (!sources.length) throw new Error(`No enabled metadata sources are available for ${category}.`);
+    const hasHowLongToBeat = sources.some(source => source.key === "howlongtobeat") && Date.now() >= howLongToBeatBlockedUntil;
+    // Native HTTP uses a 15s connect + 20s read timeout. Give every source the
+    // same full window so slower networks don't turn a healthy fetch into an error.
+    // HowLongToBeat needs extra time after the first result to join combined searches.
+    const searchWait = { timeoutMs: nativeApp ? 35000 : 25000, graceMs: hasHowLongToBeat ? 9000 : 1200 };
     const { results, errors, pending } = await collectProviderJobs(sources.map(source => ({
       name: source.name || source.key,
       run: () => runSourceSearch(source, query.trim(), category, settings)
-    })), sources.some(source => source.key === "howlongtobeat") && Date.now() >= howLongToBeatBlockedUntil
-      // HowLongToBeat answers in several seconds; a 1.2s grace dropped it from combined (Mix / All sources) results.
-      ? { timeoutMs: 14000, graceMs: 9000 } : undefined);
+    })), searchWait);
     if (pending) errors.push(`${pending} source(s) still responding.`);
     const unique = new Map();
     for (const item of results) if (item?.title) unique.set(`${item.source}:${item.providerId || item.title.toLowerCase()}`, item);
@@ -380,7 +424,7 @@
     // RAWG can take longer on mobile networks than the other providers. Its
     // Android HTTP bridge allows a 15s connect + 20s read window, so don't
     // mark a healthy request as failed after only the old 10s UI deadline.
-    const sourceTimeout = source.key === "rawg" && nativeApp ? 35000 : source.key === "rawg" ? 25000 : source.key === "howlongtobeat" ? 30000 : 10000;
+    const sourceTimeout = nativeApp ? 35000 : 25000;
     const { results, errors, pending } = await collectProviderJobs([{ name: source.name || source.key, run: () => runSourceSearch(source, query.trim(), category, settings) }], { timeoutMs: sourceTimeout, graceMs: 0 });
     if (pending) throw new Error(errors[0] || `${source.name || source.key} did not respond in time.`);
     if (!results.length && errors.length) throw new Error(errors.join("; "));
@@ -425,7 +469,7 @@
       }));
       return [{ source: "igdb", title: "Popular on IGDB", items }];
     });
-    const { results: collected, errors, pending } = await collectProviderJobs(jobs.map((run, index) => ({ name: `Suggestion source ${index + 1}`, run })), { timeoutMs: 10000, graceMs: 1200 });
+    const { results: collected, errors, pending } = await collectProviderJobs(jobs.map((run, index) => ({ name: `Suggestion source ${index + 1}`, run })), { timeoutMs: nativeApp ? 35000 : 25000, graceMs: 1200 });
     const sections = collected.filter(section => section.items.length);
     if (!sections.length && (errors.length || pending)) throw new Error(errors[0] || "Suggestion sources are taking too long. Try a search above.");
     sections.warnings = [...errors, ...(pending ? [`${pending} source(s) still responding.`] : [])];
@@ -436,5 +480,5 @@
     howLongToBeatBlockedUntil = 0;
     howLongToBeatBlockedError = null;
   }
-  window.SplitAppDiscovery = Object.freeze({ appKey, search, searchSource, trending, testCustomSource, loadCustomDetails, requestJson, requestText, requestHowLongToBeatJson, requestHowLongToBeatText, igdbRequest, igdbImage, igdbYear, encode, result, textFromHtml, clearSourceCooldown });
+  window.SplitAppDiscovery = Object.freeze({ sourceHealth: sourceHealthOf, appKey, search, searchSource, trending, testCustomSource, loadCustomDetails, requestJson, requestText, requestHowLongToBeatJson, requestHowLongToBeatText, igdbRequest, igdbImage, igdbYear, encode, result, textFromHtml, clearSourceCooldown });
 })();

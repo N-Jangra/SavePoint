@@ -14,8 +14,7 @@
   const statusColor = status => { const key = String(status || "").toLowerCase().replace(/\s+/g, "-"); return css(`--status-color-${key}`) || css("--accent") || "#6355f5"; };
 
   // Covers load once per game; a slow cover keeps loading in the background and is reused by the next draw.
-  const coverJobs = new Map();
-  const coverOf = (entry, getImage) => { if (!coverJobs.has(entry.id)) coverJobs.set(entry.id, getImage(entry).catch(() => null)); return coverJobs.get(entry.id); };
+  const coverOf = (entry, getImage, coverCache) => { if (!coverCache.has(entry.id)) coverCache.set(entry.id, getImage(entry).catch(() => null)); return coverCache.get(entry.id); };
   const waitFor = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(undefined), ms))]);
   // Resolve any CSS colour expression (vars, color-mix) to rgb() so the canvas follows the active theme.
   const probe = document.createElement("span");
@@ -30,8 +29,8 @@
   const themeKey = () => { const c = themeColors(); return [c.page, c.card, c.accent, c.text].join("|"); };
 
 
-  async function drawSheet({ title, entries, start, total, page, pages, showHead, getImage }) {
-    const jobs = entries.map(entry => coverOf(entry, getImage));
+  async function drawSheet({ title, entries, start, total, page, pages, showHead, getImage, coverCache }) {
+    const jobs = entries.map(entry => coverOf(entry, getImage, coverCache));
     let images = await Promise.all(jobs.map(job => waitFor(job, 4000)));
     // Give covers that are only slow (not failed) one longer chance so a big list doesn't end up with blanks.
     if (images.some(img => img === undefined)) images = await Promise.all(jobs.map((job, i) => images[i] === undefined ? waitFor(job, 9000) : images[i]));
@@ -125,9 +124,9 @@
   }
 
   const PDF_ROWS_PER_PAGE = 16;
-  async function loadCoversFor(entries, getImage) {
+  async function loadCoversFor(entries, getImage, coverCache) {
     const withTimeout = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(undefined), ms))]);
-    const jobs = entries.map(entry => coverOf(entry, getImage));
+    const jobs = entries.map(entry => coverOf(entry, getImage, coverCache));
     let images = await Promise.all(jobs.map(job => withTimeout(job, 4000)));
     if (images.some(img => img === undefined)) images = await Promise.all(jobs.map((job, n) => images[n] === undefined ? withTimeout(job, 9000) : images[n]));
     return images.map(img => img || null);
@@ -157,7 +156,7 @@
 
   function open({ title, entries, getImage }, { showPopup, closePopup, toast, esc, cacheGet, cachePut }) {
     document.getElementById("share-dialog")?.remove();
-    coverJobs.clear();
+    const coverCache = new Map();
     const dialog = document.createElement("dialog");
     dialog.id = "share-dialog"; dialog.className = "choice-dialog share-dialog";
     let kind = "images", mode = "pages", page = 0, images = [], cache = new Map(), token = 0, perPage = DEFAULT_PER_PAGE, shareCount = 0;
@@ -184,7 +183,7 @@
         const d = images[index], idbKey = `share:${slug(title)}:${mode}:${perPage}:${index}`, sig = pageSig(d);
         cache.set(key, (async () => {
           try { const blob = cacheGet && await cacheGet(idbKey, sig); if (blob) return await blobToDataUrl(blob); } catch (_) {}
-          const { url, complete } = await drawSheet({ title, entries: d.group, start: d.start, total: count, page: index + 1, pages: d.pages, showHead: true, getImage });
+          const { url, complete } = await drawSheet({ title, entries: d.group, start: d.start, total: count, page: index + 1, pages: d.pages, showHead: true, getImage, coverCache });
           // Only complete pages are stored; a page with missing covers is redrawn next time.
           if (!complete) cache.delete(key); else { try { if (cachePut) cachePut(idbKey, sig, await (await fetch(url)).blob()); } catch (_) {} }
           return url;
@@ -225,7 +224,7 @@
       const covers = [];
       for (let n = 0; n < entries.length; n += 12) {
         say(`Loading covers ${Math.min(n + 12, entries.length)} of ${entries.length}…`, "busy");
-        covers.push(...await loadCoversFor(entries.slice(n, n + 12), getImage));
+        covers.push(...await loadCoversFor(entries.slice(n, n + 12), getImage, coverCache));
       }
       const C = themeColors();
       say("Building PDF…", "busy");
@@ -266,11 +265,11 @@
       if (t.closest("[data-share-send-all]")) return guard(async () => { const urls = []; let ahead = render(0); for (let i = 0; i < shareCount; i++) { urls.push(await ahead); ahead = i + 1 < shareCount ? render(i + 1) : null; say(`Preparing ${i + 1} of ${shareCount}…`, "busy"); } return shareAllImages(urls, slug(title)); }, null, "Preparing images…");
       if (t.closest("[data-share-save-all]")) return guard(async () => { let ahead = render(0); for (let i = 0; i < shareCount; i++) { const url = await ahead; ahead = i + 1 < shareCount ? render(i + 1) : null; await saveImage(url, fileName(i)); } return shareCount; }, n => `Saved ${n} images to Downloads.`, "Saving all images…");
     });
-    dialog.addEventListener("close", () => setTimeout(() => dialog.remove(), 300));
+    dialog.addEventListener("close", () => setTimeout(() => { coverCache.clear(); dialog.remove(); }, 300));
     showPopup(dialog);
     setTimeout(() => setMode("pages"), 30);
     // Warm the remaining covers a few at a time so later pages are ready.
-    (async () => { const queue = entries.slice(perPage); const worker = async () => { while (queue.length && dialog.isConnected) { await coverOf(queue.shift(), getImage); } }; await new Promise(r => setTimeout(r, 1500)); await Promise.all([worker(), worker(), worker()]); })();
+    (async () => { const queue = entries.slice(perPage); const worker = async () => { while (queue.length && dialog.isConnected) { await coverOf(queue.shift(), getImage, coverCache); } }; await new Promise(r => setTimeout(r, 1500)); await Promise.all([worker(), worker(), worker()]); })();
   }
   window.SplitAppShare = Object.freeze({ open, helpers: { themeColors, withAlpha, roundRect, fit, loadImage, saveBytes, shareBytes } });
 })();

@@ -71,12 +71,15 @@
     const sheetCard = (title, body, selected = "") => `<section class="ios-card dashboard-filter-card"><div class="dashboard-filter-card-heading"><span class="ios-label">${title}</span>${selected ? `<span class="dashboard-filter-card-selection">${esc(selected)}</span>` : ""}</div>${body}</section>`;
     const row = (label, body) => `<div class="ios-row"><span>${label}</span>${body}</div>`;
     const groupList = [["status", "Status"], ["category", "Category"], ["release", "Release"], ["none", "None"]];
-    const emptyResults = libraryQuery
+    const selectionFiltersActive = Boolean(libraryQuery) || dashboardStatusFilter !== "all" || dashboardPlatformFilter !== "all" || Boolean(prefs.favoritesOnly);
+    const emptyResults = context.libraryLoading
+      ? `<div class="dashboard-empty-state" role="status" aria-live="polite"><span class="dashboard-empty-icon"><i data-lucide="loader-circle" aria-hidden="true"></i></span><h2>Loading your games…</h2><p>Your saved collection is being restored.</p></div>`
+      : libraryQuery
       ? listOrEmpty([], "No matching games found.", "Try another title or clear your search.")
       : dashboardStatusFilter !== "all"
         ? `<div class="dashboard-filter-empty"><strong>No ${esc(dashboardStatusFilter.toLowerCase())} games yet</strong><p>Choose another status or adjust your filters.</p></div>`
         : items.length
-          ? listOrEmpty([], "No games to show.", "Try a different category or adjust your filters.")
+          ? `<div class="dashboard-filter-empty"><strong>${prefs.favoritesOnly ? "No favorite games match" : "No games match these filters"}</strong><p>Change the filters to see more of your collection.</p>${selectionFiltersActive ? '<button type="button" class="button secondary small" data-clear-dashboard-filters-home>Clear filters</button>' : ""}</div>`
           : `<div class="dashboard-empty-state"><span class="dashboard-empty-icon"><i data-lucide="gamepad-2" aria-hidden="true"></i></span><h2>Start your game collection</h2><p>Add a game you own, or explore connected sources to find something new.</p><div class="dashboard-empty-actions"><a class="button primary" href="#add"><i data-lucide="plus" aria-hidden="true"></i> Add a game</a><a class="button secondary" href="#discover"><i data-lucide="compass" aria-hidden="true"></i> Discover games</a></div></div>`;
     const sortLabel = sortList.find(([key]) => key === prefs.dashboardSort)?.[1] || "Recently updated";
     const viewLabel = views.find(([key]) => key === view)?.[1] || "List";

@@ -34,3 +34,9 @@ test/
 android/keystore.properties
 *.jks
 *.keystore
+
+# Local worktree review reports
+report.md
+
+# Local branding assets
+logos/

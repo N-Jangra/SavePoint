@@ -1,6 +1,6 @@
 # SavePoint documentation
 
-These documents describe this SavePoint app and its current source tree.
+These documents describe SavePoint 0.1.4 and its current source tree.
 
 - [App walkthrough](app-walkthrough.md) — current pages, responsive navigation, and local data behavior.
 - [Database analysis](database-analysis.md) — persistence model, read/write flow, and data boundaries.

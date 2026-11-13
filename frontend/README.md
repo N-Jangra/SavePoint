@@ -7,7 +7,7 @@
 - `app-config.js` — app identity, game category, statuses, units, and labels.
 - `app.js` — routing, library state, event handling, settings, and JSON import/export.
 - `components/library.js` — reusable library cards and category controls.
-- `pages/` — Dashboard, Search, Discover, Details, Add, Timeline, Statistics, and Settings renderers.
+- `pages/` — Games home, profile and favorites, full library, Explore/Discover/Mix, Details, Add, Search, import/export, Timeline, Statistics, and Settings renderers.
 - `backend/app.js` — app-specific state load/save bridge, including optional Capacitor encrypted storage.
 - `backend/features/metadata.js` — five-provider registry and preference normalization.
 - `backend/features/sources.js` — frontend helpers for source settings.
