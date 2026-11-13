@@ -341,3 +341,238 @@ body[data-page="mix"] .mix-page-no-sources .mix-intro { border-color: color-mix(
   body[data-page="mix"] .mix-row { gap: 7px; padding: 8px; }
   body[data-page="mix"] .mix-row .button { min-width: 64px; padding-inline: 7px; }
 }
+
+/* Tags: no card box, same pills as Links, wherever the section sits on the page. */
+body .demo-title-page .detail-section.detail-tags-section { margin: 0 0 18px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+body .demo-title-page .detail-tags-section .detail-tag-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; }
+body .demo-title-page .detail-tags-section .detail-tag-list span { display: inline-flex; align-items: center; min-height: 34px; margin: 0; padding: 7px 11px; border: 1px solid var(--d-line2); border-radius: 999px; background: var(--d-elev); color: var(--d-gold); font: 700 11px var(--d-font); }
+
+/* My rating: no card box, like Tags and Links. */
+body .demo-title-page .detail-section.detail-rating-section { margin: 0 0 18px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+
+/* Tracking: no card box, like Tags, Links and My rating. */
+body .demo-title-page .detail-section.detail-tracking-section { margin: 0 0 18px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+
+/* Tracking heading is redundant next to "Status". */
+body .demo-title-page .detail-tracking-section > h3 { display: none; }
+
+/* Details hero: the artwork stays sharp (no backdrop blur) behind the Back / action buttons. */
+body .demo-title-page .detail-hero .ios-hero-bg::after { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* Discover search row: same compact look as ScreenMark (50px controls, 14px radius, no divider line). */
+body[data-page="discover"] .discover-search-row { gap: 10px; padding: 10px var(--gutter, 16px); border-bottom: 0; }
+body[data-page="discover"] .discover-search-row .discover-search { height: 50px; border-radius: 14px; box-shadow: none; padding-inline: 14px 10px; }
+body[data-page="discover"] .discover-search-row .discover-search input { height: 48px; }
+body[data-page="discover"] .discover-search-row .discover-submit { width: 50px; min-width: 50px; height: 50px; border-radius: 14px; box-shadow: none; }
+body[data-page="discover"] .discover-search-row .discover-submit svg { width: 20px; height: 20px; }
+body[data-page="discover"] .discover-search-row .discover-view-toggle { width: 50px; height: 50px; border-radius: 14px; }
+
+/* Discover: the page already has side gutters, so the search row adds none, and sits closer to the tabs. */
+body[data-page="discover"] .discover-page { gap: 6px; }
+body[data-page="discover"] .discover-page > .explore-bar + .discover-search-row { margin-top: 0; }
+body[data-page="discover"] .discover-search-row { margin: 0; padding: 8px 0; }
+
+/* Mix fetch: grid view (toggle shares the Discover setting); list view keeps the rows. */
+body[data-page="mix"] .discover-search-row { margin: 0; padding: 8px var(--gutter, 16px); }
+body[data-page="mix"][data-discover-view="grid"] .mix-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row { flex-direction: column; align-items: stretch; padding: 8px; }
+body[data-page="mix"][data-discover-view="grid"] .mix-result-main { flex-direction: column; align-items: stretch; width: 100%; min-height: 0; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row-art { flex: none; width: 100%; height: auto; aspect-ratio: 2 / 3; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row-art img { width: 100%; height: 100%; object-fit: cover; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row .button { width: 100%; }
+
+/* View toggle: always show an icon (list icon while in grid view, grid icon while in list view). */
+body .discover-view-toggle svg { display: none; }
+body:not([data-discover-view="list"]) .discover-view-toggle .view-icon-list,
+body[data-discover-view="list"] .discover-view-toggle .view-icon-grid { display: block; }
+
+/* Mix fetch search row: same as Normal search (50px controls, icon-only search button). */
+body[data-page="mix"] .mix-search-row { gap: 10px; }
+body[data-page="mix"] .mix-search-row .discover-search { height: 50px; }
+body[data-page="mix"] .mix-search-row .discover-search input { height: 48px; }
+body[data-page="mix"] .mix-search-row .discover-submit { width: 50px; min-width: 50px; height: 50px; padding: 0; border-radius: 14px; }
+body[data-page="mix"] .mix-search-row .discover-submit svg { width: 20px; height: 20px; }
+body[data-page="mix"] .mix-search-row .discover-submit span { display: none; }
+
+/* Mix fetch grid view: compact three-column posters instead of oversized cards. */
+body[data-page="mix"][data-discover-view="grid"] .mix-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row { padding: 6px; gap: 6px; border-radius: 14px; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row-copy strong { font-size: 11.5px; -webkit-line-clamp: 2; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row-copy small { font-size: 10px; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row-sources { display: none; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row .button { min-width: 0; min-height: 34px; padding: 0 6px; font-size: 11px; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row .button span { display: inline; }
+@media (min-width: 640px) { body[data-page="mix"][data-discover-view="grid"] .mix-list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* Metadata Sources page only: no decorative icon in the top bar (its subpages keep theirs). */
+.metadata-sources-page > .settings-subpage-heading > .settings-subpage-icon { display: none; }
+
+/* Mix fetch grid: Discover-style poster cards with a small add / in-library badge in the top-right corner. */
+body[data-page="mix"] .mix-search-row { margin: 0; padding: 8px 0; }
+body[data-page="mix"] .mix-message { margin: 8px 2px; }
+body[data-page="mix"] .mix-list { margin: 0; }
+body[data-page="mix"][data-discover-view="grid"] .mix-list { gap: 16px 10px; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row { position: relative; padding: 0; gap: 8px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row-art { border: 1px solid var(--d-line2); border-radius: 14px; overflow: hidden; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row-copy { padding: 0 2px; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row-copy strong { font-size: 12.5px; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row-copy small { color: var(--d-t2); }
+body[data-page="mix"][data-discover-view="grid"] .mix-row > .button { position: absolute; top: 7px; right: 7px; z-index: 2; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 9px; box-shadow: none; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row > .button span { display: none; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row > .button svg { width: 17px; height: 17px; }
+body[data-page="mix"][data-discover-view="grid"] .mix-row > .button.primary { border: 1.5px solid var(--d-gold); background: rgba(20, 20, 20, .85); color: var(--d-gold); }
+body[data-page="mix"][data-discover-view="grid"] .mix-row > .button.secondary { border: 1.5px solid var(--d-gold); background: var(--d-gold); color: var(--d-gold-fg, #111); opacity: 1; }
+
+/* Mix fetch list view: same rows as Normal search (poster, title, square add / in-library badge, divider lines, no cards). */
+body[data-page="mix"][data-discover-view="list"] .mix-list { gap: 0; }
+body[data-page="mix"][data-discover-view="list"] .mix-row { align-items: center; padding: 10px 2px; gap: 12px; border: 0; border-bottom: 1px solid var(--d-line2); border-radius: 0; background: transparent; box-shadow: none; }
+body[data-page="mix"][data-discover-view="list"] .mix-result-main { min-height: 0; gap: 12px; }
+body[data-page="mix"][data-discover-view="list"] .mix-row-art { flex: 0 0 58px; width: 58px; height: 84px; border: 1px solid var(--d-line2); border-radius: 8px; overflow: hidden; }
+body[data-page="mix"][data-discover-view="list"] .mix-row-art img { width: 100%; height: 100%; object-fit: cover; }
+body[data-page="mix"][data-discover-view="list"] .mix-row-copy { align-self: flex-start; padding-top: 2px; }
+body[data-page="mix"][data-discover-view="list"] .mix-row-copy strong { font-size: 15px; font-weight: 800; }
+body[data-page="mix"][data-discover-view="list"] .mix-row-sources { display: none; }
+body[data-page="mix"][data-discover-view="list"] .mix-row > .button { width: 36px; min-width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 9px; box-shadow: none; }
+body[data-page="mix"][data-discover-view="list"] .mix-row > .button span { display: none; }
+body[data-page="mix"][data-discover-view="list"] .mix-row > .button svg { width: 18px; height: 18px; }
+body[data-page="mix"][data-discover-view="list"] .mix-row > .button.primary { border: 1.5px solid var(--d-gold); background: transparent; color: var(--d-gold); }
+body[data-page="mix"][data-discover-view="list"] .mix-row > .button.secondary { border: 1.5px solid var(--d-gold); background: var(--d-gold); color: var(--d-gold-fg, #111); opacity: 1; }
+
+/* Mix fetch: same vertical rhythm as Normal search (46px tabs, 8px gaps, no extra space above the search bar). */
+body[data-page="mix"] .mix-page { gap: 8px; }
+body[data-page="mix"] .explore-bar { margin-bottom: 0; }
+body[data-page="mix"] .explore-bar .explore-mode-tabs { height: 46px; }
+body[data-page="mix"] .explore-bar .explore-mode-tabs button { min-height: 46px; }
+body[data-page="mix"] .mix-page > .explore-bar + .discover-search-row { margin-top: 0; }
+body[data-page="mix"] .mix-message { margin: 0 2px; }
+
+/* Settings pages: no decorative icon in the top bar. Per-source options and the custom source editor keep theirs. */
+.settings-page:not(.source-options-page):not(.cs-page) > .settings-subpage-heading > .settings-subpage-icon { display: none; }
+
+/* Quick setup wizard (ported from ScreenMark) */
+body[data-page="setup"] :is(.topbar, .bottom-bar, .app-sidebar) { display: none !important; }
+body[data-page="setup"] .app-shell { max-width: 620px; padding: 0 0 calc(92px + env(safe-area-inset-bottom)) !important; background: var(--d-bg); color: var(--d-t1); font-family: var(--d-font); }
+.setup-page { min-height: 100dvh; }
+.setup-header { position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: 44px 1fr 56px; align-items: center; row-gap: 6px; padding: calc(10px + env(safe-area-inset-top)) 8px 14px; background: var(--d-glass); border-bottom: 1px solid var(--d-line2); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); text-align: center; }
+.setup-step { grid-column: 2; color: var(--d-t2); font: 700 12px/1 var(--d-font); letter-spacing: .08em; text-transform: uppercase; }
+.setup-header h1 { grid-column: 1 / -1; margin: 6px 12px 0; font: 800 22px/1.2 var(--d-font); letter-spacing: -.02em; }
+.setup-header p { grid-column: 1 / -1; margin: 0 16px; color: var(--d-t2); font-size: 13.5px; }
+.setup-back, .setup-later { grid-row: 1; min-height: 40px; border: 0; background: transparent; color: var(--d-t1); font-weight: 700; }
+.setup-back { grid-column: 1; display: grid; place-items: center; }
+.setup-back[hidden] { display: none; }
+.setup-back svg { width: 24px; height: 24px; }
+.setup-later { grid-column: 3; color: var(--d-gold); font-size: 14px; }
+.setup-search { display: flex; align-items: center; gap: 10px; margin: 14px 14px 6px; padding: 0 14px; min-height: 46px; border: 1px solid var(--d-line2); border-radius: 14px; background: var(--d-surface); }
+.setup-search svg { width: 18px; height: 18px; color: var(--d-t2); }
+.setup-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--d-t1); font: 500 15px var(--d-font); }
+.setup-shelf { margin: 16px 14px 10px; text-align: center; font: 800 12px/1 var(--d-font); letter-spacing: .08em; text-transform: uppercase; }
+.setup-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 8px 14px; }
+.setup-tile { position: relative; display: grid; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--d-t1); text-align: left; content-visibility: auto; contain-intrinsic-size: auto 200px; }
+.setup-poster { display: block; aspect-ratio: 2 / 3; overflow: hidden; border: 2px solid transparent; border-radius: 12px; background: var(--d-surface); }
+.setup-poster img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.setup-tile-title { overflow: hidden; font: 600 11.5px/1.25 var(--d-font); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
+.setup-mark { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 26px; height: 26px; border: 2px solid var(--d-gold); border-radius: 8px; background: #000a; color: var(--d-gold); font-size: 18px; line-height: 1; }
+.setup-mark::before { content: "+"; font-weight: 700; }
+.setup-tile.selected .setup-poster { border-color: var(--d-gold); }
+.setup-tile.selected .setup-mark { background: var(--d-gold); color: var(--d-gold-fg); }
+.setup-tile.selected .setup-mark::before { content: "✓"; font-size: 15px; }
+.setup-skeleton { aspect-ratio: 2 / 3; border-radius: 12px; background: var(--d-surface); }
+.setup-message { margin: 40px 24px; color: var(--d-t2); text-align: center; }
+.setup-footer { position: fixed; right: 0; bottom: 0; left: 0; z-index: 40; display: flex; justify-content: center; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--d-bg) 40%); }
+.setup-next { width: min(100%, 592px); min-height: 50px; border: 0; border-radius: 14px; background: var(--d-gold); color: var(--d-gold-fg); font: 800 15px var(--d-font); }
+/* Quick setup: keep Next/Finish pinned to the screen bottom (sticky survives the page-enter transform that broke fixed) */
+.setup-footer { position: sticky; right: auto; bottom: 0; left: auto; margin-top: 8px; }
+body[data-page="setup"] .app-shell { padding-bottom: 0 !important; }
+.setup-noimg { display: grid; place-items: center; width: 100%; height: 100%; padding: 8px; color: var(--d-t2); font: 600 11px/1.3 var(--d-font); text-align: center; }
+.setup-wait { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 4px 0 12px; color: var(--d-t2); font-size: 12.5px; }
+.setup-wait svg { width: 16px; height: 16px; animation: setup-wait-spin 1s linear infinite; }
+@keyframes setup-wait-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .setup-wait svg { animation: none; } }
+
+/* Discover cards: the title and year open the details too, not just the poster. */
+.discover-catalog-card h3[data-discover-details], .discover-catalog-card small[data-discover-details] { cursor: pointer; }
+
+/* Buy on Steam row: title and price stacked on the left, one compact button on the right (no wrapping onto a second line). */
+body .demo-title-page .ios-buy { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "copy action" "price action"; align-items: center; column-gap: 14px; row-gap: 6px; margin: 0 16px 18px; padding: 14px 0 0; border-top: 0; }
+body .demo-title-page .ios-buy-copy { grid-area: copy; flex: none; }
+body .demo-title-page .ios-buy-copy p { overflow: visible; white-space: normal; font-size: 14px; line-height: 1.3; }
+body .demo-title-page .ios-buy-copy small { white-space: normal; font-size: 12px; margin-top: 2px; }
+body .demo-title-page .ios-buy > strong { grid-area: price; margin: 0; font-size: 18px; font-weight: 800; }
+body .demo-title-page .ios-buy a.button { grid-area: action; min-height: 44px; padding: 0 18px; border-radius: 14px; font-size: 13px; font-weight: 800; box-shadow: none; }
+
+/* Library filter bar: a proper Reset button (it was an unstyled default button). */
+.profile-filter-reset { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--d-line2); border-radius: 99px; background: transparent; color: var(--d-t2); font: 700 12px var(--d-font); cursor: pointer; }
+.profile-filter-reset:active { background: var(--d-elev); }
+
+/* Pages with a fixed filter pill / bar: use a fade-only page transition. A transform animation on #page-content makes
+   position:fixed children measure against the page (not the screen), so the pill sat in the wrong place until a refresh. */
+body #page-content.page-route-enter:has(> .library-page, > .profile-collection-page, > .profile-list-page) { animation-name: sp-fade !important; }
+
+/* Statistics → by status: pills for game count and value, and a time bar instead of plain numbers. */
+.stats-status-card > header { align-items: flex-start; }
+.stats-status-pills { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 6px; margin-left: auto; }
+.stats-status-pills b { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; border-radius: 99px; background: color-mix(in srgb, var(--tone, var(--d-gold)) 18%, transparent); color: var(--tone, var(--d-gold)); font: 800 11px var(--d-font); white-space: nowrap; }
+.stats-status-pills b.is-value { background: var(--d-elev, rgba(255,255,255,.08)); color: var(--d-t1); }
+.stats-status-meter { display: grid; gap: 8px; margin-top: 12px; padding: 12px; border-radius: 14px; background: var(--d-elev, rgba(255,255,255,.04)); }
+.stats-status-meter-track { height: 8px; overflow: hidden; border-radius: 99px; background: color-mix(in srgb, var(--d-t1) 12%, transparent); }
+.stats-status-meter-track > i { display: block; height: 100%; min-width: 3px; border-radius: inherit; background: var(--tone, var(--d-gold)); transition: width .3s ease; }
+.stats-status-meter-labels { display: flex; justify-content: space-between; gap: 12px; }
+.stats-status-meter-labels span { display: grid; gap: 2px; }
+.stats-status-meter-labels span:last-child { text-align: right; }
+.stats-status-meter-labels small { color: var(--d-t2); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.stats-status-meter-labels b { font: 800 15px var(--d-font); }
+
+/* Status card pills: readable in both themes (neutral chip with a tone dot, so pale tones like Dropped no longer vanish), side by side. */
+.stats-status-pills { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.stats-status-pills b { gap: 6px; background: color-mix(in srgb, var(--d-t1, currentColor) 9%, transparent); color: var(--d-t1, inherit); }
+.stats-status-pills b:not(.is-value)::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--tone, var(--d-gold)); }
+.stats-status-card > header { flex-wrap: wrap; row-gap: 8px; }
+
+/* Bottom bar background / transparency: phones (Android WebView counts as "low-end") forced a solid bar and ignored these settings. */
+html[data-lowend="true"] body .bottom-bar[data-bg="solid"] { background: var(--surface) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+html[data-lowend="true"] body .bottom-bar[data-bg="glass"] { background: color-mix(in srgb, var(--surface) var(--bar-glass-alpha, 55%), transparent) !important; backdrop-filter: blur(16px) saturate(160%) !important; -webkit-backdrop-filter: blur(16px) saturate(160%) !important; }
+html[data-lowend="true"] body .bottom-bar[data-bg="transparent"] { background: color-mix(in srgb, var(--surface) var(--bar-alpha, 100%), transparent) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* Explore tabs (Normal / Mix fetch): full-width bar with no side padding, like the Games tabs. */
+body[data-page="discover"] .explore-bar, body[data-page="mix"] .explore-bar { position: sticky; top: 0; z-index: 20; margin: 0; padding: 0; gap: 0; border-bottom: 1px solid var(--d-line2); background: var(--d-glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+body[data-page="discover"] .explore-bar .explore-mode-tabs, body[data-page="mix"] .explore-bar .explore-mode-tabs { width: 100%; margin: 0; padding: 0; }
+body[data-page="discover"] .discover-page, body[data-page="mix"] .mix-page { padding-top: 0; }
+
+/* The page itself has side gutters; the Games tabs cancel them with a negative margin, so do the same for the Explore tabs. */
+body[data-page="discover"] .explore-bar, body[data-page="mix"] .explore-bar { margin-inline: calc(var(--gutter, 16px) * -1); }
+
+/* Memory settings page (ported from ScreenMark) */
+body[data-page="settings"] .memory-settings-page { display:grid; gap:16px; width:100%; max-width:680px; margin-inline:auto; padding-bottom:24px; }
+body[data-page="settings"] .memory-settings-page > .settings-subpage-heading { margin-bottom:0; }
+body[data-page="settings"] .memory-settings-intro { display:grid; grid-template-columns:42px minmax(0,1fr); align-items:start; gap:13px; padding:16px; border:1px solid var(--line); border-radius:18px; background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 10%,var(--surface)),var(--surface)); }
+body[data-page="settings"] .memory-intro-icon { display:grid; place-items:center; width:42px; height:42px; border-radius:13px; background:var(--accent-soft); color:var(--accent-text,var(--accent)); }
+body[data-page="settings"] .memory-intro-icon svg { width:21px; height:21px; }
+body[data-page="settings"] .memory-settings-intro > div { display:grid; gap:5px; min-width:0; }
+body[data-page="settings"] .memory-settings-intro strong { font-size:.95rem; line-height:1.3; }
+body[data-page="settings"] .memory-settings-intro p,body[data-page="settings"] .memory-setting-copy p { margin:0; color:var(--muted); font-size:.8rem; line-height:1.5; }
+body[data-page="settings"] .memory-setting-card { display:grid; gap:13px; padding:16px; border:1px solid var(--line); border-radius:18px; background:var(--surface); }
+body[data-page="settings"] .memory-setting-copy { display:grid; gap:5px; min-width:0; }
+body[data-page="settings"] .memory-section-eyebrow { color:var(--accent-text,var(--accent)); font-size:.66rem; font-weight:750; letter-spacing:.1em; }
+body[data-page="settings"] .memory-setting-copy h2,body[data-page="settings"] .memory-profiles > h2 { margin:0; font-size:1rem; font-weight:700; }
+body[data-page="settings"] .memory-setting-card > .setting-picker-trigger { display:flex; width:100%; min-width:0; min-height:50px; justify-content:space-between; gap:12px; padding:9px 12px; border:1px solid var(--line); border-radius:13px; background:var(--surface-2); color:var(--legacy-text,#f8fafc); text-align:left; }
+body[data-page="settings"] .memory-setting-card .setting-picker-label { min-width:0; overflow:visible; color:inherit; font-size:.85rem; line-height:1.35; text-align:left; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; }
+body[data-page="settings"] .memory-setting-card .setting-picker-chevron { flex:none; color:var(--accent-text,var(--accent)); }
+body[data-page="settings"] .memory-profiles { display:grid; gap:10px; }
+body[data-page="settings"] .memory-profiles > h2 { padding:0 3px; }
+body[data-page="settings"] .memory-profile-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+body[data-page="settings"] .memory-mode-card { display:grid; align-content:start; gap:9px; min-width:0; min-height:132px; padding:13px; border:1px solid var(--line); border-radius:16px; background:var(--surface); }
+body[data-page="settings"] .memory-mode-card.is-current { border-color:color-mix(in srgb,var(--accent) 55%,var(--line)); background:color-mix(in srgb,var(--accent) 7%,var(--surface)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 18%,transparent); }
+body[data-page="settings"] .memory-mode-heading { display:flex; align-items:center; gap:8px; min-width:0; }
+body[data-page="settings"] .memory-mode-icon { display:grid; flex:none; place-items:center; width:30px; height:30px; border-radius:10px; background:var(--accent-soft); color:var(--accent-text,var(--accent)); }
+body[data-page="settings"] .memory-mode-icon svg { width:16px; height:16px; }
+body[data-page="settings"] .memory-mode-heading strong { min-width:0; font-size:.8rem; line-height:1.2; }
+body[data-page="settings"] .memory-mode-current { margin-left:auto; color:var(--accent-text,var(--accent)); font-size:.59rem; font-weight:750; letter-spacing:.04em; text-transform:uppercase; }
+body[data-page="settings"] .memory-mode-card p { margin:0; color:var(--muted); font-size:.7rem; line-height:1.45; }
+body[data-theme="light"] [data-page="settings"] .memory-settings-intro,body[data-theme="light"] [data-page="settings"] .memory-setting-card,body[data-theme="light"] [data-page="settings"] .memory-mode-card { color:#171923; }
+@media(max-width:390px) {
+  body[data-page="settings"] .memory-settings-intro,body[data-page="settings"] .memory-setting-card { padding:13px; }
+  body[data-page="settings"] .memory-profile-grid { gap:7px; }
+  body[data-page="settings"] .memory-mode-card { min-height:140px; padding:10px; }
+  body[data-page="settings"] .memory-mode-heading { gap:6px; }
+  body[data-page="settings"] .memory-mode-current { font-size:.53rem; }
+}

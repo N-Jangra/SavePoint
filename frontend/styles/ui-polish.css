@@ -2449,8 +2449,6 @@ body .group-share-btn,body[data-icon-style=inline] .group-share-btn{border:1px s
 .share-dialog .share-footer>.button.primary{width:100%}
 
 /* 0.1.2+: compact game-share popup */
-.share-game-dialog .share-body{gap:8px;padding-top:2px}
-.share-game-dialog .share-label{margin:6px 2px 0}
 .share-hint{margin:0 2px;color:var(--muted);font-size:.74rem;line-height:1.35;min-height:1em}
 .share-chips{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .share-chip{display:flex;align-items:center;gap:9px;min-height:46px;padding:8px 11px;border:1px solid var(--line);border-radius:13px;background:var(--surface);color:inherit;font:650 .8rem/1.2 var(--font-family);text-align:left;cursor:pointer}

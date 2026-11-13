@@ -257,9 +257,10 @@ test("10k load: Games and Dashboard keep rendered card windows bounded", () => {
   assert.ok((home.match(/class="item-card/g) || []).length <= 16, "Android Dashboard renders only its initial card budget");
 });
 
-test("mobile glass bottom bar exposes a working opacity control without unsupported CSS multiplication", () => {
+test("bottom bar opacity control shows only for the Transparent background and phones keep the chosen background", () => {
   const settings = read("pages/settings.js"), app = read("app.js"), styles = `${read("styles.css")}\n${read("styles/demo-pages.css")}`;
-  assert.match(settings, /bottomBarTransparency" && prefs\.bottomBarBackground === "solid"/);
+  assert.match(settings, /bottomBarTransparency" && prefs\.bottomBarBackground !== "transparent"/);
+  assert.match(read("styles/savepoint-ui.css"), /html\[data-lowend="true"\] body \.bottom-bar\[data-bg="glass"\]/);
   assert.match(app, /--bar-glass-alpha/);
   assert.match(styles, /var\(--bar-glass-alpha,55%\)/);
   assert.doesNotMatch(styles, /calc\(var\(--bar-alpha\)\s*\*/);

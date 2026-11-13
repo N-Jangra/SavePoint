@@ -262,7 +262,7 @@ body .demo-title-page .detail-tab-panel { padding: 0; }
 body .demo-title-page .detail-tab-panel[hidden] { display: none; }
 
 /* info blocks (dark-block) */
-body .demo-title-page .detail-section:not(.demo-list-section):not(.demo-episode-section):not(.demo-cast-section):not(.demo-related-section):not(.demo-gallery-section):not(.detail-links-section),
+body .demo-title-page .detail-section:not(.demo-list-section):not(.demo-episode-section):not(.demo-cast-section):not(.demo-related-section):not(.demo-gallery-section):not(.detail-links-section):not(.detail-tags-section):not(.detail-rating-section):not(.detail-tracking-section),
 body .demo-title-page .detail-collapsible:not(.demo-cast-section):not(.demo-episode-section):not(.demo-related-section):not(.demo-gallery-section) {
   margin: 0 0 12px; padding: 13px; border: 1px solid var(--d-line2); border-radius: 16px; background: var(--d-surface); box-shadow: var(--d-shadow); color: var(--d-t1); min-width: 0;
 }
