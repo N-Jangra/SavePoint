@@ -27,7 +27,7 @@
   };
   window.visualViewport?.addEventListener("resize", syncSoftKeyboardState, { passive: true });
   window.addEventListener("resize", syncSoftKeyboardState, { passive: true });
-  const titles = { games: "Games", profile: "Profile", favorites: "Favorites", "profile-cover": "Edit profile", dashboard: "My games", library: "My games", discover: "Explore", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add Game", "import-preview": "Import List", export: "Export", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
+  const titles = { games: "Games", profile: "Profile", favorites: "Favorites", "profile-cover": "Edit profile", dashboard: "My games", library: "My games", discover: "Explore", explore: "Explore", mix: "Mix fetch", setup: "Quick setup", details: "Details", add: "Add Game", "import-preview": "Import List", export: "Export", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
   // Three tabs, like ScreenMark: Games (ongoing + upcoming), Explore (search and browse sources), Profile.
   const navItems = [
     { key: "games", label: "Games", icon: "gamepad-2", locked: true },
@@ -41,10 +41,10 @@
     : "profile";
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "system", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "rise", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
+    theme: "system", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", libraryMemory: "auto", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "rise", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarCorners: "sharp", bottomBarLabels: "icons-only", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { games: "gamepad-2", discover: "compass", profile: "user-round" },
     navLayoutVersion: 4, navBar: { order: ["games", "discover", "profile"], visible: { games: true, discover: true, profile: true } },
-    metadataSourceOrder: ["freetogame", "steamdb", "howlongtobeat", "rawg", "igdb"], customSources: [],
+    metadataSourceOrder: ["howlongtobeat", "steamdb", "igdb", "rawg", "freetogame"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", dashboardDefaultPlatform: "all", dashboardPlatformFilter: "all", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1, humanReadableStats: false, currencyDisplay: "USD", usdToInrRate: 94.8,
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, pauseSyncInBackground: true, backupIncludeRatings: true, folderSyncDelay: 30, restorePreview: true,
@@ -108,11 +108,12 @@
     if (prefs.bottomBarStyle === "soft") prefs.bottomBarStyle = "box";
     if (["icon", "icons-only", "pill"].includes(prefs.bottomBarStyle)) prefs.bottomBarStyle = "box";
     if (!["box", "icon-color", "underline"].includes(prefs.bottomBarStyle)) prefs.bottomBarStyle = prefsDefaults.bottomBarStyle;
-    if (!["round", "sharp"].includes(prefs.bottomBarCorners)) prefs.bottomBarCorners = prefsDefaults.bottomBarCorners;
+    if (!["auto", "low", "minimum", "off"].includes(prefs.libraryMemory)) prefs.libraryMemory = prefsDefaults.libraryMemory;
+    prefs.bottomBarCorners = "sharp"; // no longer a setting: always sharp on every device
     if (!["icons-labels", "icons-only"].includes(prefs.bottomBarLabels)) prefs.bottomBarLabels = prefsDefaults.bottomBarLabels;
     prefs.showSidebar = prefs.showSidebar !== false;
     prefs.showScrollbars = prefs.showScrollbars === true;
-    if (prefs.bottomBarBackground === "solid") prefs.bottomBarTransparency = 100;
+    if (prefs.bottomBarBackground !== "transparent") prefs.bottomBarTransparency = 100;
     prefs.navIcons = { ...prefsDefaults.navIcons, ...(prefs.navIcons || {}) };
     // "Bookmark" was the old default icon for Explore. It reads as Saved/Favorites,
     // so migrate only pre-v4 defaults while preserving icons the user chose later.
@@ -135,6 +136,10 @@
   }
   let items = Array.isArray(stored.items) ? stored.items : [];
   let libraryLoading = true;
+  // Quick setup wizard state (see pages/setup.js).
+  const SETUP_DONE_KEY = `${(window.SplitAppBackend?.storageKey || `splitapp_${config.key}_v1`)}_setup_done`;
+  const setupState = { mode: "", step: 0, query: "", rows: [], loading: false, error: "", selected: new Map(), picks: [new Map(), new Map(), new Map(), new Map()] };
+  let setupStarted = false, setupFromFavorites = false, setupRequest = 0, setupSearchTimer = 0; const setupTrending = {};
   let history = Array.isArray(stored.history) ? stored.history : [];
   const [initialHashPath, initialHashQuery = ""] = location.hash.slice(1).split("?");
   const initialRoute = initialHashPath.split("/");
@@ -147,8 +152,7 @@
   let settingsParam = initialRoute[0] === "settings" ? new URLSearchParams(initialHashQuery).get("id") || "" : "", settingsFrom = "", settingsOrigin = "", lastOutsidePage = "", renderedSettingsGroup;
   let statsLimits = { rated: 10, quick: 8 };
   // Statistics: Overall board or the Detailed play-time breakdown; remembered between launches.
-  const statsViewStore = `${config.key}_stats_view`;
-  let statsView = (() => { try { return localStorage.getItem(statsViewStore) === "detailed" ? "detailed" : "overall"; } catch (_) { return "overall"; } })();
+  let statsView = "overall"; // Statistics always opens on Overall; Detailed is only kept while you stay on the page
   let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, statsRange = "week", statsActivityDate = "";
   let metadataSourceFilter = "all";
   let entryDraftId = null, addReturnPage = "games";
@@ -442,7 +446,9 @@
       for (let step = 0; step <= 20 && Math.min(...surfaces.map(surface => contrast(color, surface))) < 4.5; step++) color = color.map((v, i) => Math.round(v + (target[i] - v) * .12));
       return `rgb(${color.join(",")})`;
     };
-    const accentRgb = toRgb(prefs.mainColor || "#6355f8");
+    const chosenAccent = prefs.mainColor || "#6355f8";
+    const effectiveAccent = chosenAccent; // the chosen accent is used as-is on every theme (icons and tabs stay bright, like ScreenMark)
+    const accentRgb = toRgb(chosenAccent);
     const accentForeground = contrast([255, 255, 255], accentRgb) >= contrast([17, 24, 39], accentRgb) ? "#fff" : "#111827";
     document.body.style.setProperty("--accent-foreground", accentForeground);
     document.body.style.setProperty("--accent-text", readable(prefs.mainColor || "#6355f8"));
@@ -478,7 +484,7 @@
     document.body.dataset.oneHanded = prefs.oneHandedMode || "off";
     document.body.dataset.tabletColumns = String(prefs.tabletTwoColumn !== false);
     document.body.dataset.barStyle = prefs.bottomBarStyle;
-    document.body.dataset.barCorners = prefs.bottomBarCorners;
+    document.body.dataset.barCorners = "sharp";
     document.body.dataset.barLabels = prefs.bottomBarLabels;
     document.body.dataset.sidebar = prefs.showSidebar ? "shown" : "hidden";
     document.documentElement.dataset.showScrollbars = prefs.showScrollbars === true ? "true" : "false";
@@ -488,9 +494,9 @@
     window.SplitAppDates?.setFormat(prefs.dateFormat); window.SplitAppBackend?.setImageStorage?.(prefs.imageStorage);
     $("#bottom-bar").dataset.bg = prefs.bottomBarBackground;
     document.body.dataset.barBackground = prefs.bottomBarBackground;
-    document.body.style.setProperty("--accent", prefs.mainColor || "#6355f8");
+    document.body.style.setProperty("--accent", effectiveAccent);
     // ScreenMark page system tokens (styles/demo-pages.css) follow the chosen accent.
-    { const accent = prefs.mainColor || "#6355f8";
+    { const accent = effectiveAccent;
       document.body.style.setProperty("--legacy-accent", accent);
       document.body.style.setProperty("--d-gold", accent);
       document.body.style.setProperty("--d-gold-fg", accentForeground);
@@ -599,6 +605,7 @@
     if (page === "details" && nextPage !== "details") detailStack = [];
     if (page === "details" && nextPage !== "details") { detailRequest++; detailLoading = false; }
     page = nextPage in titles ? nextPage : "games";
+    if (page !== "statistics") statsView = "overall";
     statsSubpage = page === "statistics" && statsSections.includes(nextSection) ? normalizeStatsSection(nextSection) : "";
     if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverSubmitted = ""; discoverRequestId++; discoverCache = null; }
     if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
@@ -679,7 +686,7 @@
     if (fullLogs.logcat && settingsGroup === "logcat") logEntries = mergeLogLists(fullLogs.logcat, logEntries);
     if (fullLogs.history && settingsGroup === "history") changeLog = mergeLogLists(fullLogs.history, changeLog);
     const libraryStatus = page === "library" ? new URLSearchParams(location.hash.split("?")[1] || "").get("status") || "" : "";
-    return { statsView, gamesTab, gamesView, libraryState, libraryStatus, libraryLoading, logQuery, logFrom, logTo, changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, syncShown, reviewShown, syncBackHref, reviewItems: page === "sync" ? items.filter(item => item.matchReview?.length).map(item => ({ ...item, matchReview: item.matchReview.map(flag => ({ ...flag, name: window.SplitAppSources?.list?.().find(source => source.key === flag.key)?.name || flag.key })) })) : [], config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailStackSize: detailStack.length, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { setup: setupState, statsView, gamesTab, gamesView, libraryState, libraryStatus, libraryLoading, logQuery, logFrom, logTo, changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, syncShown, reviewShown, syncBackHref, reviewItems: page === "sync" ? items.filter(item => item.matchReview?.length).map(item => ({ ...item, matchReview: item.matchReview.map(flag => ({ ...flag, name: window.SplitAppSources?.list?.().find(source => source.key === flag.key)?.name || flag.key })) })) : [], config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailStackSize: detailStack.length, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
@@ -844,9 +851,8 @@
   // Bounded session cache: past the limit, the oldest poster URLs that are not on screen are released (the poster blob stays in
   // the database and is re-read in a moment if it scrolls back), so memory stays flat however far you scroll.
   function trimThumbCache() {
-    const configured = Number(prefs.imageCacheMaxEntries);
-    const maximum = configured === 0 ? Infinity : Math.max(100, configured || 250);
-    const keep = Number.isFinite(maximum) ? Math.max(50, Math.floor(maximum * .67)) : Infinity;
+    // Session cache size follows Settings → Memory (poster images kept ready); the saved thumbnail cache has its own limit in Storage.
+    const { max: maximum, keep } = ({ auto: { max: 900, keep: 600 }, low: { max: 400, keep: 250 }, minimum: { max: 150, keep: 100 }, off: { max: 1500, keep: 1000 } }[prefs.libraryMemory] || { max: 900, keep: 600 });
     if (thumbUrlCache.size <= maximum) return;
     const live = new Set([...document.images].map(image => image.currentSrc || image.src));
     for (const [cacheKey, url] of thumbUrlCache) {
@@ -1274,10 +1280,12 @@
       renderedRoute = route;
     }
     content.querySelectorAll("[data-timeline-cache-object-url]").forEach(image => URL.revokeObjectURL(image.dataset.timelineCacheObjectUrl));
+    if (favoritesNeedSetup()) { setupState.mode = "favorites"; setupFromFavorites = true; setupStarted = false; page = "setup"; historyPush(true); }
     const context = pageContext();
     if (page === "dashboard") context.dashboardSortedItems = dashboardSortedItems(context);
     const keepScrollY = preservePageState && (page === "dashboard" || page === "sync") ? window.scrollY : null;
     content.innerHTML = window.SplitAppPages[page](context);
+    if (page === "setup" && !setupStarted) beginSetup(); else if (page !== "setup") setupStarted = false;
     if (selectMode) { if (page !== "dashboard") exitSelectMode(); else applySelectionUI(); }
     if (keepScrollY) window.scrollTo({ top: keepScrollY, behavior: "auto" });
     if (topbarActions) window.lucide?.createIcons({ root: topbarActions, attrs: { "aria-hidden": "true" } });
@@ -1658,19 +1666,6 @@
     if (!blob) return null;
     if (maxWidth && window.createImageBitmap) { try { return await createImageBitmap(blob, { resizeWidth: maxWidth, resizeQuality: "medium" }); } catch (_) {} }
     const objectUrl = URL.createObjectURL(blob); const img = await load(objectUrl); setTimeout(() => URL.revokeObjectURL(objectUrl), 30000); return img;
-  }
-  async function openShareGame(id) {
-    const item = itemById(String(id)); if (!item) return;
-    const entry = shareEntry(item);
-    const show = value => Array.isArray(value) ? value.map(show).filter(Boolean).slice(0, 3).join(", ") : value && typeof value === "object" ? show(value.name || value.title || value.label || value.value) : String(value || "").trim();
-    const f = item.facts || {}, cd = item.cachedDetails || {};
-    const fields = (cd.fields || []).filter(x => x && x.label && String(x.value ?? "").trim());
-    const shotUrls = $$("#page-content [data-detail-image-src]").filter(node => /^screenshot/i.test(node.dataset.detailImageLabel || "")).map(node => node.dataset.detailImageSrc).filter(url => /^(https?:|data:)/i.test(url));
-    const languages = (cd.languages || []).map(l => typeof l === "string" ? l : l?.name).filter(Boolean);
-    const tags = (cd.tags || f.tags || []).map(t => typeof t === "string" ? t : t?.name).filter(Boolean);
-    const game = { title: item.title, subtitle: [entry.status, show(f.released || f.releaseDate || cd.releaseDate || item.year)].filter(Boolean).join(" · "), status: entry.status, rating: entry.rating, progressText: entry.progressText, percent: entry.percent, fields, requirements: cd.requirements || null, languages, tags, description: String(cd.description || item.description || item.summary || "").trim(), shotUrls, cover: null };
-    game.coverPromise = shareImageFor(entry).catch(() => null);
-    window.SplitAppShareGame.open(game, { showPopup, closePopup, toast, esc, loadImage: url => shareLoadUrl(url, 720) });
   }
   // Sideways chip rows: fade the edge that still has content and bring the selected chip into view.
   function setupScrollRows(root) {
@@ -2459,6 +2454,114 @@
     if (!startSyncJob([item])) enrichLibraryEntryWithMix(item, result, origin);
     return item;
   }
+  // ---- Quick setup wizard: trending tiles come from Steam + SteamDB, the search box queries HowLongToBeat ----
+  // Empty favorites page: always show the quick-setup style picker until at least one favorite is chosen ("Later" only leaves the page).
+  const favoritesNeedSetup = () => page === "favorites" && !libraryLoading && items.length > 0 && !items.some(item => item.favorite);
+  const setupDone = () => { try { return localStorage.getItem(SETUP_DONE_KEY) === "1"; } catch (_) { return true; } };
+  const markSetupDone = () => { try { localStorage.setItem(SETUP_DONE_KEY, "1"); } catch (_) {} };
+  function openSetupIfFresh() {
+    if (items.length || setupDone() || page === "setup") return false;
+    setupStarted = false; page = "setup"; historyPush(true); return true;
+  }
+  function beginSetup() {
+    setupStarted = true; setupState.step = 0; setupState.query = ""; if (!setupFromFavorites) setupState.mode = ""; setupFromFavorites = false; setupState.picks.forEach(map => map.clear());
+    setupState.selected = setupState.picks[0]; loadSetupRows();
+  }
+  async function loadSetupRows() {
+    const request = ++setupRequest, query = setupState.query.trim(), category = config.categories[0].key;
+    setupState.selected = setupState.picks[setupState.step];
+    const setGrid = () => { const grid = $("#setup-grid"); if (grid && page === "setup") { grid.innerHTML = window.SplitAppSetup.grid(setupState, esc); window.lucide?.createIcons?.({ root: grid, attrs: { "aria-hidden": "true" } }); } };
+    setupState.error = "";
+    if (setupState.mode) {
+      // Favorites picker: list what is already in the library; search filters all of your games (no network).
+      const needle = query.toLocaleLowerCase();
+      setupState.rows = items.filter(item => !item.favorite && (!needle || String(item.title || "").toLocaleLowerCase().includes(needle)))
+        .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")))
+        .map(item => ({ source: "local", providerId: String(item.id), localId: String(item.id), title: item.title, year: item.year, image: item.customCover || item.localThumbnailData || item.localPortraitData || item.image || "" }));
+      setupState.loading = false; setGrid(); return;
+    }
+    if (!query && setupTrending.rows) { setupState.rows = setupTrending.rows; setupState.loading = false; setGrid(); return; }
+    if (prefs.metadataMode === "offline") { setupState.rows = []; setupState.loading = false; setupState.error = "Quick setup needs an internet connection."; setGrid(); return; }
+    setupState.loading = true; setGrid();
+    const settings = { ...detailSettings(), metadataSources: { ...(prefs.metadataSources || {}), steamdb: true, howlongtobeat: true }, bypassSourceHealth: true };
+    try {
+      let rows;
+      if (query) rows = await window.SplitAppDiscovery.searchSource(query, category, settings, "howlongtobeat");
+      else {
+        const sections = await window.SplitAppDiscovery.trending(category, settings, "steamdb");
+        const seen = new Set();
+        rows = (sections || []).flatMap(section => section.items || []).filter(row => { const key = String(row.title || "").toLowerCase(); return key && row.image && !seen.has(key) && seen.add(key); }).slice(0, 60);
+        if (rows.length) setupTrending.rows = rows;
+      }
+      if (request !== setupRequest) return;
+      setupState.rows = (rows || []).slice(0, 60);
+    } catch (error) {
+      if (request !== setupRequest) return;
+      setupState.rows = []; setupState.error = "Could not load games. Check your connection and try again.";
+    }
+    setupState.loading = false; setGrid();
+  }
+  async function applySetupPicks() {
+    const created = [], touched = [];
+    window.SplitAppSetup.stepsFor(setupState).forEach((step, index) => {
+      setupState.picks[index].forEach(result => {
+        if (step.status === "favorite") {
+          const own = itemById(result.localId);
+          if (own && !own.favorite) { own.favorite = true; own.updatedAt = Date.now(); touched.push(own.id); }
+          return;
+        }
+        let item = findLibraryMatch(result);
+        if (item) {
+          if (item.status !== step.status) { item.status = step.status; item.updatedAt = Date.now(); history.unshift({ itemId: item.id, title: item.title, action: step.status, status: step.status, at: Date.now() }); touched.push(item.id); }
+          return;
+        }
+        item = { ...result, originKeys: libraryOriginKeys(result), originYear: String(result.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", metadataSource: result.source || result.metadataSource || "", id: crypto.randomUUID(), status: step.status, progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
+        applyMixIdentity(item, result);
+        items.unshift(item); created.push(item);
+        history.unshift({ itemId: item.id, title: item.title, action: step.status, status: step.status, at: Date.now() });
+      });
+    });
+    if (created.length) logChange("added", `Quick setup added ${created.length} ${created.length === 1 ? "game" : "games"}`, created.map(item => item.id));
+    if (created.length || touched.length) await persist({ ids: [...created.map(item => item.id), ...touched] });
+    if (created.length && !startSyncJob(created)) created.forEach(item => enrichLibraryEntryWithMix(item, item, "Quick setup"));
+    return created.length;
+  }
+  async function finishSetup(save = true) {
+    const mode = setupState.mode;
+    const added = save ? await applySetupPicks() : 0;
+    setupStarted = false;
+    if (mode) {
+      setupState.mode = "";
+      if (save && setupState.picks[0].size) { toast(`Added ${setupState.picks[0].size} ${setupState.picks[0].size === 1 ? "favorite" : "favorites"}.`); goto("favorites"); } else goto("profile");
+      return;
+    }
+    markSetupDone();
+    if (added) toast(`Added ${added} ${added === 1 ? "game" : "games"} to your library.`);
+    goto(added > 8 ? "sync" : "games");
+  }
+  document.addEventListener("click", event => {
+    if (page !== "setup") return;
+    const toggle = event.target.closest?.("[data-setup-toggle]");
+    if (toggle) {
+      const row = setupState.rows[Number(toggle.dataset.setupToggle)]; if (!row) return;
+      const key = `${row.source}:${row.providerId}`, picks = setupState.picks[setupState.step];
+      const on = !picks.has(key); if (on) picks.set(key, row); else picks.delete(key);
+      toggle.classList.toggle("selected", on); toggle.setAttribute("aria-pressed", String(on));
+      const next = $("[data-setup-next]"); if (next) next.textContent = window.SplitAppSetup.footerLabel(setupState);
+      return;
+    }
+    if (event.target.closest?.("[data-setup-next]")) {
+      if (setupState.step >= window.SplitAppSetup.stepsFor(setupState).length - 1) { finishSetup(true); return; }
+      setupState.step++; setupState.query = ""; render(); loadSetupRows(); window.scrollTo({ top: 0 }); return;
+    }
+    if (event.target.closest?.("[data-setup-back]")) { if (setupState.step > 0) { setupState.step--; setupState.query = ""; render(); loadSetupRows(); window.scrollTo({ top: 0 }); } return; }
+    if (event.target.closest?.("[data-setup-skip]")) finishSetup(false);
+  });
+  document.addEventListener("input", event => {
+    if (!event.target.matches?.("[data-setup-search]")) return;
+    setupState.query = event.target.value; clearTimeout(setupSearchTimer);
+    setupSearchTimer = setTimeout(loadSetupRows, 350);
+  });
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
   function mergeFacts(previous = {}, next = {}) {
     const merged = { ...previous };
@@ -3087,9 +3190,10 @@
     }
     const ratingChange = key === "ratingFormat" && value !== prefs.ratingFormat ? convertRatingScale(prefs.ratingFormat === "10-point" ? 10 : 5, value === "10-point" ? 10 : 5) : null;
     prefs[key] = value;
+    if (key === "libraryMemory") trimThumbCache();
     if (key === "imageCacheMaxEntries") window.SplitAppIDB?.trimThumbs?.(value).catch(() => {});
     if (ratingChange?.length) persist({ ids: ratingChange });
-    if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
+    if (key === "bottomBarBackground" && value !== "transparent") prefs.bottomBarTransparency = 100;
     persist({ meta: true }); applyPreferences();
     if (key === "backgroundBackups" || key === "backupSchedule") syncBackupSchedule();
     if (key === "ratingFormat") updateRatingOptions();
@@ -3107,7 +3211,7 @@
       prefs.dashboardPlatformFilter = dashboardPlatformFilter;
       persist({ meta: true });
     }
-    if (["dashboardGroupBy", "dashboardSort", "showRatings", "showProgress", "showThumbnails", "dashboardDensity", "dashboardView", "dashboardStatusFilter", "dashboardDefaultCategory", "dashboardDefaultPlatform", "dashboardRowActions", "cardCorners", "oneHandedMode", "tabletTwoColumn", "theme", "ratingFormat", "humanReadableStats", "currencyDisplay", "usdToInrRate"].includes(key)) render();
+    if (["dashboardGroupBy", "dashboardSort", "showRatings", "showProgress", "showThumbnails", "dashboardDensity", "dashboardView", "dashboardStatusFilter", "dashboardDefaultCategory", "dashboardDefaultPlatform", "dashboardRowActions", "cardCorners", "oneHandedMode", "tabletTwoColumn", "theme", "bottomBarBackground", "ratingFormat", "humanReadableStats", "currencyDisplay", "usdToInrRate"].includes(key)) render();
   }
   function openSettingPicker(trigger) {
     let options = [];
@@ -3301,7 +3405,7 @@
     const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const refOf = item => backend?.backupRefOf ? backend.backupRefOf(item) : { id: String(item.id), source: item.metadataSource || "manual", providerId: String(item.providerId || "") };
     const parts = [`{"app":${JSON.stringify(config.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(exportItems.map(refOf))},"items":[`];
-    exportItems.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify({ ...item, backupRef: refOf(item) })));
+    exportItems.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(backend?.backupItem ? backend.backupItem(item) : { ...item, backupRef: refOf(item) })));
     parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
     let blob = new Blob(parts, { type: "application/json" }), name = fileName;
     if (typeof CompressionStream === "function") { try { blob = await new Response(blob.stream().pipeThrough(new CompressionStream("gzip"))).blob(); name = `${fileName}.gz`; } catch (_) {} }
@@ -3352,10 +3456,13 @@
   }
   // Backups may be gzip-compressed (.json.gz): detect by name or magic bytes and inflate with the built-in stream.
   async function readBackupText(file) {
+    // Decide by content, not by name: a plain JSON file called .gz, or a gzip file called .json, both open.
     const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
-    if (!(/\.gz$/i.test(file.name || "") || (head[0] === 0x1f && head[1] === 0x8b))) return file.text();
+    if (!file.size) throw new Error("This backup file is empty.");
+    if (!(head[0] === 0x1f && head[1] === 0x8b)) return file.text();
     if (typeof DecompressionStream !== "function") throw new Error("This device cannot open compressed backups.");
-    return new Response(file.stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    try { return await new Response(file.stream().pipeThrough(new DecompressionStream("gzip"))).text(); }
+    catch (_) { throw new Error("This compressed backup is damaged or incomplete, so it could not be read."); }
   }
   async function importList(file) {
     if (!file) return;
@@ -3814,8 +3921,6 @@
       }
       return;
     }
-    const shareGameBtn = event.target.closest("[data-share-game]");
-    if (shareGameBtn) { openShareGame(shareGameBtn.dataset.shareGame); return; }
     const shareGroup = event.target.closest("[data-share-group]");
     if (shareGroup) {
       const key = shareGroup.dataset.shareGroup, by = prefs.dashboardGroupBy || "status";
@@ -3846,10 +3951,11 @@
     if (event.target.closest("[data-detail-image-next]")) { showDetailImage(detailImagePosition + 1); return; }
     if (event.target.id === "detail-image-modal") { closeDetailImage(); return; }
     const statsViewButton = event.target.closest("[data-stats-view]");
-    if (statsViewButton) { statsView = statsViewButton.dataset.statsView === "detailed" ? "detailed" : "overall"; try { localStorage.setItem(statsViewStore, statsView); } catch (_) {} render(); return; }
+    if (statsViewButton) { statsView = statsViewButton.dataset.statsView === "detailed" ? "detailed" : "overall"; render(); return; }
     const statsFilter = event.target.closest("[data-stats-filter]");
     if (statsFilter) { setPreference("dashboardStatusFilter", statsFilter.dataset.statsFilter); goto("dashboard"); return; }
     if (event.target.closest("[data-mix-search]")) { runMixSearch(); return; }
+    if (event.target.closest("[data-clear-mix]")) { const input = $("#mix-query"); if (input) { input.value = ""; input.focus(); } event.target.closest("[data-clear-mix]").hidden = true; return; }
     const mixAdd = event.target.closest("[data-mix-add]");
     if (mixAdd) { event.stopPropagation(); const row = mixCache?.results?.[Number(mixAdd.dataset.mixAdd)]; if (row) addMixResult(row); return; }
     const mixOpen = event.target.closest("[data-mix-open]");
@@ -4340,7 +4446,7 @@
       return;
     }
     if (page === "settings" && ["metadata-sources", "source-options", "custom-source"].includes(settingsGroup)) refreshSourceRegistry();
-    if (page === "dashboard") syncUnsyncedGames();
+    if (page === "dashboard" || page === "games") syncUnsyncedGames();
     render();
   }
   // Long-press a Home card and drop it on another card to merge them into one Mix game
@@ -4855,7 +4961,7 @@
     const hide = () => { if (ptr) { ptr.classList.remove("show"); ptr.dataset.state = ""; ptr.style.setProperty("--pull", "0px"); } };
     const allowed = target => {
       const settingsSourcePage = page === "settings" && ["metadata-sources", "source-options", "custom-source"].includes(settingsGroup);
-      const refreshable = ["library", "timeline", "statistics", "discover", "details"].includes(page) || settingsSourcePage;
+      const refreshable = ["games", "library", "timeline", "statistics", "discover", "details"].includes(page) || settingsSourcePage;
       return refreshable && !busy && window.scrollY <= 0 && !target.closest?.("input, textarea, select, button, a, label, dialog, [draggable=true], [role=button], [data-detail-image-src], .detail-carousel, .detail-gallery, .discover-rail, .ep-ratings-scroll, .season-pills, .detail-tabs");
     };
     const handleTouchMove = event => move(event.touches[0].clientY, event);
@@ -4918,6 +5024,7 @@
     else if (previousPage !== "add") { entryDraftId = null; addMetadataQuery = ""; } // opening Add from a link/back is a new entry
     const previousDiscoverSource = discoverSource;
     discoverSource = next === "discover" ? new URLSearchParams(hashQuery).get("source") || "" : "";
+    if (next !== "statistics") statsView = "overall";
     page = next; settingsGroup = next === "settings" ? (route[1] === "manage-backups" ? "backups" : route[1] || null) : null;
     if (next === "library") {
       const status = new URLSearchParams(hashQuery).get("status") || "";
@@ -4937,6 +5044,7 @@
     render(); syncPageNavigation(); restoreScroll();
     if (next === "discover" && previousDiscoverSource !== discoverSource && discoverQuery.trim()) submitDiscover();
   }
+  document.addEventListener("input", event => { if (event.target?.id === "mix-query") { const clear = $("[data-clear-mix]"); if (clear) clear.hidden = !event.target.value; } });
   document.addEventListener("keydown", event => { if (event.key === "Enter" && event.target?.id === "mix-query") { event.preventDefault(); runMixSearch(); } });
   window.addEventListener("popstate", event => {
     if (skipNextPop) { skipNextPop = false; const callback = dialogPopCallback; dialogPopCallback = null; callback?.(); event.stopImmediatePropagation(); return; }
@@ -5054,6 +5162,7 @@
       if (storageFolderGate) storageFolderGate.hidden = true;
       detailRestorePending = false;
       redirectHomeIfDetailMissing();
+      openSetupIfFresh();
       applyPreferences(); render(); syncBackupSchedule();
     } catch (error) {
       const message = $("#storage-folder-gate-message");
@@ -5094,6 +5203,7 @@
     if (storageFolderGate) storageFolderGate.hidden = true;
     detailRestorePending = false;
     const redirectedFromMissingDetail = redirectHomeIfDetailMissing();
+    openSetupIfFresh();
     applyPreferences(); render(); syncBackupSchedule();
     restoreScroll();
     if (!redirectedFromMissingDetail && page === "details" && detailItemId && !detailPreview) loadDetails();
