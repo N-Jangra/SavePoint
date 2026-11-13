@@ -109,19 +109,23 @@
     const lenOf = list => sumOf(list.filter(item => lengthOf(item) > 0), lengthOf);
     const completedWithLength = inStatus("Completed").filter(item => lengthOf(item) > 0);
     const spent = list => ["Time spent", hoursText(sumOf(list, loggedOf))];
+    const restSpec = (label, list) => ({ label, hours: left(list) });
     const statusTimeSpec = [
-      { status: "Completed", icon: "circle-check", tone: "completed", blurb: "Finished games", stats: list => [spent(list), ["Avg length", completedWithLength.length ? hoursText(lenOf(completedWithLength) / completedWithLength.length) : "—"]] },
-      { status: "Playing", icon: "gamepad-2", tone: "playing", blurb: "In progress right now", stats: list => [spent(list), ["To finish", hoursText(left(list))]] },
-      { status: "On Hold", icon: "pause-circle", tone: "on-hold", blurb: "Paused for later", stats: list => [spent(list), ["Time needed", hoursText(left(list))]] },
-      { status: "Backlog", icon: "bookmark", tone: "backlog", blurb: "Not started yet", stats: list => [spent(list), ["Time needed", hoursText(left(list))]] },
-      { status: "Dropped", icon: "circle-minus", tone: "dropped", blurb: "Stopped early — time saved", stats: list => [spent(list), ["Time saved", hoursText(left(list))]] },
-      { status: "Upcoming", icon: "calendar-clock", tone: "upcoming", blurb: "Not released yet", stats: list => [spent(list), ["Time needed", hoursText(left(list))]] }
+      { status: "Completed", icon: "circle-check", tone: "completed", blurb: "Finished games", rest: () => ({ label: "Avg length", text: completedWithLength.length ? hoursText(lenOf(completedWithLength) / completedWithLength.length) : "—", full: true }) },
+      { status: "Playing", icon: "gamepad-2", tone: "playing", blurb: "In progress right now", rest: list => restSpec("To finish", list) },
+      { status: "On Hold", icon: "pause-circle", tone: "on-hold", blurb: "Paused for later", rest: list => restSpec("Time needed", list) },
+      { status: "Backlog", icon: "bookmark", tone: "backlog", blurb: "Not started yet", rest: list => restSpec("Time needed", list) },
+      { status: "Dropped", icon: "circle-minus", tone: "dropped", blurb: "Stopped early — time saved", rest: list => restSpec("Time saved", list) },
+      { status: "Upcoming", icon: "calendar-clock", tone: "upcoming", blurb: "Not released yet", rest: list => restSpec("Time needed", list) }
     ];
     const activeSpecs = statusTimeSpec.filter(spec => inStatus(spec.status).length || ["Completed", "Playing", "On Hold", "Backlog", "Dropped"].includes(spec.status));
     const statusRows = activeSpecs.map(spec => {
       const list = inStatus(spec.status);
-      const cells = [...spec.stats(list), ["Value", formatMoney(sumOf(list, displayPrice))]].map(([label, text]) => `<div><small>${esc(label)}</small><strong>${esc(text)}</strong></div>`).join("");
-      return `<section class="stats-status-card" data-tone="${spec.tone}"><header><span class="stats-status-card-icon"><i data-lucide="${spec.icon}" aria-hidden="true"></i></span><div><h4>${esc(spec.status)}</h4><small>${esc(spec.blurb)}</small></div><b>${plural(list.length, "game")}</b></header><div class="stats-status-card-grid">${cells}</div></section>`;
+      const spentHours = sumOf(list, loggedOf), rest = spec.rest(list);
+      const restText = rest.text || hoursText(rest.hours), total = spentHours + (rest.hours || 0);
+      const percent = rest.full ? (spentHours > 0 || list.length ? 100 : 0) : total > 0 ? Math.round(spentHours / total * 100) : 0;
+      const meter = `<div class="stats-status-meter"><div class="stats-status-meter-track" role="img" aria-label="${esc(hoursText(spentHours))} ${esc(rest.label.toLowerCase())} ${esc(restText)}"><i style="width:${percent}%"></i></div><div class="stats-status-meter-labels"><span><small>Time spent</small><b>${esc(hoursText(spentHours))}</b></span><span><small>${esc(rest.label)}</small><b>${esc(restText)}</b></span></div></div>`;
+      return `<section class="stats-status-card" data-tone="${spec.tone}"><header><span class="stats-status-card-icon"><i data-lucide="${spec.icon}" aria-hidden="true"></i></span><div><h4>${esc(spec.status)}</h4><small>${esc(spec.blurb)}</small></div><span class="stats-status-pills"><b>${plural(list.length, "game")}</b><b class="is-value">${esc(formatMoney(sumOf(list, displayPrice)))}</b></span></header>${meter}</section>`;
     }).join("");
     const savedHours = left(inStatus("Dropped"));
     const toGo = remainingHours;
@@ -133,7 +137,7 @@
       <div class="stats-status-bar" role="img" aria-label="Games by status">${barSegments}</div>
       <div class="stats-pace-row"><span>Est. pace at <b>1 h / day</b></span><b>${esc(paceText)}</b></div>
     </article>
-    <div class="stats-section-label"><span>BY STATUS</span><em>${activeSpecs.length} groups · ${items.length} games</em></div>
+    <div class="stats-section-label"><span>BY STATUS</span></div>
     <article class="stats-panel stats-status-list">${statusRows}</article>
 `;
     const perHour = loggedHours > 0 && libraryValue > 0 ? libraryValue / loggedHours : 0;
@@ -227,7 +231,7 @@
       overviewTile({ destination: "statistics/playtime", label: "Playtime logged", icon: "clock-3", value: hoursText(loggedHours), caption: `${known.length} of ${total} games have length data`, percent: coverage(known.length), tone: "info" }),
       overviewTile({ destination: "statistics/ratings", label: "Average rating", icon: "star", value: `${avgRating}${rated.length ? `<small> / ${ratingMax}</small>` : ""}`, caption: `${rated.length} of ${total} games rated`, percent: rated.length ? Math.min(100, Number(avgRating) / ratingMax * 100) : 0, tone: "warning" })
     ].join("");
-    const overview = `<section class="stats-overview"><header class="detail-page-heading analytics-page-heading">${statisticsBack}<strong>Statistics</strong><span class="stats-subpage-badge">${total} GAMES</span></header><div class="stats-overview-hero"><span class="stats-eyebrow">YOUR COLLECTION</span><h1>Collection overview</h1><p>A clear view of your playtime, collection, activity, and ratings.</p></div><div class="stats-overview-grid">${overviewTiles}</div><section class="stats-section stats-explore-section"><div class="stats-section-heading"><div><span class="stats-eyebrow">DETAILS</span><h2>Explore your stats</h2><p>Open a section for a closer look.</p></div></div><div class="stats-destinations">${destinations.map(([key, icon, title, description, value]) => `<button type="button" class="stats-destination" data-go="statistics/${key}"><span class="stats-destination-icon"><i data-lucide="${icon}" aria-hidden="true"></i></span><span class="stats-destination-copy"><strong>${title}</strong><small>${description}</small></span><span class="stats-destination-value">${value}</span><i class="stats-destination-arrow" data-lucide="chevron-right" aria-hidden="true"></i></button>`).join("")}</div></section></section>`;
+    const overview = `<section class="stats-overview"><header class="detail-page-heading analytics-page-heading">${statisticsBack}<strong>Statistics</strong><span class="detail-heading-spacer" aria-hidden="true"></span></header><div class="stats-overview-hero"><span class="stats-eyebrow">YOUR COLLECTION</span><h1>Collection overview</h1><p>A clear view of your playtime, collection, activity, and ratings.</p></div><div class="stats-overview-grid">${overviewTiles}</div><section class="stats-section stats-explore-section"><div class="stats-section-heading"><div><span class="stats-eyebrow">DETAILS</span><h2>Explore your stats</h2><p>Open a section for a closer look.</p></div></div><div class="stats-destinations">${destinations.map(([key, icon, title, description, value]) => `<button type="button" class="stats-destination" data-go="statistics/${key}"><span class="stats-destination-icon"><i data-lucide="${icon}" aria-hidden="true"></i></span><span class="stats-destination-copy"><strong>${title}</strong><small>${description}</small></span><span class="stats-destination-value">${value}</span><i class="stats-destination-arrow" data-lucide="chevron-right" aria-hidden="true"></i></button>`).join("")}</div></section></section>`;
     const pages = {
       playtime: { title: "Play time", subtitle: "See time logged, estimated game lengths, and what remains.", badge: `${known.length}/${total} DATA`, body: `${timePanel}` },
       library: { title: "Library breakdown", subtitle: "Understand the status of every game you’re tracking.", badge: `${total} GAMES`, body: detailedLibraryPanel },

@@ -67,7 +67,7 @@
     const toggle = `<nav class="stats-media-tabs" role="tablist" aria-label="Statistics view"><button type="button" role="tab" aria-selected="${!detailedView}" class="${detailedView ? "" : "active"}" data-stats-view="overall">Overall</button><button type="button" role="tab" aria-selected="${detailedView}" class="${detailedView ? "active" : ""}" data-stats-view="detailed">Detailed</button></nav>`;
     // Detailed = the play-time page (hours by game, split by status); its own back header is replaced by the shared one above.
     const detailed = (window.SplitAppPages.statisticsDetailed?.(context) || "").replace(/<header class="detail-page-heading analytics-page-heading">[\s\S]*?<\/header>/, "");
-    const heading = `<header class="detail-page-heading analytics-page-heading"><button type="button" class="detail-back" data-go="profile"><span aria-hidden="true">‹</span> Profile</button><strong>Statistics</strong><span class="stats-subpage-badge">${total} ${total === 1 ? "GAME" : "GAMES"}</span></header>`;
+    const heading = `<header class="detail-page-heading analytics-page-heading"><button type="button" class="detail-back" data-go="profile"><span aria-hidden="true">‹</span> Profile</button><strong>Statistics</strong><span class="detail-heading-spacer" aria-hidden="true"></span></header>`;
     return `<section class="stats-page"><section class="stats-overview">${heading}${toggle}${total ? (detailedView ? `<div class="stats-detailed-view">${detailed}</div>` : board) : ""}</section>${empty}</section>`;
   };
 
