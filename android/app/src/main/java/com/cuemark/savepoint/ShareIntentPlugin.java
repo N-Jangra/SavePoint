@@ -40,6 +40,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -49,6 +50,102 @@ import java.util.concurrent.Executors;
 public class ShareIntentPlugin extends Plugin {
     private final ExecutorService imageExecutor = Executors.newSingleThreadExecutor();
     private static final String DOWNLOAD_CHANNEL_ID = "image-downloads";
+    private static final String EXPORT_CHANNEL_ID = "data-exports";
+    private final ConcurrentHashMap<String, Integer> exportNotificationIds = new ConcurrentHashMap<>();
+
+    @PluginMethod
+    public void requestExportNotificationPermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || getPermissionState("notifications") == PermissionState.GRANTED) {
+            JSObject result = new JSObject(); result.put("granted", notificationsAllowed()); call.resolve(result);
+            return;
+        }
+        requestPermissionForAlias("notifications", call, "exportNotificationPermissionOnlyResult");
+    }
+
+    @PermissionCallback
+    private void exportNotificationPermissionOnlyResult(PluginCall call) {
+        JSObject result = new JSObject(); result.put("granted", notificationsAllowed()); call.resolve(result);
+    }
+
+    @PluginMethod
+    public void startExportNotification(PluginCall call) {
+        publishExportProgress(call);
+    }
+
+    @PluginMethod
+    public void updateExportNotification(PluginCall call) {
+        publishExportProgress(call);
+    }
+
+    @PluginMethod
+    public void finishExportNotification(PluginCall call) {
+        String id = call.getString("id", "export");
+        String filename = call.getString("filename", "backup file");
+        boolean success = Boolean.TRUE.equals(call.getBoolean("success", true));
+        boolean shared = Boolean.TRUE.equals(call.getBoolean("shared", false));
+        boolean encrypted = Boolean.TRUE.equals(call.getBoolean("encrypted", false));
+        String detail = call.getString("message", "");
+        int notificationId = exportNotificationIds.computeIfAbsent(id, key -> 410000 + (key.hashCode() & 0x0fffffff));
+        try {
+            if (notificationsAllowed()) {
+                ensureExportChannel();
+                String title = success ? (shared ? "Encrypted transfer ready to share" : encrypted ? "Encrypted transfer saved" : "Backup export complete") : (encrypted ? "Encrypted transfer failed" : "Backup export failed");
+                String body = success ? filename + (shared ? " is ready in the share sheet." : " was saved.") : (detail.isEmpty() ? "Could not create " + filename : detail);
+                NotificationCompat.Builder notification = new NotificationCompat.Builder(getContext(), EXPORT_CHANNEL_ID)
+                    .setSmallIcon(success ? android.R.drawable.stat_sys_download_done : android.R.drawable.stat_notify_error)
+                    .setContentTitle(title).setContentText(body).setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                    .setCategory(NotificationCompat.CATEGORY_STATUS).setPriority(NotificationCompat.PRIORITY_LOW)
+                    .setOngoing(false).setOnlyAlertOnce(true).setAutoCancel(true);
+                setExportNotificationIntent(notification);
+                NotificationManagerCompat.from(getContext()).notify(notificationId, notification.build());
+            }
+        } catch (Exception ignored) {}
+        exportNotificationIds.remove(id);
+        JSObject result = new JSObject(); result.put("visible", notificationsAllowed()); call.resolve(result);
+    }
+
+    private void publishExportProgress(PluginCall call) {
+        String id = call.getString("id", "export");
+        String filename = call.getString("filename", "backup file");
+        boolean encrypted = Boolean.TRUE.equals(call.getBoolean("encrypted", false));
+        int total = Math.max(0, call.getInt("total", 0));
+        int done = Math.max(0, Math.min(total, call.getInt("done", 0)));
+        int notificationId = exportNotificationIds.computeIfAbsent(id, key -> 410000 + (key.hashCode() & 0x0fffffff));
+        try {
+            if (notificationsAllowed()) {
+                ensureExportChannel();
+                NotificationCompat.Builder notification = new NotificationCompat.Builder(getContext(), EXPORT_CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.stat_sys_download)
+                    .setContentTitle(encrypted ? "Creating encrypted transfer" : "Exporting backup")
+                    .setContentText(total > 0 ? filename + " · " + Math.round(done * 100f / total) + "%" : filename)
+                    .setProgress(total, done, total == 0)
+                    .setCategory(NotificationCompat.CATEGORY_PROGRESS).setPriority(NotificationCompat.PRIORITY_LOW)
+                    .setOngoing(true).setOnlyAlertOnce(true).setAutoCancel(false);
+                setExportNotificationIntent(notification);
+                NotificationManagerCompat.from(getContext()).notify(notificationId, notification.build());
+            }
+        } catch (Exception ignored) {}
+        JSObject result = new JSObject(); result.put("visible", notificationsAllowed()); call.resolve(result);
+    }
+
+    private boolean notificationsAllowed() {
+        return (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || getPermissionState("notifications") == PermissionState.GRANTED)
+            && NotificationManagerCompat.from(getContext()).areNotificationsEnabled();
+    }
+
+    private void ensureExportChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.createNotificationChannel(new NotificationChannel(EXPORT_CHANNEL_ID, "Backups and transfers", NotificationManager.IMPORTANCE_LOW));
+    }
+
+    private void setExportNotificationIntent(NotificationCompat.Builder notification) {
+        Intent launch = getContext().getPackageManager().getLaunchIntentForPackage(getContext().getPackageName());
+        if (launch == null) return;
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
+        notification.setContentIntent(PendingIntent.getActivity(getContext(), 410001, launch, flags));
+    }
 
     @PluginMethod
     public void getInitialShare(PluginCall call) {
@@ -106,6 +203,11 @@ public class ShareIntentPlugin extends Plugin {
                     if (chunkOut != null) { try { chunkOut.close(); } catch (Exception ignored) {} chunkOut = null; }
                     File directory = new File(getContext().getCacheDir(), "shared-images");
                     if (!directory.exists() && !directory.mkdirs()) throw new Exception("Could not prepare the file.");
+                    File[] cachedFiles = directory.listFiles();
+                    if (cachedFiles != null) {
+                        long expiredBefore = System.currentTimeMillis() - 24L * 60 * 60 * 1000;
+                        for (File cachedFile : cachedFiles) if (cachedFile.lastModified() < expiredBefore) cachedFile.delete();
+                    }
                     chunkFile = new File(directory, UUID.randomUUID() + "-" + safeName + "." + ext);
                     chunkOut = new FileOutputStream(chunkFile);
                 }
@@ -141,8 +243,7 @@ public class ShareIntentPlugin extends Plugin {
                     chunkOut.close(); chunkOut = null;
                     source = chunkFile;
                 }
-                byte[] bytes = java.nio.file.Files.readAllBytes(source.toPath());
-                String location = saveDownload(safeName, new ImageData(bytes, mime));
+                String location = saveDownload(safeName, mime, source);
                 String actualName = location.substring(location.lastIndexOf('/') + 1);
                 boolean notified = postDownloadNotification(actualName, location);
                 JSObject result = new JSObject(); result.put("location", location); result.put("notification", notified);
@@ -169,8 +270,10 @@ public class ShareIntentPlugin extends Plugin {
                         send.setType(mime);
                         send.putExtra(Intent.EXTRA_STREAM, uri);
                         send.putExtra(Intent.EXTRA_SUBJECT, title);
+                        send.setClipData(ClipData.newUri(getContext().getContentResolver(), title, uri));
                         send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         Intent chooser = Intent.createChooser(send, "Share");
+                        chooser.setClipData(ClipData.newUri(getContext().getContentResolver(), title, uri));
                         chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         getActivity().startActivity(chooser);
                         call.resolve();
@@ -203,8 +306,10 @@ public class ShareIntentPlugin extends Plugin {
                         send.setType(mime);
                         send.putExtra(Intent.EXTRA_STREAM, uri);
                         send.putExtra(Intent.EXTRA_SUBJECT, title);
+                send.setClipData(ClipData.newUri(getContext().getContentResolver(), title, uri));
                         send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         Intent chooser = Intent.createChooser(send, "Share");
+                chooser.setClipData(ClipData.newUri(getContext().getContentResolver(), title, uri));
                         chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         getActivity().startActivity(chooser);
                         call.resolve();
@@ -249,8 +354,12 @@ public class ShareIntentPlugin extends Plugin {
                 send.setType("image/*");
                 if (uris.size() == 1) send.putExtra(Intent.EXTRA_STREAM, uris.get(0)); else send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
                 send.putExtra(Intent.EXTRA_SUBJECT, title);
+                ClipData clipData = ClipData.newUri(getContext().getContentResolver(), title, uris.get(0));
+                for (int index = 1; index < uris.size(); index++) clipData.addItem(new ClipData.Item(uris.get(index)));
+                send.setClipData(clipData);
                 send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 Intent chooser = Intent.createChooser(send, "Share images");
+                chooser.setClipData(clipData);
                 chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 getActivity().startActivity(chooser);
                 JSObject result = new JSObject(); result.put("shared", uris.size()); call.resolve(result);
@@ -308,8 +417,10 @@ public class ShareIntentPlugin extends Plugin {
                             send.setType(image.mimeType);
                             send.putExtra(Intent.EXTRA_STREAM, uri);
                             send.putExtra(Intent.EXTRA_SUBJECT, title);
+                            send.setClipData(ClipData.newUri(getContext().getContentResolver(), title, uri));
                             send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                             Intent chooser = Intent.createChooser(send, "Share image");
+                            chooser.setClipData(ClipData.newUri(getContext().getContentResolver(), title, uri));
                             chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                             getActivity().startActivity(chooser);
                             JSObject result = new JSObject(); result.put("shared", true); call.resolve(result);
@@ -408,6 +519,50 @@ public class ShareIntentPlugin extends Plugin {
         File target = new File(directory, filename);
         try (FileOutputStream output = new FileOutputStream(target)) { output.write(image.bytes); }
         return target.getAbsolutePath();
+    }
+
+    /** Copies chunked exports to Downloads without loading the entire file into heap memory. */
+    private String saveDownload(String baseName, String mimeType, File source) throws Exception {
+        String filename = baseName.replaceAll("\\.[A-Za-z0-9]{2,5}$", "") + "." + extension(mimeType);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+            values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
+            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+            values.put(MediaStore.Downloads.IS_PENDING, 1);
+            Uri uri = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) throw new Exception("Could not save the file to Downloads.");
+            try (InputStream input = new java.io.FileInputStream(source);
+                 OutputStream output = getContext().getContentResolver().openOutputStream(uri)) {
+                if (output == null) throw new Exception("Could not write the downloaded file.");
+                copy(input, output);
+            } catch (Exception error) {
+                getContext().getContentResolver().delete(uri, null, null);
+                throw error;
+            }
+            ContentValues ready = new ContentValues(); ready.put(MediaStore.Downloads.IS_PENDING, 0);
+            if (getContext().getContentResolver().update(uri, ready, null, null) <= 0) {
+                getContext().getContentResolver().delete(uri, null, null);
+                throw new Exception("Could not finish saving the file to Downloads.");
+            }
+            return "Downloads/" + filename;
+        }
+        File directory = getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        if (directory == null) throw new Exception("Downloads storage is unavailable.");
+        if (!directory.exists() && !directory.mkdirs()) throw new Exception("Could not prepare Downloads.");
+        File target = new File(directory, filename);
+        try (InputStream input = new java.io.FileInputStream(source); OutputStream output = new FileOutputStream(target)) {
+            copy(input, output);
+        }
+        return target.getAbsolutePath();
+    }
+
+    private long copy(InputStream input, OutputStream output) throws Exception {
+        byte[] buffer = new byte[64 * 1024];
+        long total = 0;
+        int count;
+        while ((count = input.read(buffer)) != -1) { output.write(buffer, 0, count); total += count; }
+        return total;
     }
 
     private boolean postDownloadNotification(String filename, String location) {

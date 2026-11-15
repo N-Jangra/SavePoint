@@ -266,6 +266,15 @@
   }
   root.SplitAppIDB = Object.freeze({
     open: () => call("open").then(() => undefined),
+    // Ask Chromium to mark this origin's IndexedDB as persistent. This is
+    // best-effort: user agents may deny it, but it prevents normal storage
+    // pressure cleanup from treating the library as disposable cache data.
+    persistStorage: async () => {
+      try { return Boolean(await root.navigator?.storage?.persist?.()); } catch (_) { return false; }
+    },
+    estimateStorage: async () => {
+      try { return await root.navigator?.storage?.estimate?.() || null; } catch (_) { return null; }
+    },
     loadAll: options => call("loadAll", options),
     save: data => call("save", data),
     saveSome: data => call("saveSome", data),

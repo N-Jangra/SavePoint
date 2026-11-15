@@ -1,6 +1,7 @@
 package com.cuemark.savepoint;
 
 import android.content.Context;
+import android.database.Cursor;
 import android.net.Uri;
 import android.provider.DocumentsContract;
 
@@ -11,6 +12,8 @@ import androidx.work.WorkerParameters;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.Locale;
 
@@ -41,11 +44,57 @@ public class EncryptedBackupWorker extends Worker {
                 if (output == null) return Result.retry();
                 output.write(packedState.getBytes(StandardCharsets.UTF_8));
             }
+            int retention = Math.max(3, Math.min(20, context.getSharedPreferences("savepoint_backup_location", Context.MODE_PRIVATE).getInt("retention", 10)));
+            pruneBackups(context, treeUri, root, retention);
             return Result.success();
         } catch (SecurityException e) {
             return Result.failure();
         } catch (Exception e) {
             return Result.retry();
+        }
+    }
+
+    private static void pruneBackups(Context context, Uri treeUri, Uri root, int retention) {
+        try {
+            Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                treeUri, DocumentsContract.getDocumentId(root)
+            );
+            ArrayList<BackupFile> backups = new ArrayList<>();
+            String[] columns = {
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED
+            };
+            try (Cursor cursor = context.getContentResolver().query(childrenUri, columns, null, null, null)) {
+                if (cursor == null) return;
+                int idColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+                int nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+                int modifiedColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
+                while (cursor.moveToNext()) {
+                    String name = cursor.getString(nameColumn);
+                    if (name == null || !name.startsWith("savepoint_background_") || !name.endsWith(".sqdb")) continue;
+                    backups.add(new BackupFile(cursor.getString(idColumn), name, cursor.getLong(modifiedColumn)));
+                }
+            }
+            backups.sort(Comparator.comparingLong((BackupFile file) -> file.modified).reversed().thenComparing(file -> file.name, Comparator.reverseOrder()));
+            for (int i = retention; i < backups.size(); i++) {
+                Uri file = DocumentsContract.buildDocumentUriUsingTree(treeUri, backups.get(i).documentId);
+                DocumentsContract.deleteDocument(context.getContentResolver(), file);
+            }
+        } catch (Exception ignored) {
+            // A completed backup remains successful when the provider cannot list or delete files.
+        }
+    }
+
+    private static final class BackupFile {
+        final String documentId;
+        final String name;
+        final long modified;
+
+        BackupFile(String documentId, String name, long modified) {
+            this.documentId = documentId;
+            this.name = name;
+            this.modified = modified;
         }
     }
 }

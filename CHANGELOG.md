@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.1.9] — 2026-11-15
+
+### Fixed
+
+- User-cancelled Android storage-folder selection is logged as a warning rather than an application error, including matching entries from older log history.
+- Encrypted mirror sync retains deletion markers until replacement records are published, preventing deleted data from reappearing after an interrupted write.
+- Large chunked exports stream from their temporary file into Downloads instead of loading the complete file into memory.
+- Daily encrypted background backups now honor the selected retention count and remove older `.sqdb` files.
+
+### Changed
+
+- Encrypted transfer import and export use an in-app password dialog supported by Android WebView instead of the unsupported browser `prompt()` API.
+- Request Android notification permission before opening the destination picker so library export progress appears as soon as writing begins. Show a clear message if notifications are disabled.
+- Removed the What’s new and Help & FAQ pages and their App Info links. Version changes no longer navigate to What’s new.
+- Sync page matches ScreenMark’s empty state and offers Pause/Resume, Clear sync while work is active, and icon-only failed-row retries. Unfinished sync progress is restored paused after an app restart; active game lookups finish before the queue stops.
+- Bump Android and app version metadata for this release.
+
+## [0.1.8] — 2026-11-15
+
+### Added
+
+- Added password-protected `.sqx` transfer exports from Settings → Backups. Android writes compressed, independently authenticated AES-GCM chunks using a PBKDF2-derived password key; imports request the password and decrypt/decompress as streams.
+- Transfer files embed saved artwork available from the selected folder or IndexedDB and restore it without relying on the sending device's folder URI. Imports restore backup preferences and activity history along with library entries.
+- Startup makes a best-effort request for persistent IndexedDB storage. Chromium may deny it; Android’s encrypted title mirror provides separate library and metadata recovery.
+- Android backfills the full IndexedDB title list into Keystore-encrypted per-title records under app-specific `Android/data/<package>/files/CueMark/SavePoint/` in bounded background batches; an empty IndexedDB/internal item store can recover from those files.
+
+### Changed
+
+- Status rename and removal now use accessible Save and Remove icons. Android library backups and encrypted transfers post progress and completion notifications when notifications are allowed.
+- Android asks for notification permission before opening the backup destination picker so a granted permission can show export progress from the start of writing.
+- `.sqx` transfers include the full library, source links, saved details, settings, history, and cached artwork from IndexedDB and the selected folder; transfers can be shared directly or sent from a file manager for import on another device.
+- SavePoint exports retain ratings according to the single Include Ratings preference and omit written reviews/notes. Browser JSON exports include saved IndexedDB artwork and stream to the browser Save File picker when supported, with a download fallback; TXT/CSV exports work in browsers too.
+- Clarified that IndexedDB is WebView origin storage, not a visible file under `Android/data`. The separate encrypted app-files mirror survives cache clearing; export a transfer file to move or recover data after uninstall or clear-data.
+- Android can send an encrypted transfer directly to the system share sheet, including nearby sharing and installed file-sharing apps.
+- Large transfer exports now read saved artwork in bounded parallel batches (two reads on low-memory devices, four otherwise) while streaming output. Status manager Hide/Show and Add controls are compact icon buttons with accessible labels.
+
+### Fixed
+
+- Cross-device transfer imports keep source artwork URLs intact and restore embedded images directly into the destination's established IndexedDB caches. Imported image bytes are not retained as large base64 strings on library items.
+- Transfer artwork cache keys use the same path and signature scheme as normal image loading, including when image storage is set to online.
+- Android's import picker accepts password-protected `.sqx` files and other backup MIME types.
+- Share chooser intents now carry explicit `ClipData` URI grants, fixing Android's FileProvider denial when a sharing target opens the encrypted file. Expired temporary share files are pruned from the app cache when a new transfer starts.
+
 ## [0.1.7] — 2026-11-15
 
 ### Added

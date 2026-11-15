@@ -13,11 +13,11 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 | Game details | View and cache provider descriptions, portrait covers, screenshots, tags, links, requirements, playtime estimates, and other available details. Steam trailers play inline in the details page. |
 | Discover | Browse suggestions and search a single catalog or enabled sources together; add games directly to the library. |
 | Mix fetch | Experimental combined search that merges matching metadata from enabled sources into one saved game. A per-game source index keeps every matched source, so syncs never shrink a Mix game. |
-| Library tools | Multi-select on Home, undo toasts, drag-to-merge, Fix match, Change cover, import duplicate detection, and per-game Retry/Ignore, a match review list and a Settings → Metadata Sync page on the Sync page. |
+| Library tools | Multi-select on Home, undo toasts, drag-to-merge, Fix match, Change cover, import duplicate detection, per-game icon Retry/Ignore, match review, and a Sync page with Start, Pause/Resume, and Clear sync controls. Unfinished sync jobs reopen paused after an app restart. |
 | Timeline and statistics | Review status changes by day on the Timeline, and explore a Statistics overview with Play time (split by status: time spent, time saved on dropped games, time left on playing and on-hold games, and money per status), Library breakdown, Activity and Ratings sub-pages (grouped ratings and quick rate). |
 | Sharing | Share a Home group as themed images (choose games per page and how many pages) or as a PDF list; every share can be saved to Downloads or sent through Android's share sheet. |
 | Profile collections | Open All Games, Completed, Favorites, On Hold, or Dropped games, in that order. Favorites has its own page; other collection filters do not include a favorites-only option. Empty status collections offer an Add games card. |
-| Profile and insights | See player level and recent badges on Profile; open What's new. |
+| Profile and insights | See player level and recent badges on Profile. |
 | Statuses and recovery | Add, rename or hide status options in Settings (custom statuses get their own Profile shelf), and restore deleted games for 30 days. |
 | Achievements | Category rows with View all grids, one page per bronze/silver/gold achievement, Medal Kings, Badge Collector and level insignia, and badge sharing as an image. |
 | Quick setup | First-run wizard (completed, to play, playing, on hold, dropped) with Steam + SteamDB trending tiles and HowLongToBeat search; completed picks fill progress from available playtime metadata, and titles already in your library are greyed out and cannot be picked. |
@@ -62,7 +62,7 @@ Navigation adapts to phone, tablet, and desktop widths. On phones it uses the co
 
 ## Data and storage
 
-SavePoint keeps the library on the user's device. Games live in **IndexedDB** (`savepoint_library`, one record per game, written by a data worker) with a device artwork cache; a small startup mirror (preferences and history) stays under `splitapp_savepoint_v1` in `localStorage`; metadata responses can also use browser Cache Storage. Android adds native storage and optional folder-based database/artwork backups. Native encrypted records, the browser mirror, and folder JSON are separate storage layers; **folder and exported JSON/TAR backups are plaintext** unless protected separately.
+SavePoint keeps the working library in **IndexedDB** (`savepoint_library`, one record per game, written by a data worker) with a device artwork cache; a small startup mirror (preferences and history) stays under `splitapp_savepoint_v1` in `localStorage`; metadata responses can also use browser Cache Storage. IndexedDB is WebView origin storage, not a regular file under `Android/data`. Android also keeps Keystore-encrypted recovery records internally and atomically mirrors the full title list under `/sdcard/Android/data/<package>/files/CueMark/SavePoint/` in small background batches; if IndexedDB and the internal records are empty, the app can recover from this mirror. The mirror survives cache clearing, but Android removes it when app data is cleared or the app is uninstalled. Artwork stays in IndexedDB and, when configured, the selected Storage Access Framework folder. Startup makes a best-effort persistent-storage request; the tested Android WebView denied it. The password-protected `.sqx` contains the full library, source links, saved details, ratings, preferences, history, and cached artwork from IndexedDB and the selected folder. Save it through Android's Save As picker, share it directly through Android's share sheet, or send it from a file manager and import it on another device with the password. Android shows export progress and completion notifications when notifications are allowed. Keep an exported transfer for cross-device migration and uninstall recovery. Plain JSON/TAR and selected-folder files are not encrypted.
 
 The core state has three parts:
 
@@ -72,7 +72,7 @@ The core state has three parts:
 | `history` | Activity records used by the Timeline and recent-activity views. |
 | `preferences` | Appearance, navigation, tracking, metadata source settings, credentials, and backup options. |
 
-Import accepts `.json` backups (history is restored for added games, blank fields of existing games are filled in) and `.txt`/`.csv` names lists; it does not restore preferences. Manual exports can leave out ratings and reviews. Save backups before moving or resetting app data. See [storage documentation](docs/storage.md) and [data schema](docs/db-schema.md).
+Import accepts `.json` backups (history is restored for added games, blank fields of existing games are filled in) and `.txt`/`.csv` names lists; it does not restore preferences. Manual exports can leave out ratings; written reviews and notes are excluded. Browser exports read saved artwork through the same IndexedDB-backed pipeline as Android and stream JSON to the browser's Save File picker when available, with a download fallback. Save backups before moving or resetting app data. See [storage documentation](docs/storage.md) and [data schema](docs/db-schema.md).
 
 ## Run the browser preview
 
@@ -101,9 +101,9 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.7` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.9` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
 
-The current 0.1.7 release APK is available at `android/app/build/outputs/apk/release/app-release.apk` after the signed Gradle release build.
+The current 0.1.9 release APK is available at `android/app/build/outputs/apk/release/app-release.apk` after the signed Gradle release build.
 
 ## Repository layout
 
@@ -147,7 +147,7 @@ SavePoint/
 | Property | Value |
 |---|---|
 | Package | `savepoint` |
-| Version | `0.1.7` |
+| Version | `0.1.9` |
 | Capacitor / Android application ID | `com.cuemark.savepoint` |
 | Capacitor web directory | `frontend/` |
 | Browser state key | `splitapp_savepoint_v1` |

@@ -2572,3 +2572,5 @@ body .group-share-btn,body[data-icon-style=inline] .group-share-btn{border:1px s
 .log-filter-body input[type=date] { box-sizing:border-box; width:100%; min-width:0; height:46px; padding:0 14px; border:1px solid var(--line); border-radius:14px; background:var(--surface-2); color:var(--legacy-text,inherit); font:inherit; font-size:.92rem; }
 .log-filter-quick { display:flex; flex-wrap:wrap; gap:8px; }
 .log-filter-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.status-group .status-icon-action { display:inline-grid; place-items:center; width:44px; min-width:44px; height:44px; padding:0; }
+.status-group .status-icon-action svg { width:19px; height:19px; }
