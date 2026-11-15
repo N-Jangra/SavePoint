@@ -782,7 +782,7 @@
     const onLogPage = page === "settings" && (settingsGroup === "logcat" || settingsGroup === "history");
     if (onLogPage) loadFullLog(settingsGroup);
     try { const savedChanges = JSON.parse(localStorage.getItem(changeKey) || "[]"); if (Array.isArray(savedChanges)) changeLog = savedChanges; } catch (_) {}
-    try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
+    try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = normalizeLogRows(savedLogs); } catch (_) {}
     // The saved file may be older (or empty) next to what this device holds locally, e.g. on a phone that stays open for days: show both.
     if (fullLogs.logcat && settingsGroup === "logcat") logEntries = mergeLogLists(fullLogs.logcat, logEntries);
     if (fullLogs.history && settingsGroup === "history") changeLog = mergeLogLists(fullLogs.history, changeLog);
@@ -5070,6 +5070,10 @@
   const fullLogs = { logcat: null, history: null }, fullLogLoading = new Set();
   let logQuery = "", logFrom = "", logTo = "", logSearchTimer = 0;
   const logStamp = entry => Date.parse(entry?.at) || Number(entry?.at) || 0;
+  const normalizeLogRows = rows => (Array.isArray(rows) ? rows : []).map(entry => {
+    if (entry?.level !== "error" || !/^App data restore failed:\s*(?:user cancelled folder selection|no storage folder was selected)\.?$/i.test(String(entry.message || ""))) return entry;
+    return { ...entry, level: "warning", message: String(entry.message).replace(/^App data restore failed:/i, "App data restore cancelled:") };
+  });
   function mergeLogLists(fromFile, local) {
     if (!Array.isArray(fromFile) || !fromFile.length) return Array.isArray(local) ? local : [];
     if (!Array.isArray(local) || !local.length) return fromFile;
@@ -5103,7 +5107,7 @@
     const read = window.SplitAppBackend?.readLog;
     if (!read || fullLogs[kind] || fullLogLoading.has(kind)) return;
     fullLogLoading.add(kind);
-    read(kind).then(list => { fullLogs[kind] = Array.isArray(list) ? list : []; }).catch(() => { fullLogs[kind] = []; /* unreadable file: show this device's entries, and don't retry in a render loop */ }).finally(() => { fullLogLoading.delete(kind); if (page === "settings" && settingsGroup === kind) render(); });
+    read(kind).then(list => { fullLogs[kind] = kind === "logcat" ? normalizeLogRows(list) : Array.isArray(list) ? list : []; }).catch(() => { fullLogs[kind] = []; /* unreadable file: show this device's entries, and don't retry in a render loop */ }).finally(() => { fullLogLoading.delete(kind); if (page === "settings" && settingsGroup === kind) render(); });
   }
   async function clearLogKind(kind) {
     fullLogs[kind] = null;
@@ -5677,9 +5681,11 @@
       if (!restored.fast) await window.SplitAppBackend.save({ items, history, preferences: prefs });
       return true;
     } catch (error) {
-      recordLog("error", `App data restore failed: ${error.message || error}`);
+      const errorMessage = String(error?.message || error);
+      const cancelled = /user cancelled folder selection|no storage folder was selected/i.test(errorMessage);
+      recordLog(cancelled ? "warning" : "error", `App data restore ${cancelled ? "cancelled" : "failed"}: ${errorMessage}`);
       const message = $("#storage-folder-gate-message");
-      if (message) message.textContent = `${error.message || "SavePoint could not open its database folder."} Select a storage folder to continue.`;
+      if (message) message.textContent = `${errorMessage || "SavePoint could not open its database folder."} Select a storage folder to continue.`;
       return false;
     }
   }
