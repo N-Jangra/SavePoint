@@ -2,6 +2,12 @@
 
 ## [0.1.9] — 2026-11-15
 
+### Fixed
+
+- User-cancelled Android storage-folder selection is logged as a warning rather than an application error, including matching entries from older log history.
+- Encrypted mirror sync retains deletion markers until replacement records are published, preventing deleted data from reappearing after an interrupted write.
+- Large chunked exports stream from their temporary file into Downloads instead of loading the complete file into memory.
+
 ### Changed
 
 - Encrypted transfer import and export use an in-app password dialog supported by Android WebView instead of the unsupported browser `prompt()` API.

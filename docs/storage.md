@@ -8,7 +8,7 @@ Encrypted `.sqx` transfers include the full library, source links, saved details
 
 ## Library state
 
-The app state is `{ items, history, preferences }`. Games are stored in **IndexedDB** (`savepoint_library`: an `items` store with one record per game, a `meta` store for preferences and history, and a `thumbs` store of device cover blobs); only a small mirror (preferences and history) stays in localStorage under `splitapp_savepoint_v1`.
+The app state is `{ items, history, preferences }`. Games are stored in **IndexedDB** (`savepoint_library`: `items` for games, `meta` for preferences and history, `details` for full provider data, `images` for saved detail artwork, and `thumbs` for the bounded cover cache); only a small mirror stays in localStorage under `splitapp_savepoint_v1`.
 
 - **Browser preview:** IndexedDB is the state store; the localStorage mirror holds preferences and history for fast startup. Saves are scoped (only changed games are written) and run in a data worker.
 - **Startup:** the library is shown straight from IndexedDB; the folder database and encrypted store are reconciled in the background, and changes made while that runs win. The folder snapshot is rewritten only when it is behind the device.

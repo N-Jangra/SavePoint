@@ -1,6 +1,6 @@
 # SavePoint data schema
 
-SavePoint stores JSON, not a relational database. The browser representation is one object under `splitapp_savepoint_v1`:
+SavePoint stores its canonical library in IndexedDB database `savepoint_library` (schema version 5). The `items` store contains one row per game, `meta` stores history and preferences, `details` keeps full provider details separate from list rows, `thumbs` holds the bounded cover cache, and `images` holds saved detail artwork. Saves update only changed games through a data worker when available. The `localStorage` key `splitapp_savepoint_v1` is a small startup/compatibility mirror, not the canonical full library:
 
 ```json
 {
@@ -9,6 +9,8 @@ SavePoint stores JSON, not a relational database. The browser representation is 
   "preferences": {}
 }
 ```
+
+This is the app-state/JSON shape. While IndexedDB is healthy, its localStorage mirror has an empty `items` array; if IndexedDB is unavailable, SavePoint falls back to storing the full item list there.
 
 ## Library item
 
@@ -58,7 +60,7 @@ Export format:
 }
 ```
 
-Import accepts either an item array or an object whose `items` property is an array. It validates the title, assigns new IDs and timestamps, normalizes category to the supported `game` category, and skips entries already present with the same category and case-insensitive title. Import restores history for the games it adds but not preferences. Games already in the library are left as they are, except that blank fields (rating, favorite, progress, goal, source identity, cached details) are filled in from the backup. Games restored with saved details are not fetched again, so their original source (single provider or mix) is kept.
+Manual list imports validate titles, normalize category to `game`, and skip duplicates; their behavior depends on the selected import flow. Full JSON backups and password-protected `.sqx` transfers can also carry library history, preferences and cached artwork, as described in [storage](storage.md). Games restored with saved details are not fetched again, so their original source (single provider or Mix) is kept.
 
 **Ratings and reviews.** The Export page (Settings → Backups → Export) lets you pick JSON, TXT or CSV and whether ratings and reviews are included; for JSON that controls whether manual exports contain `rating`, `ratingExact`, `review`/`reviews` and `notes`. Automatic safety backups always keep everything.
 
