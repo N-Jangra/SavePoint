@@ -2,6 +2,10 @@
   "use strict";
 
   const config = window.APP_CONFIG;
+  // Keep the WebView origin's IndexedDB outside best-effort cache eviction
+  // where Android/Chromium supports persistent storage. A portable backup is
+  // still the recovery path if the app is uninstalled or storage is cleared.
+  window.SplitAppIDB?.persistStorage?.().catch(() => {});
   const nativeAndroid = Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor?.getPlatform?.() === "android");
   const dashboardPageSize = nativeAndroid ? 8 : 12;
   // Android resizes the WebView when its soft keyboard opens. Track the closed
@@ -27,7 +31,7 @@
   };
   window.visualViewport?.addEventListener("resize", syncSoftKeyboardState, { passive: true });
   window.addEventListener("resize", syncSoftKeyboardState, { passive: true });
-  const titles = { games: "Games", profile: "Profile", favorites: "Favorites", "profile-cover": "Edit profile", help: "Help & FAQ", "whats-new": "What’s new", dashboard: "My games", library: "My games", discover: "Explore", explore: "Explore", mix: "Mix fetch", setup: "Quick setup", achievements: "Achievements", details: "Details", add: "Add Game", "import-preview": "Import List", export: "Export", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
+  const titles = { games: "Games", profile: "Profile", favorites: "Favorites", "profile-cover": "Edit profile", dashboard: "My games", library: "My games", discover: "Explore", explore: "Explore", mix: "Mix fetch", setup: "Quick setup", achievements: "Achievements", details: "Details", add: "Add Game", "import-preview": "Import List", export: "Export", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
   // Three tabs, like ScreenMark: Games (ongoing + upcoming), Explore (search and browse sources), Profile.
   const navItems = [
     { key: "games", label: "Games", icon: "gamepad-2", locked: true },
@@ -273,6 +277,28 @@
   const category = key => config.categories.find(item => item.key === key) || config.categories[0];
   const labelCategory = key => category(key)?.label || key;
   const defaultStatus = key => category(key)?.statuses?.[0] || "Backlog";
+  // Android WebView does not implement window.prompt(), so sensitive transfer
+  // passwords use the same native-friendly in-app dialog pattern as confirms.
+  function appPrompt(message, { title = "Password required", inputLabel = "Password", confirmLabel = "Continue", autocomplete = "current-password", minLength = 0 } = {}) {
+    return new Promise(resolve => {
+      let dialog = document.getElementById("app-prompt");
+      if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "app-prompt"; dialog.className = "app-confirm app-prompt"; dialog.setAttribute("aria-labelledby", "app-prompt-title"); document.body.appendChild(dialog); }
+      dialog.innerHTML = `<div class="app-confirm-card"><h2 id="app-prompt-title">${esc(title)}</h2><p>${esc(message)}</p><label class="app-prompt-field"><span>${esc(inputLabel)}</span><input type="password" autocomplete="${esc(autocomplete)}" minlength="${Math.max(0, Number(minLength) || 0)}" data-app-prompt-input></label><p class="app-prompt-error" data-app-prompt-error role="alert" hidden></p><div class="app-confirm-actions"><button type="button" class="button secondary" data-prompt="cancel">Cancel</button><button type="button" class="button primary" data-prompt="submit">${esc(confirmLabel)}</button></div></div>`;
+      let settled = false;
+      const finish = value => { if (settled) return; settled = true; try { dialog.close(); } catch (_) {} dialog.removeAttribute("open"); dialog.remove(); resolve(value); };
+      dialog.onclose = () => finish(null); dialog.oncancel = () => finish(null);
+      dialog.onclick = event => {
+        const action = event.target.closest("[data-prompt]");
+        if (!action) { if (event.target === dialog) finish(null); return; }
+        if (action.dataset.prompt === "cancel") { finish(null); return; }
+        const input = dialog.querySelector("[data-app-prompt-input]"), error = dialog.querySelector("[data-app-prompt-error]");
+        if ((Number(minLength) || 0) > 0 && input.value.length < Number(minLength)) { error.textContent = `Use at least ${Number(minLength)} characters.`; error.hidden = false; input.focus(); return; }
+        finish(input.value);
+      };
+      try { dialog.showModal(); } catch (_) { dialog.setAttribute("open", ""); }
+      dialog.querySelector("[data-app-prompt-input]")?.focus();
+    });
+  }
   // Each open sheet/dialog gets a history entry so the back button (or Android back) closes it first.
   let dialogEntries = 0, skipNextPop = false, closingFromPop = false, dialogPopCallback = null;
   function pushDialogEntry() { try { window.history.pushState({ dialog: true }, "", location.href); dialogEntries += 1; } catch (_) {} }
@@ -3627,12 +3653,10 @@
   // Native: stream the library in small chunks to a file the user picks with Android's "Save as" screen
   // (silent: straight into the backup folder, used before destructive actions). Browsers get a normal download.
   let exportRunning = false;
-  const REVIEW_FIELDS = ["review", "reviews", "notes"];
-  let exportOptions = { format: "json", ratings: prefs.backupIncludeRatings !== false, reviews: prefs.backupIncludeRatings !== false };
-  // Manual exports honour the Export page options; automatic safety backups (silent) always keep everything.
+  let exportOptions = { format: "json", ratings: prefs.backupIncludeRatings !== false };
+  // Manual exports honor the ratings option. Reviews/notes stay out of every export; safety backups always retain ratings.
   function exportableItems(silent, opts = exportOptions) {
-    if (silent || (opts.ratings && opts.reviews)) return items;
-    return items.map(item => { const copy = { ...item }; if (!opts.ratings) { delete copy.rating; delete copy.ratingExact; } if (!opts.reviews) REVIEW_FIELDS.forEach(field => delete copy[field]); return copy; });
+    return items.map(item => { const copy = { ...item }; delete copy.review; delete copy.reviews; delete copy.notes; if (!opts.ratings && !silent) { delete copy.rating; delete copy.ratingExact; } return copy; });
   }
   const csvCell = value => { const text = String(value ?? ""); return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
   async function exportNames(format, opts = exportOptions) {
@@ -3645,10 +3669,9 @@
     if (!items.length) { toast("Your library is empty."); return; }
     const sorted = [...items].sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: "base" }));
     const csv = format === "csv", max = prefs.ratingFormat === "10-point" ? 10 : 5;
-    const reviewOf = item => String(item.review ?? item.reviews ?? item.notes ?? "").replace(/\s+/g, " ").trim();
     const content = csv
-      ? ["Title", "Year", "Status", ...(opts.ratings ? ["Rating"] : []), ...(opts.reviews ? ["Review"] : []), "Source", "SourceID", "ID"].join(",") + "\r\n" + sorted.map(item => [item.title, String(item.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", item.status, ...(opts.ratings ? [Number(item.rating) || ""] : []), ...(opts.reviews ? [reviewOf(item)] : []), item.metadataSource || item.source || "", item.providerId || "", item.id].map(csvCell).join(",")).join("\r\n") + "\r\n"
-      : sorted.map(item => { const line = String(item.title).replace(/[\r\n]+/g, " ").trim(); const extras = [opts.ratings && Number(item.rating) ? `${item.rating}/${max}` : "", opts.reviews ? reviewOf(item) : ""].filter(Boolean); return extras.length ? `${line} — ${extras.join(" — ")}` : line; }).join("\n") + "\n";
+      ? ["Title", "Year", "Status", ...(opts.ratings ? ["Rating"] : []), "Source", "SourceID", "ID"].join(",") + "\r\n" + sorted.map(item => [item.title, String(item.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", item.status, ...(opts.ratings ? [Number(item.rating) || ""] : []), item.metadataSource || item.source || "", item.providerId || "", item.id].map(csvCell).join(",")).join("\r\n") + "\r\n"
+      : sorted.map(item => { const line = String(item.title).replace(/[\r\n]+/g, " ").trim(); const extras = [opts.ratings && Number(item.rating) ? `${item.rating}/${max}` : ""].filter(Boolean); return extras.length ? `${line} — ${extras.join(" — ")}` : line; }).join("\n") + "\n";
     const fileName = `${config.key}-names-${new Date().toISOString().slice(0, 10)}.${csv ? "csv" : "txt"}`, mimeType = csv ? "text/csv" : "text/plain";
     try {
       if (nativeAndroid && window.SplitAppBackend?.exportTextFile) {
@@ -3657,7 +3680,7 @@
       } else {
         const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([content], { type: `${mimeType};charset=utf-8` })); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       }
-      toast(`Exported ${items.length} names.`);
+      toast(`Exported ${sorted.length} names.`);
     } catch (error) {
       const message = String(error?.message || error);
       if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Names export failed: ${message}`); }
@@ -3668,19 +3691,23 @@
     if (exportRunning) { toast("An export is already running."); return; }
     exportRunning = true;
     try { return await exportListBody(options); }
+    catch (error) { const message = String(error?.message || error); if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Export failed: ${message}`); } }
     finally { exportRunning = false; }
   }
-  async function exportListBody({ silent = false } = {}) {
+  async function exportListBody({ silent = false, password = "", share = false } = {}) {
     const backend = window.SplitAppBackend;
     const exportItems = exportableItems(silent);
+    if (password && (!nativeAndroid || !backend?.exportLibrary)) { toast("Password-protected transfer files are currently available in the Android app."); return; }
     if (nativeAndroid && backend?.exportLibrary) {
       let lastToast = 0;
       try {
-        if (!silent) toast("Choose where to save your library…");
-        const result = await backend.exportLibrary({ items: exportItems, history, preferences: prefs }, { mode: silent ? "folder" : "ask", onProgress: (done, total) => {
+        if (!silent && !share) toast("Choose where to save your library…");
+        const result = await backend.exportLibrary({ items: exportItems, history, preferences: prefs }, { mode: silent ? "folder" : share ? "share" : "ask", password, onProgress: (done, total, status) => {
+          if (status?.notificationsAllowed === false) { toast("Allow notifications to see export progress while SavePoint is in the background."); lastToast = Date.now(); return; }
           if (Date.now() - lastToast > 700 && done < total) { lastToast = Date.now(); toast(`Exporting… ${Math.round(done / total * 100)}%`); }
         } });
-        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${exportItems.length} ${exportItems.length === 1 ? "game" : "games"}${!exportOptions.ratings || !exportOptions.reviews ? " with your export options" : ""}.`);
+        toast(share ? "Encrypted transfer ready to share." : password ? `Encrypted transfer saved: ${result.fileName}. Share it from the location you chose.` : silent ? `Backup saved: ${result.fileName}` : `Exported ${exportItems.length} ${exportItems.length === 1 ? "game" : "games"}${!exportOptions.ratings ? " without ratings" : ""}.`);
+        return result;
       } catch (error) {
         const message = String(error?.message || error);
         if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Export failed: ${message}`); }
@@ -3688,18 +3715,73 @@
       return;
     }
     const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const saveHandlePromise = typeof window.showSaveFilePicker === "function"
+      ? window.showSaveFilePicker({ suggestedName: fileName, types: [{ description: "SavePoint backup", accept: { "application/json": [".json"] } }] })
+      : null;
+    let saveHandle = null;
+    if (saveHandlePromise) {
+      try { saveHandle = await saveHandlePromise; }
+      catch (error) { if (/cancel/i.test(String(error?.message || error)) || error?.name === "AbortError") return; throw error; }
+    }
     const refOf = item => backend?.backupRefOf ? backend.backupRefOf(item) : { id: String(item.id), source: item.metadataSource || "manual", providerId: String(item.providerId || "") };
-    const parts = [`{"app":${JSON.stringify(config.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(exportItems.map(refOf))},"items":[`];
-    exportItems.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(backend?.backupItem ? backend.backupItem(item) : { ...item, backupRef: refOf(item) })));
-    parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
+    let writable = saveHandle ? await saveHandle.createWritable() : null;
+    const parts = [];
+    const writePart = async value => { if (writable) await writable.write(value); else parts.push(value); };
+    await writePart(`{"app":${JSON.stringify(config.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(exportItems.map(refOf))},"items":[`);
+    for (let index = 0; index < exportItems.length; index++) {
+      const item = exportItems[index];
+      await writePart((index ? "," : "") + JSON.stringify(backend?.backupItem ? await backend.backupItem(item) : { ...item, backupRef: refOf(item) }));
+      if (index % 8 === 7) { toast(`Preparing backup… ${Math.round((index + 1) / exportItems.length * 100)}%`); await new Promise(resolve => setTimeout(resolve, 0)); }
+    }
+    await writePart(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
+    if (writable) { await writable.close(); toast("Export ready."); return; }
     let blob = new Blob(parts, { type: "application/json" }), name = fileName;
     if (typeof CompressionStream === "function") { try { blob = await new Response(blob.stream().pipeThrough(new CompressionStream("gzip"))).blob(); name = `${fileName}.gz`; } catch (_) {} }
-    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); toast("Export ready.");
+    const file = new File([blob], name, { type: blob.type || "application/json" });
+    const link = document.createElement("a"); link.href = URL.createObjectURL(file); link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    toast("Export ready.");
   }
   function importIdentity(item) {
     const title = String(item?.title || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
     const year = String(item?.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
     return `${item?.category || "game"}:${title}:${year}`;
+  }
+  function restoreTransferImages(item) {
+    const copy = { ...item }, images = copy.transferImages;
+    delete copy.transferImages;
+    // Folder URIs and filenames belong to the sending device. The embedded
+    // artwork paths below become self-contained data URLs on the receiving one.
+    delete copy.localImageFiles; delete copy.thumbnailPath; delete copy.thumbnailMime; delete copy.localImageFingerprint;
+    if (images && typeof images === "object") for (const [key, value] of Object.entries(images)) {
+      if (typeof value !== "string" || !/^data:image\//i.test(value)) continue;
+    }
+    return copy;
+  }
+  async function cacheImportedTransferImages(item) {
+    const images = item?.transferImages;
+    if (!images || typeof images !== "object") return;
+    const thumbs = [], storedImages = [], backend = window.SplitAppBackend;
+    const refs = backend?.collectAllImageCandidates?.(item)?.flatMap(candidate => candidate.paths.map(path => {
+      const text = JSON.stringify(path); let first = 0x811c9dc5, second = 0x9e3779b9;
+      for (let index = 0; index < text.length; index++) { const code = text.charCodeAt(index); first = Math.imul(first ^ code, 0x01000193); second = Math.imul(second ^ (code + index), 0x85ebca6b); }
+      const signatureText = candidate.source; let sourceHash = 0x811c9dc5, sourceSecond = 0x9e3779b9;
+      for (let index = 0; index < signatureText.length; index++) { const code = signatureText.charCodeAt(index); sourceHash = Math.imul(sourceHash ^ code, 0x01000193); sourceSecond = Math.imul(sourceSecond ^ (code + index), 0x85ebca6b); }
+      return { path: path.join("."), key: `${String(item.id)}:image:${text.length}:${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`, sig: `${signatureText.length}:${(sourceHash >>> 0).toString(16)}${(sourceSecond >>> 0).toString(16)}` };
+    })) || [];
+    for (const [path, dataUrl] of Object.entries(images)) {
+      if (typeof dataUrl !== "string" || !/^data:image\//i.test(dataUrl)) continue;
+      const blob = await dataUrlToBlob(dataUrl);
+      if (!blob) continue;
+      const imagePath = path.split(".");
+      const source = imagePath.reduce((value, part) => value?.[part], item);
+      if (path === "image" && /^https?:\/\//i.test(String(source || ""))) thumbs.push([thumbKeyOf(item, false), `u:${artUrlHash(source)}`, blob]);
+      if (path === "backdrop" && /^https?:\/\//i.test(String(source || ""))) thumbs.push([thumbKeyOf(item, true), `u:${artUrlHash(source)}`, blob]);
+      if (!/^https?:\/\//i.test(String(source || ""))) continue;
+      const ref = refs.find(candidate => candidate.path === path);
+      if (ref) storedImages.push([ref.key, ref.sig, blob]);
+    }
+    try { if (thumbs.length) await window.SplitAppIDB?.putThumbs?.(thumbs); } catch (_) {}
+    try { if (storedImages.length) await window.SplitAppIDB?.putImages?.(storedImages); } catch (_) {}
   }
   // .txt: one game per line. .csv: first column (or a "Title"/"Name" column) is the title; "Year" and "Status" are optional.
   function parseNamesList(text, isCsv) {
@@ -3732,7 +3814,7 @@
   // A restored game keeps what it was saved with; only a game with no saved details gets fetched again.
   const hasSavedMetadata = item => Boolean(item?.cachedDetails || item?.facts?.fetchedAt || item?.mixSources?.length);
   // Games already in the library keep their data, but blanks (rating, favourite, progress, sources…) are filled from the backup.
-  const RESTORE_FILL_FIELDS = ["rating", "ratingExact", "favorite", "progress", "goal", "completionTarget", "completionTargetHours", "metadataSource", "providerId", "originKeys", "originYear", "mixSources", "mixSourceKeys", "facts", "cachedDetails", "url", "description", "image", "backdrop", "year"];
+    const RESTORE_FILL_FIELDS = ["rating", "ratingExact", "favorite", "progress", "goal", "completionTarget", "completionTargetHours", "metadataSource", "providerId", "originKeys", "originYear", "mixSources", "mixSourceKeys", "facts", "cachedDetails", "url", "description", "image", "backdrop", "year", "localThumbnailData", "localPortraitData", "localLandscapeData"];
   function restorePatch(existing, backup) {
     const patch = {};
     const empty = value => value == null || value === "" || value === 0 || value === false || (Array.isArray(value) && !value.length) || (typeof value === "object" && !Array.isArray(value) && !Object.keys(value).length);
@@ -3754,14 +3836,19 @@
     importState = { phase: "reading", fileName: file.name || "Library backup", fileSize: Number(file.size) || 0, incoming: [], fresh: [], skipped: 0, completed: 0, synced: 0, failed: 0, error: "" };
     goto("import-preview");
     try {
+      const fileHead = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+      const encryptedTransfer = window.SplitAppTransferCrypto?.isEncryptedHeader(fileHead) || /\.sqx$/i.test(file.name || "");
+      const transferPassword = encryptedTransfer ? await appPrompt("Enter the password for this encrypted transfer file.", { title: "Unlock transfer", confirmLabel: "Open transfer" }) : "";
+      if (encryptedTransfer && transferPassword == null) throw new Error("Import cancelled.");
       // Big JSON backups are read one title at a time from the stream instead of as one giant string; any problem falls back to the whole-file path.
       let streamed = null;
-      if (/\.(json|gz)$/i.test(file.name || "") && file.size > 2 * 1024 * 1024 && window.SplitAppBackupStream) {
-        try { streamed = await window.SplitAppBackupStream.parseFile(file); } catch (_) { streamed = null; }
+      if ((encryptedTransfer || (/\.(json|gz)$/i.test(file.name || "") && file.size > 2 * 1024 * 1024)) && window.SplitAppBackupStream) {
+        try { streamed = await window.SplitAppBackupStream.parseFile(file, { password: transferPassword }); } catch (error) { if (encryptedTransfer) throw error; streamed = null; }
       }
       const text = streamed ? "" : await readBackupText(file);
       const asList = !streamed && (/\.(txt|csv)$/i.test(file.name || "") || !/^\s*[\[{]/.test(text));
       const data = asList ? parseNamesList(text, /\.csv$/i.test(file.name || "")) : (streamed || JSON.parse(text)); const incoming = Array.isArray(data) ? data : data.items;
+      if (!Array.isArray(data) && data.app && data.app !== config.name) throw new Error(`This transfer belongs to ${data.app}, not ${config.name}.`);
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
       const now = Date.now();
       const idMap = new Map();
@@ -3773,7 +3860,9 @@
         const catKey = config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key;
         const ref = item.backupRef && typeof item.backupRef === "object" ? item.backupRef : null;
         const linked = ref && !item.metadataSource && ref.source && ref.source !== "manual" && ref.providerId ? { metadataSource: ref.source, providerId: ref.providerId } : {};
-        const { backupRef: _ref, ...plain } = item;
+        const restoredItem = restoreTransferImages(item);
+        const { backupRef: _ref, ...plain } = restoredItem;
+        if (Object.keys(item.transferImages || {}).length) plain._transferImagesPending = item.transferImages;
         return { ...plain, ...linked, id, category: catKey, status: item.status || prefs.defaultStatus || defaultStatus(catKey), createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
       });
       // A title already in the library with the same source + source id is the same title, whatever its spelling.
@@ -3792,13 +3881,22 @@
       const freshIdentity = new Set(fresh.map(item => item.id));
       const byIdentity = new Map(items.flatMap(item => [[importIdentity(item), item], ...(providerKey(item) ? [[providerKey(item), item]] : [])]));
       const patches = [];
-      normalized.forEach(item => { const existing = byIdentity.get(providerKey(item)) || byIdentity.get(importIdentity(item)); const patch = existing && !freshIdentity.has(item.id) ? restorePatch(existing, item) : null; if (patch) patches.push({ id: existing.id, patch }); });
+      normalized.forEach(item => {
+        const existing = byIdentity.get(providerKey(item)) || byIdentity.get(importIdentity(item));
+        const patch = existing && !freshIdentity.has(item.id) ? restorePatch(existing, item) || {} : null;
+        if (patch && item._transferImagesPending && !existing.localImageData?.image && !existing.localThumbnailData) {
+          const image = item._transferImagesPending.image;
+          if (image) { patch.localThumbnailData = patch.localPortraitData = image; patch.image = patch.image || image; }
+        }
+        if (patch && Object.keys(patch).length) patches.push({ id: existing.id, patch, transferImages: item._transferImagesPending || null });
+        else if (existing && item._transferImagesPending) patches.push({ id: existing.id, patch: {}, transferImages: item._transferImagesPending });
+      });
       // Timeline/Activity read from history: use the backup's history (re-pointed at the new ids), or build it from statuses.
       const freshIds = new Set(fresh.map(item => item.id));
       const fileHistory = Array.isArray(data.history) ? data.history : [];
       let importedHistory = fileHistory.filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
       if (!importedHistory.length) importedHistory = fresh.filter(item => ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
-      importState = { ...importState, phase: "preview", incoming: normalized, fresh, similar: split.similar, patches, importedHistory, skipped: normalized.length - fresh.length - split.similar.length };
+      importState = { ...importState, phase: "preview", incoming: normalized, fresh, similar: split.similar, patches, importedHistory, preferences: data.preferences && typeof data.preferences === "object" ? data.preferences : null, skipped: normalized.length - fresh.length - split.similar.length };
       render();
       if (prefs.restorePreview === false && fresh.length) continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not finish the restore."; render(); } });
     } catch (error) {
@@ -3833,10 +3931,22 @@
     await new Promise(resolve => requestAnimationFrame(resolve));
     items = [...fresh, ...items];
     history = [...(importState.importedHistory || []), ...history].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0));
+    if (importState.preferences) Object.assign(prefs, importState.preferences);
     const patchedIds = [];
-    for (const { id, patch } of importState.patches || []) { const existing = itemById(id); if (existing) { Object.assign(existing, patch, { updatedAt: Date.now() }); patchedIds.push(id); } }
+    const transferImagesById = new Map(fresh.filter(item => item._transferImagesPending).map(item => [String(item.id), item._transferImagesPending]));
+    for (const { id, patch, transferImages } of importState.patches || []) {
+      const existing = itemById(id); if (!existing) continue;
+      Object.assign(existing, patch, { updatedAt: Object.keys(patch).length ? Date.now() : existing.updatedAt }); patchedIds.push(id);
+      if (transferImages) transferImagesById.set(String(id), transferImages);
+    }
+    fresh.forEach(item => { delete item._transferImagesPending; });
     await persist({ ids: [...fresh.map(item => item.id), ...patchedIds] });
+    for (const item of [...fresh, ...patchedIds.map(itemById).filter(Boolean)]) {
+      const transferImages = transferImagesById.get(String(item.id));
+      if (transferImages) await cacheImportedTransferImages({ ...item, transferImages });
+    }
     const count = fresh.length;
+    const updated = (importState.patches || []).length;
     importState = { ...importState, phase: "complete", completed: count, total: count };
     render();
     await new Promise(resolve => setTimeout(resolve, 600));
@@ -3852,10 +3962,46 @@
       persist({ removed: [...ids] }); render(); toast("Import undone.");
     };
     if (count) toastUndo(started ? `Added ${count} ${count === 1 ? "game" : "games"}. Syncing in the background.` : `Added ${count} ${count === 1 ? "game" : "games"}.`, undoImport, 10000);
-    else toast("Nothing was added.");
+    else if (updated) toast(`Restored data for ${updated} existing ${updated === 1 ? "game" : "games"}.`);
+    else toast("This library already has these games; nothing changed.");
   }
   // ---- Background metadata sync -------------------------------------------
   let syncJob = null, syncHideTimer = 0, syncPersistCount = 0, syncShown = 60, reviewShown = 15, syncBackHref = "#library";
+  const SYNC_JOB_KEY = `${storageKey}_metadata_sync_job`;
+  let syncJobSaveTimer = 0, syncJobRestored = false;
+  function persistSyncJob() {
+    clearTimeout(syncJobSaveTimer);
+    syncJobSaveTimer = setTimeout(() => {
+      try {
+        if (!syncJob) { localStorage.removeItem(SYNC_JOB_KEY); return; }
+        localStorage.setItem(SYNC_JOB_KEY, JSON.stringify({
+          version: 1, paused: Boolean(syncJob.paused), finished: Boolean(syncJob.finished), retrying: Boolean(syncJob.retrying),
+          updatedAt: Date.now(), entries: syncJob.entries.slice(-3000).map(({ id, title, status, error, retried, transient }) => ({ id, title, status, error, retried, transient }))
+        }));
+      } catch (error) { recordLog("warning", `Could not save metadata sync progress: ${error?.message || error}`); }
+    }, 250);
+  }
+  function restoreSyncJob() {
+    if (syncJobRestored) return;
+    syncJobRestored = true;
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(SYNC_JOB_KEY) || "null"); } catch (_) { saved = null; }
+    if (!saved || saved.version !== 1 || !Array.isArray(saved.entries) || !saved.entries.length) return;
+    const entries = saved.entries.filter(row => itemById(String(row?.id))).map(row => ({
+      id: String(row.id), title: String(itemById(String(row.id))?.title || row.title || "Game"),
+      status: ["queued", "syncing", "done", "failed"].includes(row.status) ? row.status : "queued",
+      error: String(row.error || "").slice(0, 500), retried: Boolean(row.retried), transient: row.transient
+    }));
+    if (!entries.length) { try { localStorage.removeItem(SYNC_JOB_KEY); } catch (_) {} return; }
+    const finished = Boolean(saved.finished);
+    const unfinished = entries.some(row => row.status === "queued" || row.status === "syncing");
+    if (!finished && unfinished) entries.forEach(row => { if (row.status === "syncing") row.status = "queued"; });
+    syncJob = { finished: finished || !unfinished, paused: !finished && unfinished, waiters: [], dirty: [], queue: [], entries, restoredPending: !finished && unfinished };
+    syncJob.queue = entries.filter(row => row.status === "queued").map(row => itemById(row.id)).filter(Boolean);
+    rebuildSyncIndex(syncJob);
+    syncPersistCount = 0;
+    updateSyncUI();
+  }
   const syncNotifier = () => window.Capacitor?.Plugins?.SyncNotification;
   function rebuildSyncIndex(job) {
     job.entryById = new Map(); job.counts = { queued: 0, syncing: 0, done: 0, failed: 0 };
@@ -3890,7 +4036,7 @@
       return true;
     }
     clearTimeout(syncHideTimer);
-    syncJob = { finished: false, paused: false, waiters: [], dirty: [], queue: [...games], entries: games.map(i => ({ id: i.id, title: i.title, status: "queued", error: "" })) };
+    syncJob = { finished: false, paused: false, waiters: [], dirty: [], queue: [...games], entries: games.map(i => ({ id: i.id, title: i.title, status: "queued", error: "" })), restoredPending: false };
     rebuildSyncIndex(syncJob);
     syncPersistCount = 0;
     syncNotifier()?.requestPermission?.().catch(() => {});
@@ -3931,18 +4077,19 @@
   async function runSyncPass(job) {
     // Extra workers are parked while the adaptive limit is lower than their number.
     const workers = Array.from({ length: 8 }, async (_, index) => {
-      while (true) {
+      while (!job.cancelled) {
         // A worker is parked only while the allowed slots are busy. Parking by index alone deadlocked: games added
         // moments after the active workers finished were left "Waiting" because only parked workers were still alive.
         const slotsFull = () => job.counts.syncing >= syncConcurrency();
         while (job.paused || (index >= syncConcurrency() && slotsFull())) {
-          if (!job.queue.length && !job.counts.syncing) return;
+          if (job.cancelled || (!job.queue.length && !job.counts.syncing)) return;
           if (job.paused) await new Promise(resolve => job.waiters.push(resolve));
           else await new Promise(resolve => setTimeout(resolve, 1500));
           if (index > 0 && !job.queue.length) return;
         }
         if (!job.queue.length) break;
         await yieldToUser();
+        if (job.cancelled) return;
         if (!job.queue.length || job.paused) continue;
         const item = job.queue.shift();
         const entry = job.entryById.get(String(item.id));
@@ -3953,9 +4100,10 @@
         try {
           const current = itemById(item.id) || item;
           const loaded = await enrichLibraryEntryWithMix(current, { ...current, source: current.metadataSource }, "Background sync", { persist: false, loadImages: false, quiet: true, background: true });
+          if (job.cancelled) return;
           setSyncStatus(job, entry, loaded ? "done" : "failed");
           if (!loaded) { const latest = itemById(item.id); entry.error = latest?.mixError || "No metadata found"; entry.transient = latest ? latest.mixTransient !== false : true; }
-        } catch (error) { setSyncStatus(job, entry, "failed"); entry.error = error?.message || "Request failed"; }
+        } catch (error) { if (job.cancelled) return; setSyncStatus(job, entry, "failed"); entry.error = error?.message || "Request failed"; }
         mixEnrichmentByItem.delete(String(item.id));
         if (entry.requeue) { entry.requeue = false; setSyncStatus(job, entry, "queued"); entry.error = ""; job.queue.push(itemById(item.id) || item); }
         // Paused with nothing left to fetch: finish instead of waiting for a resume.
@@ -3969,6 +4117,7 @@
   }
   async function runSyncJob(job) {
     await runSyncPass(job);
+    if (job.cancelled) return;
     // Failures are usually a timeout or a rate limit that clears a moment later (they "fixed themselves on retry"), so every failed game
     // gets one automatic second pass with a short cool-down before it is reported as failed.
     const again = job.entries.filter(entry => entry.status === "failed" && entry.transient !== false && !entry.retried);
@@ -3978,10 +4127,13 @@
       games.forEach(game => delete game.mixFailedAt);
       job.queue.push(...games); job.retrying = true; updateSyncUI();
       await new Promise(resolve => setTimeout(resolve, Math.max(1, Number(prefs.syncRetryDelay) || 3) * 1000 + 1000));
+      if (job.cancelled) return;
       job.retrying = false;
       await runSyncPass(job);
     }
+    if (job.cancelled) return;
     job.finished = true;
+    job.restoredPending = false;
     await persist({ ids: job.dirty.splice(0) });
     updateSyncUI();
     const c = syncCounts();
@@ -3993,11 +4145,24 @@
   let syncActionListener = null;
   function setSyncPaused(paused, { quiet = false } = {}) {
     if (!syncJob || syncJob.finished || syncJob.paused === paused) return;
+    const resumeRestored = !paused && syncJob.restoredPending;
     syncJob.paused = paused;
     if (!paused) { const waiters = syncJob.waiters; syncJob.waiters = []; waiters.forEach(resolve => resolve()); }
     updateSyncUI();
     if (page === "sync") render();
+    if (resumeRestored) { syncJob.restoredPending = false; runSyncJob(syncJob); }
     if (!quiet) toast(paused ? "Sync paused." : "Sync resumed.");
+  }
+  function clearSyncJob() {
+    if (syncJob) {
+      const job = syncJob; job.cancelled = true; job.queue.length = 0;
+      const waiters = job.waiters || []; job.waiters = []; waiters.forEach(resolve => resolve());
+    }
+    clearTimeout(syncHideTimer); syncHideTimer = 0;
+    clearTimeout(syncJobSaveTimer); syncJobSaveTimer = 0;
+    syncJob = null;
+    try { localStorage.removeItem(SYNC_JOB_KEY); } catch (_) {}
+    updateSyncUI(); render();
   }
   // Settings → Metadata Sync buttons: choose exactly which games a sync run covers.
   function runSyncAction(key) {
@@ -4030,6 +4195,7 @@
   // (every bridge call costs a JS->Java hop), except when the state itself changes.
   let syncPaintQueued = false, lastNotify = 0, lastNotifyState = "";
   function updateSyncUI() {
+    persistSyncJob();
     if (syncPaintQueued) return;
     syncPaintQueued = true;
     requestAnimationFrame(() => { syncPaintQueued = false; paintSyncUI(); });
@@ -4489,8 +4655,10 @@
       }
       return;
     }
+    if (event.target.closest("[data-sync-start]")) { runSyncAction("syncRunNeeded"); return; }
     if (event.target.closest("[data-sync-toggle]")) { setSyncPaused(!syncJob?.paused); return; }
     if (event.target.closest("[data-sync-retry]")) { retrySyncFailures(); return; }
+    if (event.target.closest("[data-sync-clear]")) { clearSyncJob(); return; }
     if (event.target.closest("[data-sync-more]")) { syncShown += 100; render(); return; }
     if (event.target.closest("[data-review-more]")) { reviewShown += 15; render(); return; }
     const matchOk = event.target.closest("[data-match-ok]");
@@ -4508,6 +4676,23 @@
     const exportOpt = event.target.closest("[data-export-opt]");
     if (exportOpt) { exportOptions = { ...exportOptions, [exportOpt.dataset.exportOpt]: !exportOptions[exportOpt.dataset.exportOpt] }; render(); return; }
     if (event.target.closest("[data-run-export]")) { runExport(); return; }
+    if (event.target.closest("[data-run-export-encrypted]")) {
+      const password = await appPrompt("Create a transfer password (at least 8 characters). You will need it on the receiving device.", { title: "Protect transfer", inputLabel: "New password", autocomplete: "new-password", minLength: 8 });
+      if (password == null) return;
+      const confirmation = await appPrompt("Enter the transfer password again to confirm.", { title: "Confirm transfer password", inputLabel: "Confirm password", confirmLabel: "Create transfer", autocomplete: "new-password", minLength: 8 });
+      if (confirmation == null) return;
+      if (password !== confirmation) { toast("The passwords do not match."); return; }
+      exportList({ password }); return;
+    }
+    if (event.target.closest("[data-run-export-share]")) {
+      if (!nativeAndroid) { toast("Nearby sharing is available in the Android app."); return; }
+      const password = await appPrompt("Create a transfer password (at least 8 characters). You will need it on the receiving device.", { title: "Protect transfer", inputLabel: "New password", autocomplete: "new-password", minLength: 8 });
+      if (password == null) return;
+      const confirmation = await appPrompt("Enter the transfer password again to confirm.", { title: "Confirm transfer password", inputLabel: "Confirm password", confirmLabel: "Create transfer", autocomplete: "new-password", minLength: 8 });
+      if (confirmation == null) return;
+      if (password !== confirmation) { toast("The passwords do not match."); return; }
+      exportList({ password, share: true }); return;
+    }
     if (event.target.closest("[data-cancel-import]")) { importState = null; settingsGroup = "backups"; goto("settings"); return; }
     const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { await addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); return; }
     if (event.target.closest("[data-discover-row-add]")) return;
@@ -5412,9 +5597,6 @@
     const version = info?.version || config.version;
     if (!version) return;
     window.APP_INSTALLED_VERSION = version;
-    let previous = "";
-    try { const seenKey = `${storageKey}_seen_version`; previous = localStorage.getItem(seenKey) || ""; localStorage.setItem(seenKey, version); } catch (_) {}
-    if (previous && previous !== version) setTimeout(() => goto("whats-new"), 400);
     if (page === "settings" && settingsGroup === "app-info") render();
   }).catch(() => {});
   window.Capacitor?.Plugins?.App?.addListener?.("backButton", () => {
@@ -5553,6 +5735,7 @@
       return;
     }
     initializeAchievementAwards();
+    restoreSyncJob();
     if (storageFolderGate) storageFolderGate.hidden = true;
     detailRestorePending = false;
     const redirectedFromMissingDetail = redirectHomeIfDetailMissing();

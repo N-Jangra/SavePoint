@@ -857,9 +857,34 @@
     } catch (error) { console.warn("Could not apply SavePoint backup retention", error); }
   }
 
+  let libraryMirrorBackfill = null;
+  function backfillAndroidLibraryMirror(data) {
+    const plugin = window.Capacitor?.Plugins?.EncryptedStore;
+    if (!plugin?.isLibraryMirrorReady || !plugin?.syncMirrorBatch || !plugin?.finishLibraryMirrorSync || !Array.isArray(data?.items) || libraryMirrorBackfill) return;
+    libraryMirrorBackfill = (async () => {
+      const items = data.items.filter(item => item?.id != null);
+      const status = await plugin.isLibraryMirrorReady({ ids: items.map(item => String(item.id)) });
+      if (!status?.ready) {
+        for (let offset = 0; offset < items.length; offset += 8) {
+          const batch = items.slice(offset, offset + 8).map(portableItem);
+          await plugin.syncMirrorBatch({ items: batch });
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+      await plugin.setMeta?.({ data: JSON.stringify({ history: data.history || [], preferences: data.preferences || {} }) });
+      // Readiness is based on exact record presence. A previous backfill may
+      // have written every record but exited before publishing its completion
+      // marker, so always finalize metadata/marker after the presence check.
+      await plugin.finishLibraryMirrorSync({ count: items.length });
+    })().catch(error => console.warn("Could not backfill the Android app-data mirror", error)).finally(() => { libraryMirrorBackfill = null; });
+  }
+
   // fast: return what IndexedDB already holds without touching the (slow) Android folder, or
   // `null` when there is nothing local yet so the caller falls back to the full restore.
   async function load({ fast = false } = {}) {
+    // Backfill the Android/data recovery mirror in the background; normal app
+    // startup still reads the faster IndexedDB/internal record stores.
+    try { window.Capacitor?.Plugins?.EncryptedStore?.ensureMirror?.().catch(error => console.warn("Could not prepare the Android app-data mirror", error)); } catch (_) {}
     const mirror = readMirror();
     let data = {
       items: Array.isArray(mirror.items) ? mirror.items : [],
@@ -966,6 +991,7 @@
     const folderStamp = new Map((folderData?.items || []).map(item => [String(item.id), Number(item.updatedAt) || 0]));
     const folderBehind = !folderData || folderStamp.size !== data.items.length || data.items.some(item => (Number(item.updatedAt) || 0) > (folderStamp.get(String(item.id)) ?? -1));
     if (folderUri && folderBehind) queueFolderDatabaseWrite(data, folderUri).catch(error => console.warn("Could not save the restored database snapshot", error));
+    backfillAndroidLibraryMirror(data);
     return { ...data, loadedFromFolder: Boolean(folderData) };
   }
 
@@ -1137,47 +1163,104 @@
 
   // Streams the library to a file in small chunks, so a 1500-game export never builds one huge string
   // or sends one huge message across the Android bridge (that crashed the app).
-  // mode "ask": Android's "Save as" screen. mode "folder": straight into the chosen backup folder.
+  // mode "ask": Android's "Save as" screen. mode "folder": the chosen backup folder. mode "share": Android's share sheet.
   // Backups name where each game came from (source + source id) so a restore can match it exactly instead of guessing by title.
   const backupRefOf = item => ({ id: String(item?.id ?? ""), source: String(item?.metadataSource || item?.source || "manual"), providerId: String(item?.providerId ?? ""), category: String(item?.category || ""), title: String(item?.title || ""), year: String(item?.year || "") });
-  const backupEntry = item => ({ ...portableItem(item), backupRef: backupRefOf(item) });
-  async function exportLibrary({ items, history, preferences }, { mode = "ask", onProgress } = {}) {
+  async function backupEntry(item) {
+    const transferImages = {};
+    try {
+      const loaded = await loadItemImages(item);
+      for (const [path, source] of Object.entries(loaded || {})) {
+        if (!source) continue;
+        if (/^data:image\//i.test(source)) transferImages[path] = source;
+        else if (/^blob:/i.test(source)) {
+          const blob = await (await fetch(source)).blob();
+          transferImages[path] = `data:${blob.type || "image/webp"};base64,${await blobAsBase64(blob)}`;
+        }
+      }
+    } catch (error) { console.warn(`Could not package saved artwork for ${item.title || item.id}`, error); }
+    return { ...portableItem(item), backupRef: backupRefOf(item), ...(Object.keys(transferImages).length ? { transferImages } : {}) };
+  }
+  async function exportLibrary({ items, history, preferences }, { mode = "ask", onProgress, password = "" } = {}) {
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
+    const sharePlugin = window.Capacitor?.Plugins?.ShareIntent;
     // Backups are gzip-compressed when the WebView can compress; the importer opens both forms.
     const gzip = typeof CompressionStream === "function" && typeof TextEncoder === "function";
-    const fileName = `${app.key}-backup-${new Date().toISOString().slice(0, 10)}.json${gzip ? ".gz" : ""}`;
-    if (!plugin?.writeDocumentChunk) throw new Error("This build cannot save files. Update the app.");
+    const encrypted = Boolean(password);
+    if (encrypted && (!gzip || !window.SplitAppTransferCrypto)) throw new Error("Password-protected transfers are not supported by this Android WebView.");
+    const fileName = encrypted ? `${app.key}-transfer-${new Date().toISOString().slice(0, 10)}.sqx` : `${app.key}-backup-${new Date().toISOString().slice(0, 10)}.json${gzip ? ".gz" : ""}`;
+    const sharing = mode === "share";
+    if (sharing && !encrypted) throw new Error("Sharing a transfer requires a password-protected file.");
+    if (sharing ? !sharePlugin?.beginFile || !sharePlugin?.appendFileChunk || !sharePlugin?.shareChunkedFile : !plugin?.writeDocumentChunk) throw new Error("This build cannot export files. Update the app.");
+    const exportId = `${app.key}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const notifyExport = async (method, data = {}) => {
+      try { if (sharePlugin?.[method]) await sharePlugin[method]({ id: exportId, filename: fileName, encrypted, ...data }); }
+      catch (error) { console.warn(`Could not update export notification (${method})`, error); }
+    };
+    // Ask before Android opens its save picker. If the user grants permission,
+    // progress notifications can start as soon as the destination is chosen.
+    let notificationPermission;
+    try { notificationPermission = await sharePlugin?.requestExportNotificationPermission?.(); }
+    catch (error) { console.warn("Could not request export notification permission", error); }
     let opened;
-    if (mode === "folder") {
+    if (sharing) {
+      const extension = fileName.split(".").pop();
+      await sharePlugin.beginFile({ filename: fileName.slice(0, -(extension.length + 1)), extension });
+      opened = {};
+    } else if (mode === "folder") {
       const uri = await getFolderUri({ prompt: false });
       if (!uri) throw new Error("No backup folder selected. Pick one in Settings → Backups.");
       opened = await plugin.beginFolderExport({ uri, fileName });
-    } else opened = await plugin.createDocument({ fileName, mimeType: gzip ? "application/gzip" : "application/json" });
-    let write = text => plugin.writeDocumentChunk({ content: text }), finishStream = async () => {}, pumpError = null;
+    } else opened = await plugin.createDocument({ fileName, mimeType: encrypted ? "application/octet-stream" : gzip ? "application/gzip" : "application/json" });
+    if (notificationPermission?.granted === false) onProgress?.(0, items.length, { notificationsAllowed: false });
+    const notificationsAvailable = Boolean(sharePlugin?.startExportNotification);
+    if (notificationsAvailable) await notifyExport("startExportNotification", { total: items.length, done: 0 });
+    let exportSucceeded = false, lastNotification = 0;
+    const toBase64 = bytes => { let binary = ""; for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(at, at + 0x8000)); return btoa(binary); };
+    const writeOutputChunk = async value => {
+      if (sharing) return sharePlugin.appendFileChunk({ data: typeof value === "string" ? toBase64(new TextEncoder().encode(value)) : toBase64(value) });
+      return plugin.writeDocumentChunk({ content: typeof value === "string" ? value : toBase64(value), ...(typeof value === "string" ? {} : { base64: true }) });
+    };
+    let write = text => sharing ? writeOutputChunk(new TextEncoder().encode(text)) : plugin.writeDocumentChunk({ content: text }), finishStream = async () => {}, pumpError = null;
     if (gzip) {
-      const compressor = new CompressionStream("gzip"), writer = compressor.writable.getWriter(), reader = compressor.readable.getReader(), encoder = new TextEncoder();
-      const toBase64 = bytes => { let binary = ""; for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(at, at + 0x8000)); return btoa(binary); };
-      const pump = (async () => { for (;;) { const { done, value } = await reader.read(); if (done) break; await plugin.writeDocumentChunk({ content: toBase64(value), base64: true }); } })()
+      const compressor = new CompressionStream("gzip"), writer = compressor.writable.getWriter(), encoder = new TextEncoder();
+      const output = encrypted ? await window.SplitAppTransferCrypto.encryptStream(compressor.readable, password) : compressor.readable;
+      const outputReader = output.getReader();
+      const pump = (async () => { for (;;) { const { done, value } = await outputReader.read(); if (done) break; await writeOutputChunk(value); } })()
         .catch(error => { pumpError = error; writer.abort(error).catch(() => {}); });
       write = async text => { if (pumpError) throw pumpError; await writer.write(encoder.encode(text)); };
       finishStream = async () => { if (!pumpError) await writer.close().catch(error => { pumpError = pumpError || error; }); await pump; if (pumpError) throw pumpError; };
     }
     try {
       const CHUNK = 256 * 1024;
+      const deviceMemory = Number(typeof navigator !== "undefined" && navigator.deviceMemory) || 4;
+      const imageBatchSize = deviceMemory <= 2 ? 2 : 4;
       let buffer = `{"app":${JSON.stringify(app.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(items.map(backupRefOf))},"items":[`;
-      for (let index = 0; index < items.length; index++) {
-        buffer += (index ? "," : "") + JSON.stringify(backupEntry(items[index]));
-        if (buffer.length >= CHUNK) {
-          await write(buffer); buffer = "";
-          onProgress?.(index + 1, items.length);
-          await new Promise(resolve => setTimeout(resolve, 0));
+      let first = true;
+      for (let offset = 0; offset < items.length; offset += imageBatchSize) {
+        const entries = await Promise.all(items.slice(offset, offset + imageBatchSize).map(backupEntry));
+        for (const entry of entries) {
+          buffer += (first ? "" : ",") + JSON.stringify(entry); first = false;
+          if (buffer.length >= CHUNK) { await write(buffer); buffer = ""; }
         }
+        const done = Math.min(offset + entries.length, items.length);
+        onProgress?.(done, items.length);
+        if (Date.now() - lastNotification >= 1000 || done === items.length) {
+          lastNotification = Date.now();
+          await notifyExport("updateExportNotification", { done, total: items.length });
+        }
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
       buffer += `],"history":${JSON.stringify(history || [])},"preferences":${JSON.stringify(preferences || {})}}`;
       await write(buffer);
       await finishStream();
+      if (sharing) await sharePlugin.shareChunkedFile({ mimeType: "application/octet-stream", title: fileName });
       onProgress?.(items.length, items.length);
-    } finally { await plugin.closeDocument().catch(() => {}); }
+      exportSucceeded = true;
+    } finally {
+      if (!sharing) await plugin.closeDocument().catch(() => {});
+      if (notificationsAvailable) await notifyExport("finishExportNotification", { success: exportSucceeded, shared: sharing, message: exportSucceeded ? "" : "The export did not finish. Try again." });
+    }
     return { fileName, uri: opened?.uri || "" };
   }
 
@@ -1271,6 +1354,8 @@
     hydrateThumbnails,
     flushFolderWrites: () => Promise.all([flushFolderNow(), folderSnapshotQueue, folderWriteQueue]),
     setImageStorage,
+    collectImageCandidates,
+    collectAllImageCandidates,
     inspectFolder,
     isNativeFolderStorageAvailable: hasFolderPlugin
   });
