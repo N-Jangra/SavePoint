@@ -45,6 +45,11 @@ body[data-page="dashboard"] .topbar h1 { background: none; color: var(--legacy-t
 .status-pill { border-radius: 8px; }
 .progress-line { background: var(--surface-2); }
 .progress-line span { background: var(--accent); }
+.progress-line[data-status="backlog"] span,.demo-poster-progress[data-status="backlog"] i { background:var(--status-color-backlog); }
+.progress-line[data-status="playing"] span,.demo-poster-progress[data-status="playing"] i { background:var(--status-color-playing); }
+.progress-line[data-status="on-hold"] span,.demo-poster-progress[data-status="on-hold"] i { background:var(--status-color-on-hold); }
+.progress-line[data-status="dropped"] span,.demo-poster-progress[data-status="dropped"] i { background:var(--status-color-dropped); }
+.progress-line[data-status="completed"] span,.demo-poster-progress[data-status="completed"] i { background:var(--status-color-completed); }
 .collection-welcome { border-radius: 20px; box-shadow: var(--shadow); }
 .collection-welcome h2, .collection-section-heading h2 { font-family: var(--font-heading); }
 .collection-overview > div { border-radius: 15px; box-shadow: var(--shadow); }
@@ -509,6 +514,17 @@ body[data-page="discover"] .discover-empty .button { min-height: 42px; margin-to
 .settings-detail-page .setting-row-control .setting-reset-action,
 .settings-detail-page .setting-row-control .setting-cache-clear,
 .settings-detail-page .setting-row-control > .toggle { min-height: 44px; }
+.trash-item-row .setting-row-copy strong { display:block; overflow-wrap:anywhere; }
+.trash-item-row .setting-row-copy small { display:block; margin-top:4px; }
+.trash-item-row .setting-row-control { display:flex; gap:8px; }
+.trash-item-row .setting-row-control .button { min-height:44px; white-space:nowrap; }
+@media (max-width:560px) {
+  .trash-page .trash-item-row { grid-template-columns:36px minmax(0,1fr); align-items:start; gap:8px 10px; padding:14px; }
+  .trash-page .trash-item-row > .setting-icon { grid-column:1; grid-row:1; margin-top:2px; }
+  .trash-page .trash-item-row > .setting-row-copy { grid-column:2; grid-row:1; }
+  .trash-page .trash-item-row > .setting-row-control { grid-column:1 / -1; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; width:100%; }
+  .trash-page .trash-item-row .setting-row-control .button { min-width:0; width:100%; padding-inline:8px; font-size:.82rem; }
+}
 @media (max-width: 360px) {
   .settings-detail-page .settings-subpage-heading { grid-template-columns: minmax(0,1fr) auto; grid-template-rows:auto auto; row-gap:1px; }
   .settings-detail-page .settings-subpage-heading .settings-back { grid-column:1; grid-row:1; }

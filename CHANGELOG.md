@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.1.7] — 2026-11-15
+
+### Added
+
+- Profile now shows player level and the three most recent badges, with a direct Achievements link.
+- Added a Statuses page in Settings: add your own status options, rename or remove them, and hide built-in ones you do not use. Each custom status gets its own Profile shelf that opens the library filtered to it.
+- Added Help & FAQ and version-change What's New pages, and a 30-day Recently deleted page.
+- Added status-colored progress bars in the library.
+- Rebuilt Achievements into categories (Library, Playtime, Finishing, Backlog & Queue, Favourites & Ratings, Discovery), each with a swipeable row and a **View all** grid that greys out locked badges. Every bronze, silver and gold rank is now its own achievement with its own page showing goal, rarity, XP and unlock date.
+- Added 32 achievements: Medal Kings (bronze, silver and gold sets), Badge Collector (1 to 200 unlocked), top-rank badge families, and level milestones. Levels and ranks use military-style insignia; the Levels page shows the next two levels and locks the rest.
+- Badge images load with placeholders, and any badge can be shared as a rendered PNG card.
+
+### Changed
+
+- Quick Setup completed picks fill playtime progress when metadata is available, including when it arrives later.
+- Profile image pickers list only titles with artwork matching the selected profile-photo or background slot.
+- Quick Setup disables titles already in your library on every step so they cannot be picked again.
+- Games page poster view now shows just the poster, a thin progress bar and the + button, matching the library poster grid (no platform tag, title or hours text).
+- Games page has a fourth **Large** view (two big poster tiles per row, like the Library Large view); the view button now cycles List, Posters, Cards, Large.
+- Recently deleted shows each game as a card with its image (with a loading placeholder), days left, and clear Restore and Delete forever buttons.
+- Bulk metadata lookups now adapt concurrency to Android device and network limits.
+
+### Fixed
+
+- Library: custom statuses now work in `#library?status=<name>` links and survive a reload.
+- Statuses page: renamed custom statuses no longer lose their name when the page redraws; the layout matches the other Settings pages.
+- Profile: the Achievements summary lines up with the other shelves.
+- Games and Profile artwork now follows one order: HowLongToBeat portrait, SteamDB portrait, HowLongToBeat screenshots, SteamDB screenshots, then any other saved picture. A failed image falls back to the next one, and a broken-image icon is never shown.
+- Offline artwork: when a cover or screenshot cannot load from the web, the Games, Profile and Library lists now fall back to the saved copy (the game's folder thumbnail when a data folder is selected, otherwise the IndexedDB copy) instead of showing a broken image. Steam's portrait art is now saved too, and a game-based profile photo is a real image so it can fall back as well. Video trailers still stream and are not saved; Timeline, Statistics and Add/Edit keep their existing fallbacks.
+- Artwork loading pipeline: Games, Library and Profile posters load through a queue (up to 6 at a time, 4 on Android, newest rows first) and are cached in memory and in IndexedDB as small thumbnails, so scrolling no longer refetches pictures that already loaded or leaves older ones blank, and they are also available offline.
+
+## [0.1.6] — 2026-11-14
+
+- **Quick setup search**: query HowLongToBeat and SteamDB concurrently, show the first source's matches as soon as they arrive, and merge later results while preserving the HowLongToBeat title order. Empty searches continue to show loading placeholders until matches are ready.
+
+### Added
+
+- Added multi-rank achievement medals, player levels, local SVG artwork, and unlock popups.
+- Rebuilt Achievements as Reddit-style sections with bronze, silver and gold rank badges, a shared in-page header, and a redesigned player-level header.
+- Redrew all badge artwork as a consistent hexagon emblem set.
+- Added 12 new achievements (Hype train, Long haul, Goal crusher, Completionist, Loved and finished, Play logger, Game vault, Hour hoarder, Retro revival, Fresh release, Era hopper, Genre loyalist). Game ratings stay local.
+- Removed the Platform hopper achievement.
+- Added 5 more achievements (Clean slate, Critic's chair, Favourite vault, Endgame, Quest log).
+- Added 5 more achievements (Cover wall, Genre cartographer, Never-ending, Juggler, Grand planner); the top player level is now above 40.
+- Added a Levels page (Achievements → Levels) listing every level, its name and the XP it needs, and a progress ring around the level hexagon.
+- Opening Achievements always starts at the top of the page.
+- Tidied the profile options menu (Reorder profile sections now matches the other rows) and the Reorder profile page, and refined the rank 3 badge artwork.
+- Fixed Android export completion counts to report the exact exported games with correct singular/plural wording.
+
+### Fixed
+
+- Closing the My games filter dialog no longer rerenders the full library when its filter state is unchanged.
+
+## [0.1.5] — 2026-11-14
+
+### Fixed
+
+- Quick Setup prevents selecting a title again in later status steps, badges titles already in the library, and searches with a shorter delay.
+- All games adds status grouping in its header; the Games dashboard and Profile posters no longer show the grouping eye.
+- Explore keeps the search query when switching between Normal and Mix Fetch.
+- The unfiltered All games view keeps its centered Filters pill when navigating away and back; the active filter bar appears only for active criteria.
+- Profile includes Playing and Backlog collections in the requested order.
+- Added offline achievements and linked badge detail pages from Profile.
+- Quick Setup completion targets Main story + extras by default.
+- Completed Quick Setup games keep that target visible as pending when playtime facts are unavailable.
+
 Notable SavePoint changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/) (`0.x` while the app is evolving).
 
 ## [0.1.4] — 2026-11-09

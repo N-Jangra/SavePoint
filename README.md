@@ -17,10 +17,13 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 | Timeline and statistics | Review status changes by day on the Timeline, and explore a Statistics overview with Play time (split by status: time spent, time saved on dropped games, time left on playing and on-hold games, and money per status), Library breakdown, Activity and Ratings sub-pages (grouped ratings and quick rate). |
 | Sharing | Share a Home group as themed images (choose games per page and how many pages) or as a PDF list; every share can be saved to Downloads or sent through Android's share sheet. |
 | Profile collections | Open All Games, Completed, Favorites, On Hold, or Dropped games, in that order. Favorites has its own page; other collection filters do not include a favorites-only option. Empty status collections offer an Add games card. |
-| Quick setup | First-run wizard (completed, to play, playing, dropped) with Steam + SteamDB trending tiles and HowLongToBeat search; also opens from the Profile menu and as a favourites picker on an empty Favorites page. |
+| Profile and insights | See player level and recent badges on Profile; open What's new. |
+| Statuses and recovery | Add, rename or hide status options in Settings (custom statuses get their own Profile shelf), and restore deleted games for 30 days. |
+| Achievements | Category rows with View all grids, one page per bronze/silver/gold achievement, Medal Kings, Badge Collector and level insignia, and badge sharing as an image. |
+| Quick setup | First-run wizard (completed, to play, playing, on hold, dropped) with Steam + SteamDB trending tiles and HowLongToBeat search; completed picks fill progress from available playtime metadata, and titles already in your library are greyed out and cannot be picked. |
 | Settings | Customize appearance and navigation; configure metadata sources, storage, memory (poster cache size), backups, tracking, and diagnostics. |
 | Performance | Load library batches and defer off-screen artwork until it approaches the viewport, keeping large image-heavy collections responsive. |
-| Offline use | Keep library data locally and cache provider details/artwork where the selected platform and storage settings allow. Video trailers stream when played and are not copied into the library folder. |
+| Offline use | Keep library data locally and cache provider details/artwork where the selected platform and storage settings allow; if a list cover cannot load offline, the saved copy from the game's folder or IndexedDB is used. Video trailers stream when played and are not copied into the library folder. |
 
 ## Metadata sources
 
@@ -98,9 +101,9 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.4` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.7` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
 
-The current 0.1.4 release APK is packaged as `dist/savepoint-0.1.4-release.apk` after a signed release build.
+The current 0.1.7 release APK is available at `android/app/build/outputs/apk/release/app-release.apk` after the signed Gradle release build.
 
 ## Repository layout
 
@@ -144,7 +147,7 @@ SavePoint/
 | Property | Value |
 |---|---|
 | Package | `savepoint` |
-| Version | `0.1.4` |
+| Version | `0.1.7` |
 | Capacitor / Android application ID | `com.cuemark.savepoint` |
 | Capacitor web directory | `frontend/` |
 | Browser state key | `splitapp_savepoint_v1` |

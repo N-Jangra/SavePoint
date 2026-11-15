@@ -27,7 +27,7 @@
   };
   window.visualViewport?.addEventListener("resize", syncSoftKeyboardState, { passive: true });
   window.addEventListener("resize", syncSoftKeyboardState, { passive: true });
-  const titles = { games: "Games", profile: "Profile", favorites: "Favorites", "profile-cover": "Edit profile", dashboard: "My games", library: "My games", discover: "Explore", explore: "Explore", mix: "Mix fetch", setup: "Quick setup", details: "Details", add: "Add Game", "import-preview": "Import List", export: "Export", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
+  const titles = { games: "Games", profile: "Profile", favorites: "Favorites", "profile-cover": "Edit profile", help: "Help & FAQ", "whats-new": "What’s new", dashboard: "My games", library: "My games", discover: "Explore", explore: "Explore", mix: "Mix fetch", setup: "Quick setup", achievements: "Achievements", details: "Details", add: "Add Game", "import-preview": "Import List", export: "Export", sync: "Metadata Sync", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
   // Three tabs, like ScreenMark: Games (ongoing + upcoming), Explore (search and browse sources), Profile.
   const navItems = [
     { key: "games", label: "Games", icon: "gamepad-2", locked: true },
@@ -84,6 +84,24 @@
     return window.lucide?.icons?.[exportName] ? name : fallback;
   }
   const storageKey = window.SplitAppBackend?.storageKey || `splitapp_${config.key}_v1`;
+  const customCategoryKey = `${storageKey}_custom_categories_v1`;
+  try { const rows = JSON.parse(localStorage.getItem(customCategoryKey) || "[]"); (Array.isArray(rows) ? rows : []).forEach(row => { if (row?.key && !config.categories.some(category => category.key === row.key)) config.categories.push(row); }); } catch (_) {}
+
+  // User-defined status options: custom statuses can be added, renamed and removed; built-in ones can be hidden (Completed and Backlog always stay).
+  const statusOptionsKey = `${storageKey}_status_options_v1`, PROTECTED_STATUSES = ["Completed", "Backlog"];
+  const statusOptions = (() => { try { const value = JSON.parse(localStorage.getItem(statusOptionsKey) || "null"); return { custom: value?.custom || {}, hidden: value?.hidden || {} }; } catch (_) { return { custom: {}, hidden: {} }; } })();
+  function applyStatusOptions() {
+    config.categories.forEach(row => {
+      if (!row.baseStatuses) row.baseStatuses = [...(row.statuses || [])];
+      const hidden = new Set(statusOptions.hidden[row.key] || []);
+      row.statuses = [...row.baseStatuses.filter(name => PROTECTED_STATUSES.includes(name) || !hidden.has(name)), ...(statusOptions.custom[row.key] || []).filter(name => !row.baseStatuses.includes(name))];
+    });
+  }
+  function saveStatusOptions() { try { localStorage.setItem(statusOptionsKey, JSON.stringify(statusOptions)); } catch (_) {} applyStatusOptions(); }
+  applyStatusOptions();
+  const trashStorageKey = `${storageKey}_trash_v1`;
+  const readTrash = () => { try { const rows = JSON.parse(localStorage.getItem(trashStorageKey) || "[]"); const fresh = (Array.isArray(rows) ? rows : []).filter(row => row?.item && Date.now() - Number(row.deletedAt) < 30 * 86400000); if (fresh.length !== rows.length) localStorage.setItem(trashStorageKey, JSON.stringify(fresh)); return fresh; } catch (_) { return []; } };
+  const writeTrash = rows => { try { localStorage.setItem(trashStorageKey, JSON.stringify(rows)); } catch (_) {} };
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch (_) { stored = {}; }
   const prefs = { ...prefsDefaults, ...(stored.preferences || {}) };
@@ -138,12 +156,13 @@
   let libraryLoading = true;
   // Quick setup wizard state (see pages/setup.js).
   const SETUP_DONE_KEY = `${(window.SplitAppBackend?.storageKey || `splitapp_${config.key}_v1`)}_setup_done`;
-  const setupState = { mode: "", step: 0, query: "", rows: [], loading: false, error: "", selected: new Map(), picks: [new Map(), new Map(), new Map(), new Map()] };
-  let setupStarted = false, setupFromFavorites = false, setupRequest = 0, setupSearchTimer = 0; const setupTrending = {};
+  const setupState = { mode: "", step: 0, query: "", rows: [], loading: false, error: "", selected: new Map(), picks: Array.from({ length: 5 }, () => new Map()) };
+  let setupStarted = false, setupFromFavorites = false, setupRequest = 0, setupSearchTimer = 0; const setupTrending = { rows: null, promise: null };
   let history = Array.isArray(stored.history) ? stored.history : [];
   const [initialHashPath, initialHashQuery = ""] = location.hash.slice(1).split("?");
   const initialRoute = initialHashPath.split("/");
   let discoverSource = new URLSearchParams(initialHashQuery).get("source") || "";
+  let achievementId = initialRoute[0] === "achievements" ? initialRoute[1] || "" : "";
   let page = (initialRoute[0] === "search" || initialRoute[0] === "dashboard") ? "library" : initialRoute[0] === "explore" ? "discover" : initialRoute[0] in titles ? initialRoute[0] : "games";
   const statsSections = ["playtime", "library", "breakdown", "activity", "ratings"];
   const normalizeStatsSection = section => section === "breakdown" ? "library" : section;
@@ -161,11 +180,14 @@
   const gamesTabStore = `${config.key}_games_tab`;
   const libraryStore = `${config.key}_library_state`;
   let libraryState = (() => { try { const saved = JSON.parse(localStorage.getItem(libraryStore) || "{}"); return { view: ["grid", "large", "list"].includes(saved.view) ? saved.view : "grid", sort: saved.sort || "alpha", status: saved.status || "all", platform: saved.platform || "all", tag: saved.tag || "", favorites: false, query: "" }; } catch (_) { return { view: "grid", sort: "alpha", status: "all", platform: "all", tag: "", favorites: false, query: "" }; } })();
+  let libraryStatusGroups = (() => { try { return localStorage.getItem(`${config.key}_library_status_groups`) === "1"; } catch (_) { return false; } })();
+  const builtInRouteStatuses = new Set(["Playing", "Backlog", "On Hold", "Dropped", "Completed"]);
+  const libraryRouteStatuses = { has: name => builtInRouteStatuses.has(name) || Object.values(statusOptions.custom || {}).some(list => list.includes(name)) };
   const saveLibraryState = () => { try { const { query, ...rest } = libraryState; localStorage.setItem(libraryStore, JSON.stringify(rest)); } catch (_) {} };
-  let gamesTab = (() => { try { return localStorage.getItem(gamesTabStore) === "upcoming" ? "upcoming" : "ongoing"; } catch (_) { return "ongoing"; } })(), gamesView = (() => { try { return ["posters", "cards"].includes(localStorage.getItem(gamesStore)) ? localStorage.getItem(gamesStore) : "list"; } catch (_) { return "list"; } })();
+  let gamesTab = (() => { try { return localStorage.getItem(gamesTabStore) === "upcoming" ? "upcoming" : "ongoing"; } catch (_) { return "ongoing"; } })(), gamesView = (() => { try { return ["posters", "cards", "large"].includes(localStorage.getItem(gamesStore)) ? localStorage.getItem(gamesStore) : "list"; } catch (_) { return "list"; } })();
   let importState = null;
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
-  let discoverQuery = "";
+  let discoverQuery = "", exploreQuery = "";
   let addMetadataQuery = "";
   let timelineFilter = "all", timelineSearch = "", timelineMonth = "", timelineYear = "";
   let dashboardStatusFilter = prefs.dashboardDefaultCategory === "remember"
@@ -382,7 +404,46 @@
   let persistTimer = 0, persistWaiters = [], persistFull = false;
   let selectMode = false, lastAutoBackup = 0; const selectedIds = new Set();
   const persistIds = new Set(), persistRemoved = new Set();
+  const achievementAwardsKey = `${storageKey}_achievement_ranks_v1`;
+  let achievementAwardsReady = false, achievementAwardQueue = [], achievementAwardVisible = false;
+  function currentAchievementUnlocks() {
+    return window.SplitAppAchievements?.unlocks?.(items)?.map(row => row.id) || [];
+  }
+  function initializeAchievementAwards() {
+    if (achievementAwardsReady) return;
+    window.SplitAppAchievements?.stamp?.(items);
+    try {
+      const current = currentAchievementUnlocks(), previous = JSON.parse(localStorage.getItem(achievementAwardsKey) || "null");
+      localStorage.setItem(achievementAwardsKey, JSON.stringify([...new Set([...(Array.isArray(previous) ? previous : []), ...current])]));
+      achievementAwardsReady = true;
+    } catch (_) { achievementAwardsReady = true; }
+  }
+  function showNextAchievementAward() {
+    if (achievementAwardVisible || !achievementAwardQueue.length) return;
+    const award = achievementAwardQueue.shift(), dialog = document.createElement("div");
+    dialog.className = "achievement-award-backdrop"; dialog.setAttribute("role", "dialog"); dialog.setAttribute("aria-modal", "true"); dialog.setAttribute("aria-label", "Achievement earned");
+    dialog.innerHTML = `<article class="achievement-award-card"><button type="button" class="achievement-award-close" aria-label="Close">×</button><span class="achievement-award-spark" aria-hidden="true">✦</span><img src="${esc(award.asset)}" alt="" width="112" height="112"><p>ACHIEVEMENT UNLOCKED</p><h2>${esc(award.name)}</h2><strong>${esc(award.title)}</strong><span class="achievement-award-xp">+${award.xp} XP</span><a href="#achievements/${encodeURIComponent(award.badgeId)}">View badge</a></article>`;
+    document.body.append(dialog); achievementAwardVisible = true;
+    const close = () => { dialog.remove(); achievementAwardVisible = false; setTimeout(showNextAchievementAward, 220); };
+    dialog.querySelector(".achievement-award-close").addEventListener("click", close);
+    dialog.addEventListener("click", event => { if (event.target === dialog) close(); });
+    dialog.querySelector("a").addEventListener("click", close);
+    window.setTimeout(() => { if (dialog.isConnected) close(); }, 6500);
+    dialog.querySelector(".achievement-award-close").focus();
+  }
+  function detectAchievementAwards() {
+    if (!achievementAwardsReady || !window.SplitAppAchievements?.unlocks) return;
+    const currentRows = window.SplitAppAchievements.unlocks(items), current = new Set(currentRows.map(row => row.id));
+    let seen = [];
+    try { const parsed = JSON.parse(localStorage.getItem(achievementAwardsKey) || "[]"); if (Array.isArray(parsed)) seen = parsed; } catch (_) {}
+    const seenSet = new Set(seen), newlyEarned = currentRows.filter(row => !seenSet.has(row.id));
+    try { localStorage.setItem(achievementAwardsKey, JSON.stringify([...new Set([...seen, ...current])])); } catch (_) {}
+    window.SplitAppAchievements.stamp?.(items);
+    newlyEarned.sort((x, y) => y.xp - x.xp).slice(0, 3).forEach(row => achievementAwardQueue.push(row));
+    showNextAchievementAward();
+  }
   function persist(scope) {
+    detectAchievementAwards();
     localMutationRevision += 1;
     if (scope && typeof scope === "object") {
       (scope.ids || []).forEach(id => persistIds.add(String(id)));
@@ -417,7 +478,12 @@
   }
   async function runWithConcurrency(values, requestedWorkers, task) {
     const queue = [...values];
-    const workers = Math.max(1, Math.min(10, Number(requestedWorkers) || 4, queue.length || 1));
+    const memory = Number(navigator.deviceMemory) || 4, cores = Number(navigator.hardwareConcurrency) || 4, connection = navigator.connection || {};
+    let deviceLimit = Math.max(1, Math.floor(cores / 2));
+    if (memory <= 2) deviceLimit = Math.min(deviceLimit, 1); else if (memory <= 4) deviceLimit = Math.min(deviceLimit, 2);
+    if (connection.saveData || /^(slow-2g|2g)$/.test(connection.effectiveType || "")) deviceLimit = 1; else if (connection.effectiveType === "3g") deviceLimit = Math.min(deviceLimit, 2);
+    if (nativeAndroid) deviceLimit = Math.min(deviceLimit, memory <= 2 || cores <= 2 ? 1 : memory <= 4 || cores <= 4 ? 2 : 3);
+    const workers = Math.max(1, Math.min(10, deviceLimit, Number(requestedWorkers) || 4, queue.length || 1));
     await Promise.all(Array.from({ length: workers }, async () => {
       while (queue.length) await task(queue.shift());
     }));
@@ -575,7 +641,9 @@
   const sessionUiKey = `${config.key}_session_ui_v1`;
   const scrollKey = () => page === "settings" ? `settings/${settingsGroup || ""}` : page === "details" ? `details/${detailItemId || ""}` : page;
   const rememberScroll = () => scrollMemory.set(scrollKey(), window.scrollY);
+  try { history.scrollRestoration = "manual"; } catch (_) {}
   const restoreScroll = () => {
+    if (page === "achievements") { window.scrollTo({ top: 0, behavior: "auto" }); return; }
     const top = scrollMemory.get(scrollKey()) || 0;
     window.scrollTo({ top, behavior: "auto" });
     if (top) requestAnimationFrame(() => window.scrollTo({ top, behavior: "auto" }));
@@ -598,6 +666,7 @@
   document.addEventListener("visibilitychange", () => { if (document.hidden) saveSessionUi(); else { lastVisibleScrollHash = location.hash || "#games"; lastVisibleScrollY = Math.max(0, Math.round(window.scrollY || 0)); } });
   function goto(next, updateHistory = true, back = false) {
     if (!back) rememberScroll();
+    const previousPage = page;
     if (next === "search" || next === "dashboard") next = "library";
     if (next === "explore") next = "discover";
     const [nextPath, nextQuery = ""] = String(next).split("?");
@@ -605,14 +674,16 @@
     if (page === "details" && nextPage !== "details") detailStack = [];
     if (page === "details" && nextPage !== "details") { detailRequest++; detailLoading = false; }
     page = nextPage in titles ? nextPage : "games";
+    achievementId = page === "achievements" ? nextSection || "" : "";
     if (page !== "statistics") statsView = "overall";
     statsSubpage = page === "statistics" && statsSections.includes(nextSection) ? normalizeStatsSection(nextSection) : "";
-    if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverSubmitted = ""; discoverRequestId++; discoverCache = null; }
+    if (page !== "discover" && page !== "mix" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; exploreQuery = ""; discoverSubmitted = ""; discoverRequestId++; discoverCache = null; }
+    if (page === "discover" || page === "mix") discoverQuery = exploreQuery;
     if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
     if (page !== "settings") settingsGroup = null;
     if (page === "library") {
       const status = new URLSearchParams(nextQuery).get("status") || "";
-      if (["On Hold", "Dropped", "Completed"].includes(status)) libraryState.status = status;
+      if (libraryRouteStatuses.has(status)) libraryState.status = status;
       else if (!back) libraryState.status = "all";
       libraryState.favorites = false;
     }
@@ -620,6 +691,9 @@
     document.body.dataset.navDir = back ? "back" : "forward";
     render(); syncPageNavigation();
     if (back) restoreScroll(); else window.scrollTo({ top: 0, behavior: "auto" });
+    if (previousPage !== page && ["discover", "mix"].includes(previousPage) && ["discover", "mix"].includes(page) && exploreQuery.trim()) {
+      if (page === "discover") submitDiscover(); else runMixSearch();
+    }
   }
   function historyPush(replace = false) {
     const route = currentHistoryRoute();
@@ -634,10 +708,11 @@
   }
   function currentHistoryRoute() {
     return page === "details" && detailItemId && !detailPreview ? `details?id=${encodeURIComponent(detailItemId)}`
+      : page === "achievements" && achievementId ? `achievements/${encodeURIComponent(achievementId)}`
       : page === "settings" && settingsGroup ? `settings/${settingsGroup}${settingsParam ? `?id=${encodeURIComponent(settingsParam)}` : ""}`
       : page === "discover" && discoverSource ? `discover?source=${encodeURIComponent(discoverSource)}`
       : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}`
-      : page === "library" && ["On Hold", "Dropped", "Completed"].includes(libraryState.status) ? `library?status=${encodeURIComponent(libraryState.status)}` : page;
+      : page === "library" && libraryRouteStatuses.has(libraryState.status) ? `library?status=${encodeURIComponent(libraryState.status)}` : page;
   }
   function historyReplace() {
     const url = new URL(location.href);
@@ -686,8 +761,8 @@
     if (fullLogs.logcat && settingsGroup === "logcat") logEntries = mergeLogLists(fullLogs.logcat, logEntries);
     if (fullLogs.history && settingsGroup === "history") changeLog = mergeLogLists(fullLogs.history, changeLog);
     const libraryStatus = page === "library" ? new URLSearchParams(location.hash.split("?")[1] || "").get("status") || "" : "";
-    return { setup: setupState, statsView, gamesTab, gamesView, libraryState, libraryStatus, libraryLoading, logQuery, logFrom, logTo, changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, syncShown, reviewShown, syncBackHref, reviewItems: page === "sync" ? items.filter(item => item.matchReview?.length).map(item => ({ ...item, matchReview: item.matchReview.map(flag => ({ ...flag, name: window.SplitAppSources?.list?.().find(source => source.key === flag.key)?.name || flag.key })) })) : [], config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailStackSize: detailStack.length, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
-      detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, category, labelCategory, defaultStatus, esc, safeLucideName };
+    return { setup: setupState, statsView, gamesTab, gamesView, libraryState, libraryStatus, libraryLoading, statusOptions, protectedStatuses: PROTECTED_STATUSES, libraryStatusGroups, achievementId, logQuery, logFrom, logTo, changeLog, settingsOrigin, exportOptions, itemCount: items.length, statsLimits, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, dataRevision: localMutationRevision, dashboardRendered: dashboardRenderedCounts(), syncJob, syncCounts, syncShown, reviewShown, syncBackHref, reviewItems: page === "sync" ? items.filter(item => item.matchReview?.length).map(item => ({ ...item, matchReview: item.matchReview.map(flag => ({ ...flag, name: window.SplitAppSources?.list?.().find(source => source.key === flag.key)?.name || flag.key })) })) : [], config, prefs, items, history, logEntries, activeCategory, libraryQuery, discoverQuery, addMetadataQuery, mixQuery: exploreQuery, importState, nativeAndroid, dashboardPageSize, statsRange, statsSubpage, statsActivityDate, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, dashboardPlatformFilter, matchesPlatform, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailStackSize: detailStack.length, detailTab, detailEditMode, editingItem: itemById(entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+      detailData, detailError, detailLoading, detailReturnPage, detailRestorePending, trashRows: page === "settings" && settingsGroup === "trash" ? readTrash() : [], category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardSortedItems(context = pageContext()) {
     const cacheKey = [localMutationRevision, libraryQuery, activeCategory, dashboardPlatformFilter, prefs.dashboardSort, prefs.favoritesOnly].join("|");
@@ -837,7 +912,11 @@
     if (nativeAndroid && image.closest(".dashboard-card") && source) image.dataset.dashboardCacheSrc = source;
     delete image.dataset.localItemId;
     delete image.dataset.lazySrc;
-    if (source) image.src = source;
+    if (source) {
+      image.addEventListener("load", () => { image.hidden = false; if (image.nextElementSibling) image.nextElementSibling.hidden = true; }, { once: true });
+      image.hidden = false;
+      image.src = source;
+    }
     else if (image.matches("[data-timeline-art]")) showTimelineArtworkPlaceholder(image);
     else { image.hidden = true; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
   }
@@ -947,6 +1026,71 @@
       }
     } finally { thumbFillRunning = false; }
   }
+  // Offline (or dead link) recovery for list artwork: swap in the saved IndexedDB copy of the best available picture.
+  window.SplitAppPages = window.SplitAppPages || {};
+  window.SplitAppPages.recoverArt = async image => {
+    const item = itemById(String(image.dataset.artItem || ""));
+    if (!item || !image.isConnected) return false;
+    const landscape = image.dataset.artMode === "landscape";
+    const folderCopy = () => (landscape ? item.localLandscapeData : "") || item.localPortraitData || item.localThumbnailData || "";
+    // Folder-backed library: the game's own folder holds its thumbnail and saved pictures, so read those first.
+    if (item.thumbnailPath || item.localImageFiles?.length) {
+      let local = folderCopy();
+      if (!local) { try { await window.SplitAppBackend?.hydrateThumbnails?.([item]); } catch (_) {} local = folderCopy(); }
+      if (local && image.isConnected) { image.src = local; image.style.display = ""; return true; }
+    }
+    const order = window.SplitAppPages.profileArt?.artList?.(item, landscape) || [];
+    const url = await window.SplitAppBackend?.cachedItemArt?.(item, order);
+    if (!url || !image.isConnected) return false;
+    image.src = url; image.style.display = "";
+    return true;
+  };
+  // ---- Artwork pipeline (Games / Library / Profile lists) ----------------------------------------------------------
+  // The windowed grids redraw their tiles while you scroll. Every poster goes through one shared path: the in-memory URL cache first, then the
+  // saved IndexedDB thumbnail, and only then the network, through a small concurrency-limited queue (newest rows first). A downloaded poster is
+  // shrunk, kept for the session and saved, so scrolling back (or going offline) never refetches or breaks pictures that already loaded.
+  const artQueue = window.SplitAppArtPipeline?.createQueue({ concurrency: nativeAndroid ? 4 : 6 });
+  const artWaiters = new Map(); // cache key|sig -> images waiting for it
+  const artUrlHash = text => { let hash = 0x811c9dc5; for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193); return (hash >>> 0).toString(16); };
+  let artSavedSinceTrim = 0;
+  function applyArtwork(cacheId, url) {
+    const waiting = artWaiters.get(cacheId); artWaiters.delete(cacheId);
+    waiting?.forEach(image => { if (image.isConnected && !image.hasAttribute("src")) setDeferredImageSource(image, url); });
+  }
+  async function fetchArtworkBlob(url) {
+    const controller = typeof AbortController === "function" ? new AbortController() : null, timer = controller ? setTimeout(() => controller.abort(), 12000) : 0;
+    try {
+      const response = await fetch(url, controller ? { signal: controller.signal } : undefined);
+      if (!response.ok) throw new Error(`Image request failed (${response.status})`);
+      const blob = await response.blob();
+      return blob.type && !/^image\//i.test(blob.type) ? null : await shrinkThumbBlob(blob);
+    } finally { if (timer) clearTimeout(timer); }
+  }
+  function queueArtworkLoad(image) {
+    const url = deferredImageSource(image), item = itemById(String(image.dataset.artItem || ""));
+    if (!artQueue || !item || !/^https?:/i.test(url)) { setDeferredImageSource(image, url); return; }
+    const key = thumbKeyOf(item, image.dataset.artMode === "landscape"), sig = `u:${artUrlHash(url)}`, cacheId = `${key}|${sig}`;
+    const warm = thumbUrlCache.get(cacheId);
+    if (warm) { setDeferredImageSource(image, warm); return; }
+    if (!artWaiters.has(cacheId)) artWaiters.set(cacheId, new Set());
+    artWaiters.get(cacheId).add(image);
+    artQueue.add(cacheId, async () => {
+      const saved = (await cachedThumbUrls([[key, sig]])).get(key);
+      if (saved) { applyArtwork(cacheId, saved); return; }
+      if (navigator.onLine === false) { applyArtwork(cacheId, url); return; } // let the normal error path recover a saved copy
+      let blob = null;
+      try { blob = await fetchArtworkBlob(url); } catch (_) {}
+      if (!blob) { applyArtwork(cacheId, url); return; } // blocked or failed: fall back to the browser loading it directly
+      const shown = rememberThumbUrl(key, sig, URL.createObjectURL(blob));
+      applyArtwork(cacheId, shown);
+      if (window.SplitAppIDB?.putThumbs && prefs.imageStorage !== "online") {
+        try {
+          await window.SplitAppIDB.putThumbs([[key, sig, blob]]);
+          if (++artSavedSinceTrim >= 25) { artSavedSinceTrim = 0; await window.SplitAppIDB.trimThumbs?.(prefs.imageCacheMaxEntries); }
+        } catch (_) {}
+      }
+    }, () => { const waiting = artWaiters.get(cacheId); return !waiting || ![...waiting].some(el => el.isConnected); });
+  }
   async function drainDeferredLocalImages() {
     if (deferredImageDrain) return deferredImageDrain;
     deferredImageDrain = (async () => {
@@ -960,11 +1104,16 @@
           const landscape = modeOf(record);
           const hit = !landscape && cached.get(thumbKeyOf(record.item, false));
           if (hit) { record.images.forEach(image => setDeferredImageSource(image, hit)); }
-          else if (/^https?:/i.test(record.fallback || "")) {
+          else if (/^https?:/i.test(record.fallback || "") && navigator.onLine) {
             // Not cached yet (always the case for the wide artwork of the grid views): show the online image
             // straight away instead of waiting on the slow folder.
             record.images.forEach(image => setDeferredImageSource(image, record.fallback));
           } else { slow.push(record); continue; }
+          if (!hit && /^https?:/i.test(record.fallback || "") && navigator.onLine) {
+            // Leave the folder-backed title eligible for local hydration on a later render if connectivity drops.
+            deferredLocalImageRequests.delete(record.id);
+            continue;
+          }
           timelineLocalThumbnailChecked.add(record.id);
           deferredLocalImageRequests.delete(record.id);
         }
@@ -991,11 +1140,25 @@
     if (!image?.isConnected || image.hasAttribute("src")) return;
     const id = String(image.dataset.localItemId || "");
     const item = id && itemById(id);
-    if (!item) { setDeferredImageSource(image, deferredImageSource(image)); return; }
+    if (!item) { if (!id && image.dataset.artItem && /^https?:/i.test(deferredImageSource(image))) { queueArtworkLoad(image); return; } setDeferredImageSource(image, deferredImageSource(image)); return; }
     const existing = deferredLocalImageRequests.get(id);
     if (existing) { existing.images.add(image); return; }
     const landscape = image.dataset.localImageMode === "landscape";
     const hasLocalFile = Boolean(item.thumbnailPath || item.localImageFiles?.length);
+    if (hasLocalFile && !image.dataset.folderFallbackBound) {
+      image.dataset.folderFallbackBound = "true";
+      image.addEventListener("error", async () => {
+        if (image.dataset.folderFallbackTried || !image.isConnected) return;
+        image.dataset.folderFallbackTried = "true";
+        try {
+          await window.SplitAppBackend?.hydrateThumbnails?.([item]);
+          const local = image.dataset.localImageMode === "landscape"
+            ? item.localLandscapeData || item.localPortraitData || item.localThumbnailData
+            : item.localPortraitData || item.localThumbnailData;
+          if (local && image.isConnected) setDeferredImageSource(image, local);
+        } catch (_) {}
+      });
+    }
     const localImage = landscape ? item.localLandscapeData : item.localPortraitData || item.localThumbnailData;
     if (!hasLocalFile || localImage || timelineLocalThumbnailChecked.has(id)) {
       timelineLocalThumbnailChecked.add(id);
@@ -1238,7 +1401,7 @@
     $("#page-title").textContent = titles[page];
     const topbarActions = $("#topbar-actions");
     if (topbarActions) topbarActions.hidden = page !== "dashboard";
-    { const back = $("#topbar-back"); if (back) { back.hidden = page !== "dashboard"; if (!back.hidden) window.lucide?.createIcons({ root: back, attrs: { "aria-hidden": "true" } }); } }
+    { const back = $("#topbar-back"); if (back) { back.hidden = page !== "dashboard" && page !== "achievements"; if (page === "achievements") { back.href = achievementId ? "#achievements" : "#profile"; back.setAttribute("aria-label", achievementId ? "Back to achievements" : "Back to profile"); } else { back.href = "#profile"; back.setAttribute("aria-label", "Back to profile"); } if (!back.hidden) window.lucide?.createIcons({ root: back, attrs: { "aria-hidden": "true" } }); } }
     if (page === "dashboard") {
       const filterButton = topbarActions?.querySelector("[data-open-collection-filter]");
       const filterBadge = $("#collection-filter-badge");
@@ -1255,7 +1418,7 @@
     if (page !== "settings") lastOutsidePage = page;
     if (page === "settings" && renderedSettingsGroup === undefined) settingsOrigin = lastOutsidePage || "";
     if (page === "settings") { if (settingsGroup !== renderedSettingsGroup) { settingsFrom = renderedSettingsGroup || ""; renderedSettingsGroup = settingsGroup; } } else renderedSettingsGroup = undefined;
-    const route = page === "settings" ? `settings/${settingsGroup || "index"}` : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page === "library" && ["On Hold", "Dropped", "Completed"].includes(new URLSearchParams(location.hash.split("?")[1] || "").get("status")) ? `library/${libraryState.status}` : page;
+    const route = page === "settings" ? `settings/${settingsGroup || "index"}` : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page === "library" && libraryRouteStatuses.has(new URLSearchParams(location.hash.split("?")[1] || "").get("status")) ? `library/${libraryState.status}` : page;
     const preservePageState = route === renderedRoute;
     const previousControls = preservePageState ? [...content.querySelectorAll("input, textarea, select")].map(element => ({
       id: element.id,
@@ -1290,7 +1453,7 @@
     if (keepScrollY) window.scrollTo({ top: keepScrollY, behavior: "auto" });
     if (topbarActions) window.lucide?.createIcons({ root: topbarActions, attrs: { "aria-hidden": "true" } });
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
-    else if (page === "discover" && discoverQuery.trim() && discoverQuery === discoverSubmitted) { if (!discoverInFlight || discoverInFlight !== `${discoverSource}|${discoverQuery}`) discover(); }
+    else if (page === "discover" && discoverQuery.trim() && discoverQuery === discoverSubmitted) { if (!discoverInFlight || discoverInFlight !== `${discoverSource}|${discoverQuery}|${config.categories[0].key}`) discover(); }
     else if (page === "discover") loadDiscoverSuggestions();
     if (page === "mix") paintMixResults();
     if (page === "statistics") { const chart = $(".stats-activity-chart-month"); if (chart) chart.scrollLeft = chart.scrollWidth; }
@@ -1382,13 +1545,13 @@
     });
     content.querySelector("#discover-query")?.addEventListener("search", event => { event.stopPropagation(); submitDiscover(); });
     content.querySelector("#discover-query")?.addEventListener("input", event => {
-      discoverQuery = event.target.value;
+      discoverQuery = exploreQuery = event.target.value;
       const clearButton = content.querySelector("[data-clear-discover]");
       if (clearButton) clearButton.hidden = !discoverQuery;
     });
     content.querySelector("[data-clear-discover]")?.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
-      discoverQuery = ""; discoverSubmitted = ""; discoverRequestId++; discoverCache = null;
+      discoverQuery = exploreQuery = ""; discoverSubmitted = ""; discoverRequestId++; discoverCache = null;
       const input = content.querySelector("#discover-query");
       if (input) { input.value = ""; input.focus(); }
       const clearButton = content.querySelector("[data-clear-discover]");
@@ -1833,6 +1996,7 @@
     }
     if (kind === "images" || kind === "temporary") {
       await window.SplitAppIDB?.clearThumbs?.();
+      await window.SplitAppIDB?.clearImages?.();
       for (const url of thumbUrlCache.values()) URL.revokeObjectURL(url);
       thumbUrlCache.clear(); thumbKeyIndex.clear();
     }
@@ -2046,7 +2210,7 @@
     const exists = id != null && items.some(entry => String(entry.id) === String(id));
     const removedEntry = exists ? items.find(entry => String(entry.id) === String(id)) : null;
     const removedIndex = removedEntry ? items.indexOf(removedEntry) : -1, removedCopy = removedEntry ? cloneJson(removedEntry) : null;
-    if (exists) { backupBeforeBulk(); logChange("removed", `Deleted ${removedEntry?.title || "a game"}`, [id]); }
+    if (exists) { backupBeforeBulk(); const trash = readTrash(); trash.unshift({ item: removedCopy, index: removedIndex, deletedAt: Date.now() }); writeTrash(trash); logChange("removed", `Deleted ${removedEntry?.title || "a game"}`, [id]); }
     if (exists) items = items.filter(entry => String(entry.id) !== String(id));
     const requestedPage = returnPage === "details" ? detailReturnPage : returnPage;
     const destination = requestedPage && requestedPage !== "details" && requestedPage in titles ? requestedPage : "dashboard";
@@ -2320,7 +2484,7 @@
     if (query) { suggestionsAbortController?.abort(); suggestionsAbortController = null; suggestionsPendingKey = ""; suggestionsRequest++; }
     const requestId = ++discoverRequestId; const sourceKey = discoverSource;
     const message = $("#discover-message");
-    if (query) discoverInFlight = `${sourceKey}|${query}`;
+    if (query) discoverInFlight = `${sourceKey}|${query}|${key}`;
     if (!query) { message.textContent = ""; loadDiscoverSuggestions(); return; }
     const controller = typeof AbortController === "function" ? new AbortController() : null;
     discoverAbortController = controller;
@@ -2358,7 +2522,7 @@
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
       const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
       if (!paintDiscoverResults(results, sourceKey)) return;
-      discoverCache = { source: sourceKey, query, results }; discoverInFlight = "";
+      discoverCache = { source: sourceKey, query, category: key, results }; discoverInFlight = "";
     } catch (error) {
       if (requestId === discoverRequestId) discoverInFlight = "";
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
@@ -2480,21 +2644,53 @@
         .map(item => ({ source: "local", providerId: String(item.id), localId: String(item.id), title: item.title, year: item.year, image: item.customCover || item.localThumbnailData || item.localPortraitData || item.image || "" }));
       setupState.loading = false; setGrid(); return;
     }
-    if (!query && setupTrending.rows) { setupState.rows = setupTrending.rows; setupState.loading = false; setGrid(); return; }
+    const withLibraryStatus = rows => {
+      const libraryKeys = new Set(items.flatMap(item => {
+        const keys = [];
+        for (const [source, providerId] of Object.entries(item.sourceIds || {})) if (providerId != null && providerId !== "") keys.push(`${source}:${providerId}`);
+        for (const key of libraryOriginKeys(item)) keys.push(key);
+        return keys;
+      }));
+      return (rows || []).slice(0, 60).map(row => ({ ...row, inLibrary: libraryKeys.has(`${row.source}:${row.providerId}`) || Boolean(findLibraryMatch(row)) }));
+    };
+    if (!query && setupTrending.rows) { setupState.rows = withLibraryStatus(setupTrending.rows); setupState.loading = false; setGrid(); return; }
     if (prefs.metadataMode === "offline") { setupState.rows = []; setupState.loading = false; setupState.error = "Quick setup needs an internet connection."; setGrid(); return; }
+    if (query) setupState.rows = [];
     setupState.loading = true; setGrid();
     const settings = { ...detailSettings(), metadataSources: { ...(prefs.metadataSources || {}), steamdb: true, howlongtobeat: true }, bypassSourceHealth: true };
     try {
       let rows;
-      if (query) rows = await window.SplitAppDiscovery.searchSource(query, category, settings, "howlongtobeat");
-      else {
-        const sections = await window.SplitAppDiscovery.trending(category, settings, "steamdb");
-        const seen = new Set();
-        rows = (sections || []).flatMap(section => section.items || []).filter(row => { const key = String(row.title || "").toLowerCase(); return key && row.image && !seen.has(key) && seen.add(key); }).slice(0, 60);
-        if (rows.length) setupTrending.rows = rows;
+      if (query) {
+        const resultsBySource = new Map(), errors = [];
+        const publishPartial = () => {
+          if (request !== setupRequest) return;
+          const partial = window.SplitAppSetup.mergeSearchResults(resultsBySource);
+          if (!partial.length) return;
+          setupState.rows = withLibraryStatus(partial);
+          setGrid();
+        };
+        await Promise.all(["howlongtobeat", "steamdb"].map(async sourceKey => {
+          try {
+            const found = await window.SplitAppDiscovery.searchSource(query, category, settings, sourceKey);
+            if (request !== setupRequest) return;
+            resultsBySource.set(sourceKey, found || []);
+            publishPartial();
+          } catch (error) { if (request === setupRequest) errors.push(error); }
+        }));
+        if (request !== setupRequest) return;
+        rows = window.SplitAppSetup.mergeSearchResults(resultsBySource);
+        if (!rows.length && errors.length) throw errors[0];
+      } else {
+        if (!setupTrending.promise) setupTrending.promise = window.SplitAppDiscovery.trending(category, settings, "steamdb").then(sections => {
+          const seen = new Set();
+          const trendingRows = (sections || []).flatMap(section => section.items || []).filter(row => { const key = String(row.title || "").toLowerCase(); return key && row.image && !seen.has(key) && seen.add(key); }).slice(0, 60);
+          if (trendingRows.length) setupTrending.rows = trendingRows;
+          return trendingRows;
+        }).finally(() => { setupTrending.promise = null; });
+        rows = await setupTrending.promise;
       }
       if (request !== setupRequest) return;
-      setupState.rows = (rows || []).slice(0, 60);
+      setupState.rows = withLibraryStatus(rows);
     } catch (error) {
       if (request !== setupRequest) return;
       setupState.rows = []; setupState.error = "Could not load games. Check your connection and try again.";
@@ -2512,10 +2708,15 @@
         }
         let item = findLibraryMatch(result);
         if (item) {
-          if (item.status !== step.status) { item.status = step.status; item.updatedAt = Date.now(); history.unshift({ itemId: item.id, title: item.title, action: step.status, status: step.status, at: Date.now() }); touched.push(item.id); }
+          const status = window.SplitAppSetup.resolveStatus(item.status, step.status);
+          const previousStatus = item.status, previousGoal = Number(item.goal) || 0, previousProgress = Number(item.progress) || 0, previousTarget = item.completionTarget, previousTargetHours = Number(item.completionTargetHours) || 0, previousAutoGoal = Number(item.goalAutoValue) || 0;
+          if (status === "Completed") applyQuickSetupCompletion(item); else item.status = status;
+          if (previousStatus !== item.status) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+          if (previousStatus !== item.status || previousGoal !== (Number(item.goal) || 0) || previousProgress !== (Number(item.progress) || 0) || previousTarget !== item.completionTarget || previousTargetHours !== (Number(item.completionTargetHours) || 0) || previousAutoGoal !== (Number(item.goalAutoValue) || 0)) { item.updatedAt = Date.now(); touched.push(item.id); }
           return;
         }
         item = { ...result, originKeys: libraryOriginKeys(result), originYear: String(result.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", metadataSource: result.source || result.metadataSource || "", id: crypto.randomUUID(), status: step.status, progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
+        if (item.status === "Completed") applyQuickSetupCompletion(item);
         applyMixIdentity(item, result);
         items.unshift(item); created.push(item);
         history.unshift({ itemId: item.id, title: item.title, action: step.status, status: step.status, at: Date.now() });
@@ -2526,7 +2727,28 @@
     if (created.length && !startSyncJob(created)) created.forEach(item => enrichLibraryEntryWithMix(item, item, "Quick setup"));
     return created.length;
   }
+  function applyQuickSetupCompletion(item) {
+    if (!item) return;
+    item.status = "Completed";
+    // Remember the Quick setup preference even when the source has not returned
+    // playtime estimates yet; applyDefaultGoal fills it when details arrive.
+    item.completionTarget = "extrasHours";
+    const target = completionChoices(item).find(option => option.key === "extrasHours") || completionChoices(item)[0];
+    if (target) {
+      item.completionTargetHours = target.hours;
+      item.goal = target.hours;
+      item.goalAutoValue = target.hours;
+      item.progress = Math.max(Number(item.progress) || 0, target.hours);
+    } else if (Number(item.goal) > 0) {
+      item.completionTargetHours = Number(item.goal);
+      item.goalAutoValue = Number(item.goal);
+      item.progress = Math.max(Number(item.progress) || 0, Number(item.goal));
+    } else item.quickSetupCompleted = true;
+  }
   async function finishSetup(save = true) {
+    // A delayed search can otherwise finish after “Later” leaves the wizard and
+    // leave stale loading state behind when Quick Setup is opened again.
+    clearTimeout(setupSearchTimer); setupSearchTimer = 0; setupRequest++; setupState.loading = false;
     const mode = setupState.mode;
     const added = save ? await applySetupPicks() : 0;
     setupStarted = false;
@@ -2545,6 +2767,7 @@
     if (toggle) {
       const row = setupState.rows[Number(toggle.dataset.setupToggle)]; if (!row) return;
       const key = `${row.source}:${row.providerId}`, picks = setupState.picks[setupState.step];
+      if (toggle.dataset.setupLocked === "true") return;
       const on = !picks.has(key); if (on) picks.set(key, row); else picks.delete(key);
       toggle.classList.toggle("selected", on); toggle.setAttribute("aria-pressed", String(on));
       const next = $("[data-setup-next]"); if (next) next.textContent = window.SplitAppSetup.footerLabel(setupState);
@@ -2560,7 +2783,11 @@
   document.addEventListener("input", event => {
     if (!event.target.matches?.("[data-setup-search]")) return;
     setupState.query = event.target.value; clearTimeout(setupSearchTimer);
-    setupSearchTimer = setTimeout(loadSetupRows, 350);
+    setupSearchTimer = setTimeout(loadSetupRows, 160);
+  });
+  document.addEventListener("keydown", event => {
+    if (page !== "setup" || !event.target.matches?.("[data-setup-search]") || (event.key !== "Enter" && event.keyCode !== 13)) return;
+    event.preventDefault(); clearTimeout(setupSearchTimer); loadSetupRows();
   });
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
   function mergeFacts(previous = {}, next = {}) {
@@ -2604,6 +2831,10 @@
     current.backdrop = loaded.landscapeImage || loaded.backgroundImage || current.backdrop;
     applyDefaultGoal(current); ensureCoverGallery(current);
     current.updatedAt = Date.now();
+    if (navigator.onLine && prefs.imageStorage !== "online") {
+      const cacheImages = () => window.SplitAppBackend?.cacheItemImages?.(current, prefs.imageCacheMaxEntries).catch(() => {});
+      if (window.requestIdleCallback) window.requestIdleCallback(cacheImages, { timeout: 1200 }); else setTimeout(cacheImages, 0);
+    }
   }
   function enrichLibraryEntryWithMix(item, sourceResult = {}, origin = "Library", options = {}) {
     if (!item?.id || item.category !== "game" || !window.SplitAppMix?.load) return Promise.resolve(null);
@@ -2803,8 +3034,22 @@
   async function loadDetails({ force = false } = {}) {
     const isPreview = Boolean(detailPreview);
     const item = detailPreview || itemById(detailItemId);
-    const requestId = ++detailRequest; detailData = item?.cachedDetails || null; detailError = "";
+    const requestId = ++detailRequest; detailError = "";
     if (!item) { detailLoading = false; render(); return; }
+    if (!isPreview && !item.cachedDetails && window.SplitAppIDB?.getDetails) {
+      try {
+        const cached = await window.SplitAppIDB.getDetails(item.id);
+        if (requestId !== detailRequest || page !== "details") return;
+        if (cached) {
+          item.cachedDetails = cached;
+          item.facts = mergeFacts(item.facts, cached.facts);
+          item.description = cached.description || item.description;
+          item.image = item.customCover || cached.portraitImage || cached.image || item.image;
+          item.backdrop = cached.landscapeImage || cached.backgroundImage || item.backdrop;
+        }
+      } catch (_) {}
+    }
+    detailData = item.cachedDetails || null;
     const hasCachedDetails = Boolean(item.cachedDetails);
     detailLoading = !hasCachedDetails;
     render();
@@ -3180,6 +3425,36 @@
     }
   }
 
+  async function shareAchievementBadge(id) {
+    try {
+      const image = await window.SplitAppAchievements.shareImage(items, undefined, id), file = new File([image.blob], image.filename, { type: "image/png" });
+      const nativeShare = window.Capacitor?.Plugins?.ShareIntent;
+      if (nativeShare?.shareImage) { const src = URL.createObjectURL(image.blob); try { await nativeShare.shareImage({ src, filename: image.filename, title: image.title }); } finally { setTimeout(() => URL.revokeObjectURL(src), 60000); } return; }
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) { await navigator.share({ files: [file], title: image.title }); return; }
+      const url = URL.createObjectURL(image.blob), anchor = document.createElement("a"); anchor.href = url; anchor.download = image.filename; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 60000); toast("Image saved.");
+    } catch (error) { if (error?.name !== "AbortError") toast(error?.message || "Could not share this badge."); }
+  }
+  async function shareElementImage(element, title) {
+    if (!element) { toast("Could not prepare this image."); return; }
+    try {
+      const rect = element.getBoundingClientRect(), scale = 2, canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.ceil(rect.width * scale)); canvas.height = Math.max(1, Math.ceil(rect.height * scale));
+      const ctx = canvas.getContext("2d"); ctx.scale(scale, scale);
+      ctx.fillStyle = getComputedStyle(element).backgroundColor || getComputedStyle(document.body).backgroundColor || "#fff"; ctx.fillRect(0, 0, rect.width, rect.height);
+      ctx.fillStyle = getComputedStyle(element).color || "#111"; ctx.font = `600 16px ${getComputedStyle(document.body).fontFamily || "sans-serif"}`;
+      const lines = [...element.querySelectorAll("h1,h2,strong,p,small,li")].map(node => node.textContent.trim()).filter(Boolean);
+      let y = 30;
+      for (const line of lines) { const words = line.split(/\s+/); let current = ""; for (const word of words) { const next = current ? `${current} ${word}` : word; if (ctx.measureText(next).width > rect.width - 40 && current) { ctx.fillText(current, 20, y); y += 24; current = word; } else current = next; } if (current && y < rect.height - 12) { ctx.fillText(current, 20, y); y += 26; } }
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png")); if (!blob) throw new Error("Image export failed.");
+      const filename = `${String(title || "share").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "share"}.png`;
+      const nativeShare = window.Capacitor?.Plugins?.ShareIntent;
+      if (nativeShare?.shareImage) { const src = URL.createObjectURL(blob); try { await nativeShare.shareImage({ src, filename, title }); } finally { setTimeout(() => URL.revokeObjectURL(src), 60000); } return; }
+      const file = new File([blob], filename, { type: "image/png" });
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) { await navigator.share({ files: [file], title }); return; }
+      const url = URL.createObjectURL(blob), anchor = document.createElement("a"); anchor.href = url; anchor.download = filename; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 60000); toast("Image saved.");
+    } catch (error) { if (error?.name !== "AbortError") toast(error?.message || "Could not share this image."); }
+  }
+
 
   function setPreference(key, value) {
     if (key === "currencyRate") {
@@ -3361,6 +3636,12 @@
   }
   const csvCell = value => { const text = String(value ?? ""); return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
   async function exportNames(format, opts = exportOptions) {
+    if (exportRunning) { toast("An export is already running."); return; }
+    exportRunning = true;
+    try { return await exportNamesBody(format, opts); }
+    finally { exportRunning = false; }
+  }
+  async function exportNamesBody(format, opts = exportOptions) {
     if (!items.length) { toast("Your library is empty."); return; }
     const sorted = [...items].sort((a, b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity: "base" }));
     const csv = format === "csv", max = prefs.ratingFormat === "10-point" ? 10 : 5;
@@ -3383,23 +3664,27 @@
     }
   }
   function runExport() { return exportOptions.format === "json" ? exportList() : exportNames(exportOptions.format); }
-  async function exportList({ silent = false } = {}) {
+  async function exportList(options = {}) {
     if (exportRunning) { toast("An export is already running."); return; }
+    exportRunning = true;
+    try { return await exportListBody(options); }
+    finally { exportRunning = false; }
+  }
+  async function exportListBody({ silent = false } = {}) {
     const backend = window.SplitAppBackend;
     const exportItems = exportableItems(silent);
     if (nativeAndroid && backend?.exportLibrary) {
-      exportRunning = true;
       let lastToast = 0;
       try {
         if (!silent) toast("Choose where to save your library…");
         const result = await backend.exportLibrary({ items: exportItems, history, preferences: prefs }, { mode: silent ? "folder" : "ask", onProgress: (done, total) => {
           if (Date.now() - lastToast > 700 && done < total) { lastToast = Date.now(); toast(`Exporting… ${Math.round(done / total * 100)}%`); }
         } });
-        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} games${!exportOptions.ratings || !exportOptions.reviews ? " with your export options" : ""}.`);
+        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${exportItems.length} ${exportItems.length === 1 ? "game" : "games"}${!exportOptions.ratings || !exportOptions.reviews ? " with your export options" : ""}.`);
       } catch (error) {
         const message = String(error?.message || error);
         if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Export failed: ${message}`); }
-      } finally { exportRunning = false; }
+      }
       return;
     }
     const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -3856,6 +4141,25 @@
     tabs[next]?.click();
   });
   $("#page-content").addEventListener("click", async event => {
+    if (event.target.closest("[data-share-badge]")) { await shareAchievementBadge(event.target.closest("[data-share-badge]").dataset.shareBadge); return; }
+    const statusToggle = event.target.closest("[data-status-toggle]");
+    if (statusToggle) {
+      const key = statusToggle.dataset.statusToggle, name = statusToggle.dataset.statusName, hidden = new Set(statusOptions.hidden[key] || []);
+      if (hidden.has(name)) hidden.delete(name); else hidden.add(name);
+      statusOptions.hidden[key] = [...hidden]; saveStatusOptions(); render(); return;
+    }
+    const statusDelete = event.target.closest("[data-status-delete]");
+    if (statusDelete) {
+      const key = statusDelete.dataset.statusDelete, name = statusDelete.dataset.statusName, row = config.categories.find(entry => entry.key === key);
+      const moved = items.filter(item => item.category === key && item.status === name);
+      statusOptions.custom[key] = (statusOptions.custom[key] || []).filter(value => value !== name); saveStatusOptions();
+      if (moved.length && row) { const fallback = row.statuses[0] || "Backlog"; moved.forEach(item => { item.status = fallback; item.updatedAt = Date.now(); }); persist({ ids: moved.map(item => item.id) }); }
+      render(); toast(moved.length ? `Status removed. ${moved.length} ${moved.length === 1 ? "game was" : "games were"} moved to ${row?.statuses[0] || "Backlog"}.` : "Status removed."); return;
+    }
+    const trashRestore = event.target.closest("[data-trash-restore]");
+    if (trashRestore) { const trash = readTrash(), index = Number(trashRestore.dataset.trashRestore), row = trash[index]; if (row?.item && !itemById(row.item.id)) { items.splice(Math.min(Number(row.index) || 0, items.length), 0, row.item); writeTrash(trash.filter((_, at) => at !== index)); persist({ ids: [row.item.id] }); render(); toast("Entry restored."); } return; }
+    const trashDelete = event.target.closest("[data-trash-delete]");
+    if (trashDelete) { const trash = readTrash(); trash.splice(Number(trashDelete.dataset.trashDelete), 1); writeTrash(trash); render(); return; }
     const sourceKeyToggle = event.target.closest("[data-toggle-source-key]");
     if (sourceKeyToggle) {
       const sourceKey = sourceKeyToggle.dataset.toggleSourceKey;
@@ -3955,7 +4259,7 @@
     const statsFilter = event.target.closest("[data-stats-filter]");
     if (statsFilter) { setPreference("dashboardStatusFilter", statsFilter.dataset.statsFilter); goto("dashboard"); return; }
     if (event.target.closest("[data-mix-search]")) { runMixSearch(); return; }
-    if (event.target.closest("[data-clear-mix]")) { const input = $("#mix-query"); if (input) { input.value = ""; input.focus(); } event.target.closest("[data-clear-mix]").hidden = true; return; }
+    if (event.target.closest("[data-clear-mix]")) { const input = $("#mix-query"); exploreQuery = ""; if (input) { input.value = ""; input.focus(); } event.target.closest("[data-clear-mix]").hidden = true; return; }
     const mixAdd = event.target.closest("[data-mix-add]");
     if (mixAdd) { event.stopPropagation(); const row = mixCache?.results?.[Number(mixAdd.dataset.mixAdd)]; if (row) addMixResult(row); return; }
     const mixOpen = event.target.closest("[data-mix-open]");
@@ -3997,7 +4301,7 @@
     const adjust = event.target.closest("[data-adjust-progress]");
     if (adjust) {
       const item = itemById(detailItemId);
-      if (item) { item.progress = Math.max(0, (Number(item.progress) || 0) + Number(adjust.dataset.adjustProgress)); item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); }
+      if (item) { const delta = Number(adjust.dataset.adjustProgress); item.progress = Math.max(0, (Number(item.progress) || 0) + delta); item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); }
       return;
     }
     const stepper = event.target.closest("[data-step-input]");
@@ -4066,27 +4370,44 @@
     if (event.target.closest("[data-discover-view-toggle]")) { const next = document.body.dataset.discoverView === "list" ? "grid" : "list"; document.body.dataset.discoverView = next; try { localStorage.setItem(`${config.key}_discover_view`, next); } catch (_) {} return; }
     const reqTab = event.target.closest("[data-req-tab]");
     if (reqTab) { const box = reqTab.closest(".detail-requirements"); box.querySelectorAll("[data-req-tab]").forEach(b => { const on = b === reqTab; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); }); box.querySelectorAll("[data-req-panel]").forEach(panel => { panel.hidden = panel.dataset.reqPanel !== reqTab.dataset.reqTab; }); return; }
-    const libraryAction = event.target.closest("[data-library-view],[data-library-share],[data-library-filters],[data-library-filter-close],[data-library-sort],[data-library-status],[data-library-platform],[data-library-tag],[data-library-favorites],[data-library-reset]");
+    const libraryAction = event.target.closest("[data-library-groups],[data-library-view],[data-library-share],[data-library-filters],[data-library-filter-close],[data-library-sort],[data-library-status],[data-library-platform],[data-library-tag],[data-library-favorites],[data-library-reset]");
     if (libraryAction && page === "library") {
       const d = libraryAction.dataset;
       const reopen = () => { saveLibraryState(); render(); requestAnimationFrame(() => showPopup($("#library-filter-dialog"), { silent: true })); };
+      if ("libraryGroups" in d) { libraryStatusGroups = !libraryStatusGroups; try { localStorage.setItem(`${config.key}_library_status_groups`, libraryStatusGroups ? "1" : "0"); } catch (_) {} render(); return; }
       if ("libraryView" in d) { const order = ["grid", "large", "list"]; libraryState.view = order[(order.indexOf(libraryState.view) + 1) % order.length]; saveLibraryState(); render(); return; }
       if ("libraryShare" in d) { const rows = window.SplitAppPages.libraryRows?.() || []; if (rows.length) window.SplitAppShare.open({ title: "My games", entries: rows.map(shareEntry), getImage: shareImageFor }, { showPopup, closePopup, toast, esc, cacheGet: shareCacheGet, cachePut: shareCachePut }); return; }
       if ("libraryFilters" in d) { showPopup($("#library-filter-dialog")); return; }
-      if ("libraryFilterClose" in d) { closePopup($("#library-filter-dialog")); render(); return; }
+      if ("libraryFilterClose" in d) { closePopup($("#library-filter-dialog")); return; }
       if ("librarySort" in d) { libraryState.sort = d.librarySort; return reopen(); }
       if ("libraryStatus" in d) { libraryState.status = d.libraryStatus; historyReplace(); return reopen(); }
       if ("libraryPlatform" in d) { libraryState.platform = d.libraryPlatform; return reopen(); }
       if ("libraryTag" in d) { libraryState.tag = d.libraryTag; return reopen(); }
-      if ("libraryReset" in d) { Object.assign(libraryState, { sort: "alpha", status: page === "library" && ["On Hold", "Dropped", "Completed"].includes(new URLSearchParams(location.hash.split("?")[1] || "").get("status")) ? new URLSearchParams(location.hash.split("?")[1] || "").get("status") : "all", platform: "all", tag: "", favorites: false }); saveLibraryState(); render(); return; }
+      if ("libraryReset" in d) { Object.assign(libraryState, { sort: "alpha", status: page === "library" && libraryRouteStatuses.has(new URLSearchParams(location.hash.split("?")[1] || "").get("status")) ? new URLSearchParams(location.hash.split("?")[1] || "").get("status") : "all", platform: "all", tag: "", favorites: false }); saveLibraryState(); render(); return; }
     }
-    if (event.target.closest("[data-games-view]")) { gamesView = gamesView === "list" ? "posters" : gamesView === "posters" ? "cards" : "list"; try { localStorage.setItem(gamesStore, gamesView); } catch (_) {} render(); return; }
+    if (event.target.closest("[data-games-view]")) { gamesView = gamesView === "list" ? "posters" : gamesView === "posters" ? "cards" : gamesView === "cards" ? "large" : "list"; try { localStorage.setItem(gamesStore, gamesView); } catch (_) {} render(); return; }
     if (event.target.closest("[data-favorites-more]")) { window.SplitAppPages.showMoreFavorites?.(); render(); return; }
     if (event.target.closest("[data-search-more]")) { window.SplitAppPages.showMoreSearch?.(); render(); return; }
     const gameCard = event.target.closest("[data-watchlist-open]");
     if (gameCard && !event.target.closest("button, a, input, select, textarea")) { openDetails(gameCard.dataset.watchlistOpen); return; }
     // ---- Profile ----
     if (event.target.closest("[data-open-profile-menu]")) { showPopup($("#profile-options-dialog")); return; }
+    if (event.target.closest("[data-profile-reorder-open]")) { closePopup($("#profile-options-dialog"), { preserveHistory: true }); showPopup($("#profile-reorder-dialog")); return; }
+    if (event.target?.id === "profile-reorder-dialog" || event.target.closest("[data-profile-reorder-close]")) { closePopup($("#profile-reorder-dialog")); return; }
+    const orderMove = event.target.closest("[data-order-move]");
+    if (orderMove) {
+      const row = orderMove.closest("[data-order-key]"), list = row?.parentElement, target = orderMove.dataset.orderMove === "up" ? row?.previousElementSibling : row?.nextElementSibling;
+      if (row && target) {
+        if (orderMove.dataset.orderMove === "up") list.insertBefore(row, target); else list.insertBefore(target, row);
+        const rows = [...list.querySelectorAll("[data-order-key]")];
+        rows.forEach((entry, index) => { entry.querySelector(".profile-reorder-count").textContent = String(index + 1); entry.querySelector('[data-order-move="up"]').disabled = index === 0; entry.querySelector('[data-order-move="down"]').disabled = index === rows.length - 1; });
+        const keys = rows.map(entry => entry.dataset.orderKey);
+        try { localStorage.setItem("savepoint_profile_section_order", JSON.stringify(keys)); } catch (_) {}
+        const sectionList = $(`[data-profile-sections]`);
+        keys.forEach(key => { const section = sectionList?.querySelector(`[data-profile-section="${key}"]`); if (section) sectionList.append(section); });
+      }
+      return;
+    }
     if (event.target.closest("[data-profile-add]")) { goto("add"); return; }
     if (event.target?.id === "profile-options-dialog") { closePopup(event.target); return; }
     if (event.target.closest("[data-profile-menu-close]")) { closePopup($("#profile-options-dialog")); return; }
@@ -4396,6 +4717,20 @@
     }
   });
   document.addEventListener("submit", event => {
+    const statusAdd = event.target.closest("[data-status-add]"), statusRename = event.target.closest("[data-status-rename]");
+    if (statusAdd || statusRename) {
+      event.preventDefault();
+      const form = statusAdd || statusRename, key = form.dataset.statusAdd || form.dataset.statusRename, row = config.categories.find(entry => entry.key === key), name = String(new FormData(form).get(statusAdd ? "status-new" : "status-rename") || "").trim().replace(/\s+/g, " ");
+      if (!row || !name) return;
+      const old = statusRename ? form.dataset.statusOld : "";
+      if (name === old) return;
+      if (row.statuses.concat(row.baseStatuses || []).some(value => value.toLocaleLowerCase() === name.toLocaleLowerCase() && value !== old)) { toast("That status already exists."); return; }
+      if (statusAdd) { statusOptions.custom[key] = [...(statusOptions.custom[key] || []), name]; saveStatusOptions(); render(); toast("Status added."); return; }
+      statusOptions.custom[key] = (statusOptions.custom[key] || []).map(value => value === old ? name : value); saveStatusOptions();
+      const renamed = items.filter(item => item.category === key && item.status === old); renamed.forEach(item => { item.status = name; item.updatedAt = Date.now(); });
+      if (renamed.length) persist({ ids: renamed.map(item => item.id) });
+      render(); toast("Status renamed."); return;
+    }
     if (event.target.id === "custom-source-form") { saveCustomSource(event); return; }
     if (event.target.id !== "dashboard-filter-form") return;
     event.preventDefault();
@@ -4612,13 +4947,22 @@
   // Time-to-beat -> goal: a game with no goal gets its HowLongToBeat main-story hours; an automatic goal follows later updates, a goal you set yourself is never touched.
   function applyDefaultGoal(item) {
     const facts = { ...(item?.cachedDetails?.facts || {}), ...(item?.facts || {}) };
-    const hours = Number(facts.mainHours) || Number(facts.extrasHours) || Number(facts.completionistHours) || 0;
+    const useExtrasDefault = item?.status === "Completed" && item.completionTarget === "extrasHours";
+    const targetKey = useExtrasDefault
+      ? (["extrasHours", "mainHours", "completionistHours"].find(key => Number(facts[key]) > 0) || "")
+      : (["mainHours", "extrasHours", "completionistHours"].find(key => Number(facts[key]) > 0) || "");
+    const hours = Number(facts[targetKey]) || 0;
     if (!hours) return false;
     const goal = Number(item.goal) || 0;
     if (goal && !(item.goalAutoValue && goal === Number(item.goalAutoValue))) return false;
-    if (goal === hours) return false;
+    const changed = goal !== hours || (item.quickSetupCompleted && Number(item.progress) < hours);
     item.goal = hours; item.goalAutoValue = hours;
-    return true;
+    if (useExtrasDefault) {
+      item.completionTargetHours = hours;
+      item.progress = Math.max(Number(item.progress) || 0, hours);
+      delete item.quickSetupCompleted;
+    }
+    return changed;
   }
   // Covers that came from different sources are kept in the Screenshots gallery too (appended, so saved image indexes stay valid).
   function ensureCoverGallery(item) {
@@ -5015,8 +5359,9 @@
     rememberScroll();
     const previousPage = page;
     if (previousPage === "details" && next !== "details") { detailRequest++; detailLoading = false; }
-    if (next !== "discover") {
-      discoverQuery = ""; discoverSubmitted = ""; discoverInFlight = ""; discoverRequestId++;
+    const switchingExploreMode = ["discover", "mix"].includes(previousPage) && ["discover", "mix"].includes(next);
+    if (!switchingExploreMode) {
+      discoverQuery = ""; exploreQuery = ""; discoverSubmitted = ""; discoverInFlight = ""; discoverRequestId++;
       discoverAbortController?.abort(); discoverAbortController = null;
       suggestionsAbortController?.abort(); suggestionsAbortController = null; suggestionsPendingKey = ""; suggestionsRequest++;
     }
@@ -5024,11 +5369,12 @@
     else if (previousPage !== "add") { entryDraftId = null; addMetadataQuery = ""; } // opening Add from a link/back is a new entry
     const previousDiscoverSource = discoverSource;
     discoverSource = next === "discover" ? new URLSearchParams(hashQuery).get("source") || "" : "";
+    if (switchingExploreMode) discoverQuery = exploreQuery;
     if (next !== "statistics") statsView = "overall";
-    page = next; settingsGroup = next === "settings" ? (route[1] === "manage-backups" ? "backups" : route[1] || null) : null;
+    page = next; achievementId = next === "achievements" ? route[1] || "" : ""; settingsGroup = next === "settings" ? (route[1] === "manage-backups" ? "backups" : route[1] || null) : null;
     if (next === "library") {
       const status = new URLSearchParams(hashQuery).get("status") || "";
-      libraryState.status = ["On Hold", "Dropped", "Completed"].includes(status) ? status : "all";
+      libraryState.status = libraryRouteStatuses.has(status) ? status : "all";
       libraryState.favorites = false;
     }
     statsSubpage = next === "statistics" && statsSections.includes(route[1]) ? normalizeStatsSection(route[1]) : "";
@@ -5042,9 +5388,10 @@
       if (changedDetail || previousPage !== "details") { render(); syncPageNavigation(); loadDetails(); return; }
     }
     render(); syncPageNavigation(); restoreScroll();
-    if (next === "discover" && previousDiscoverSource !== discoverSource && discoverQuery.trim()) submitDiscover();
+    if (next === "discover" && discoverQuery.trim() && (switchingExploreMode || previousDiscoverSource !== discoverSource)) submitDiscover();
+    else if (next === "mix" && switchingExploreMode && exploreQuery.trim()) runMixSearch();
   }
-  document.addEventListener("input", event => { if (event.target?.id === "mix-query") { const clear = $("[data-clear-mix]"); if (clear) clear.hidden = !event.target.value; } });
+  document.addEventListener("input", event => { if (event.target?.id === "mix-query") { exploreQuery = event.target.value; const clear = $("[data-clear-mix]"); if (clear) clear.hidden = !event.target.value; } });
   document.addEventListener("keydown", event => { if (event.key === "Enter" && event.target?.id === "mix-query") { event.preventDefault(); runMixSearch(); } });
   window.addEventListener("popstate", event => {
     if (skipNextPop) { skipNextPop = false; const callback = dialogPopCallback; dialogPopCallback = null; callback?.(); event.stopImmediatePropagation(); return; }
@@ -5062,8 +5409,12 @@
   // Android hardware back: close an open sheet, then step back through pages, then leave the app from Home.
   // Show the version that is actually installed (from the APK), not the one baked into app-config.js.
   window.Capacitor?.Plugins?.App?.getInfo?.().then(info => {
-    if (!info?.version) return;
-    window.APP_INSTALLED_VERSION = info.version;
+    const version = info?.version || config.version;
+    if (!version) return;
+    window.APP_INSTALLED_VERSION = version;
+    let previous = "";
+    try { const seenKey = `${storageKey}_seen_version`; previous = localStorage.getItem(seenKey) || ""; localStorage.setItem(seenKey, version); } catch (_) {}
+    if (previous && previous !== version) setTimeout(() => goto("whats-new"), 400);
     if (page === "settings" && settingsGroup === "app-info") render();
   }).catch(() => {});
   window.Capacitor?.Plugins?.App?.addListener?.("backButton", () => {
@@ -5159,6 +5510,7 @@
       const selected = await window.SplitAppBackend.chooseFolder({ items, history, preferences: prefs });
       applySelectedFolderData(selected);
       await window.SplitAppBackend.save({ items, history, preferences: prefs });
+      initializeAchievementAwards();
       if (storageFolderGate) storageFolderGate.hidden = true;
       detailRestorePending = false;
       redirectHomeIfDetailMissing();
@@ -5200,6 +5552,7 @@
       }
       return;
     }
+    initializeAchievementAwards();
     if (storageFolderGate) storageFolderGate.hidden = true;
     detailRestorePending = false;
     const redirectedFromMissingDetail = redirectHomeIfDetailMissing();
@@ -5219,16 +5572,22 @@
       const before = libraryStamp();
       const full = await restoreNativeData();
       if (full === false) finishStartup(false);
-      else if (full && libraryStamp() !== before) { applyPreferences(); render(); } // keep scroll position when nothing changed
+      else if (full) { initializeAchievementAwards(); if (libraryStamp() !== before) { applyPreferences(); render(); } } // keep scroll position when nothing changed
       if (full) checkLibraryDrift();
-      setTimeout(fillThumbCache, 1500);
+      setTimeout(() => {
+        fillThumbCache();
+        window.SplitAppBackend?.cacheLibraryImages?.(items).catch(() => {});
+      }, 1500);
       return;
     }
     const full = await restoreNativeData();
     requestAnimationFrame(() => window.SavePointSplash?.ready?.());
     finishStartup(full);
     if (full) checkLibraryDrift();
-    setTimeout(fillThumbCache, 3000);
+    setTimeout(() => {
+      fillThumbCache();
+      if (full) window.SplitAppBackend?.cacheLibraryImages?.(items).catch(() => {});
+    }, 3000);
   });
   }
   startSavePoint();
