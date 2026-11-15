@@ -175,8 +175,10 @@ public class EncryptedStorePlugin extends Plugin {
                         JSONObject previous = new JSONObject(decrypt(readMirror(target)));
                         if (previous.optLong("updatedAt") > item.optLong("updatedAt")) continue;
                     } catch (Exception ignored) { }
-                    deleted.delete();
                     writeMirror(target, encrypt(item.toString()));
+                    // Keep the tombstone until the replacement is safely
+                    // published so a failed write cannot resurrect old data.
+                    deleted.delete();
                 }
             }
             call.resolve(new JSObject().put("written", items.length()));
