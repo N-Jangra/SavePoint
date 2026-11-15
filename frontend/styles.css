@@ -695,7 +695,10 @@ body[data-theme=dark] .collection-welcome{background:linear-gradient(115deg,colo
 .sync-list .sync-row { display:grid; grid-template-columns:20px minmax(0,1fr) auto; min-height:48px; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid var(--line); font-size:.78rem; }
 .sync-list .sync-row:last-child { border-bottom:0; }
 .sync-list .sync-row span { display:grid; min-width:0; gap:2px; }
-.sync-list .sync-row strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sync-list .sync-row strong, .sync-list .sync-row .sync-entry-open { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; font:inherit; font-weight:700; }
+.sync-list .sync-row .sync-entry-open { min-width:0; padding:0; border:0; background:transparent; color:var(--text); cursor:pointer; }
+.sync-list .sync-row .sync-entry-open:hover { color:var(--accent); }
+.sync-list .sync-row .sync-entry-open:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:3px; }
 .sync-list .sync-row small { color:var(--muted); font-size:.68rem; }
 .sync-list .sync-row em { color:var(--muted); font-style:normal; font-size:.7rem; }
 .sync-list .sync-row>svg { width:17px; height:17px; color:var(--muted); }
@@ -713,12 +716,21 @@ body[data-page="sync"] .topbar { display:none; }
 
 .sync-page { width:min(100%,620px); margin:0 auto; padding-bottom:26px; }
 .sync-page .import-summary-grid { margin-bottom:12px; }
+.sync-page > .sync-empty { display:grid; justify-items:center; align-content:center; gap:10px; min-height:300px; margin-top:14px; padding:36px 20px; border:1px solid var(--line); border-radius:18px; background:var(--surface); text-align:center; }
+.sync-page > .sync-empty > span { display:grid; place-items:center; width:54px; height:54px; border-radius:18px; background:var(--surface-2); color:var(--accent-text,var(--accent)); }
+.sync-page > .sync-empty > span svg { width:25px; height:25px; }
+.sync-page > .sync-empty h2 { margin:0; color:var(--legacy-text,#f8fafc); font:700 1.25rem/1.2 var(--font-heading,'Outfit',sans-serif); letter-spacing:-.02em; }
+.sync-page > .sync-empty p { max-width:340px; margin:0 0 8px; color:var(--muted); font-size:.9rem; line-height:1.45; }
+.sync-page > .sync-empty .button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:0 17px; }
+.sync-page > .sync-empty .button svg { flex:none; width:17px; height:17px; }
 
 .sync-fab.is-paused { animation:none; }
 .sync-fab.is-paused .sync-fab-pie { background:conic-gradient(#d49a2a var(--p,0%), var(--surface-2) 0); }
 .sync-fab.is-paused b { color:#d49a2a; font-size:.62rem; letter-spacing:-1px; }
-.sync-page .import-preview-actions .button { display:inline-flex; align-items:center; gap:7px; }
-.sync-page .import-preview-actions .button svg { width:16px; height:16px; }
+.sync-page .import-preview-actions .button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:42px; padding:0 14px; }
+.sync-page .import-preview-actions .button svg { flex:none; width:16px; height:16px; stroke-width:2; }
+.sync-list .sync-retry-icon { display:inline-grid; place-items:center; width:36px; min-width:36px; min-height:36px; padding:0; }
+.sync-list .sync-retry-icon svg { flex:none; width:16px; height:16px; }
 
 /* Long lists: skip layout/paint for off-screen cards; the browser remembers each card's real size. */
 .dashboard-card { content-visibility:auto; contain-intrinsic-size:auto 92px; }

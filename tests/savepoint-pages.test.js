@@ -174,6 +174,19 @@ test("all SavePoint export formats share a busy guard while Android JSON stays s
   assert.match(backend, /await write\(buffer\)/);
 });
 
+test("SavePoint exports keep ratings, omit written reviews, and support browser artwork downloads", () => {
+  const app = read("app.js"), page = read("pages/export.js"), backend = read("backend/app.js");
+  const exportSection = app.slice(app.indexOf("  let exportRunning = false;"), app.indexOf("  function importIdentity("));
+  assert.match(app, /let exportOptions = \{ format: "json", ratings: prefs\.backupIncludeRatings !== false \}/);
+  assert.match(exportSection, /delete copy\.review; delete copy\.reviews; delete copy\.notes/);
+  assert.doesNotMatch(page, /Your written reviews and notes/);
+  assert.match(exportSection, /typeof window\.showSaveFilePicker === "function"/);
+  assert.match(exportSection, /saveHandle = await saveHandlePromise/);
+  assert.match(exportSection, /const writePart = async value => \{ if \(writable\) await writable\.write\(value\); else parts\.push\(value\); \}/);
+  assert.match(exportSection, /backend\?\.backupItem \? await backend\.backupItem\(item\)/);
+  assert.match(backend, /const loaded = await loadItemImages\(item\)/);
+});
+
 test("export summary and Android completion report the exported game count with correct wording", () => {
   const app = read("app.js"), page = read("pages/export.js"), exportBody = app.slice(app.indexOf("async function exportListBody"), app.indexOf("const fileName = ", app.indexOf("async function exportListBody")));
   assert.match(page, /\$\{Number\(itemCount\) \|\| 0\} \$\{Number\(itemCount\) === 1 \? "game" : "games"\} will be exported/);
@@ -653,4 +666,14 @@ test("closing My games filters avoids rebuilding the library when no filter chan
   const app = read("app.js");
   assert.match(app, /if \("libraryFilterClose" in d\) \{ closePopup\(\$\("#library-filter-dialog"\)\); return; \}/);
   assert.match(app, /const reopen = \(\) => \{ saveLibraryState\(\); render\(\); requestAnimationFrame\(\(\) => showPopup\(\$\("#library-filter-dialog"\), \{ silent: true \}\)\); \}/);
+});
+
+test("App Info no longer links to What’s new or Help, and those routes are removed", () => {
+  const settings = read("pages/settings.js"), app = read("app.js");
+  const appInfo = settings.slice(settings.indexOf("function renderAppInfo()"), settings.indexOf("function formatLogTime(", settings.indexOf("function renderAppInfo()")));
+  assert.doesNotMatch(appInfo, /href="#(?:whats-new|help)"/);
+  assert.doesNotMatch(app, /help: "Help & FAQ"|"whats-new": "What’s new"/);
+  assert.doesNotMatch(app, /goto\("whats-new"\)/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, "frontend/index.html"), "utf8"), /pages\/insights\.js/);
+  assert.equal(fs.existsSync(path.join(root, "frontend/pages/insights.js")), false);
 });

@@ -908,35 +908,6 @@ html body .profile-reorder-arrows button:disabled { opacity:.28; }
 .setup-tile.is-in-library .setup-tile-title { opacity:.55; }
 .setup-tile.is-in-library .setup-mark { display:none; }
 
-/* Year in Review, Your Taste, What's new, Help */
-.ins-page { display:grid; gap:14px; width:min(100%,640px); margin:0 auto; padding:10px 0 28px; }
-.ins-intro { margin:0 4px; color:var(--muted,var(--d-t2,#8a8fa0)); font-size:.85rem; line-height:1.45; }
-.ins-card { display:grid; gap:14px; padding:18px; border:1px solid var(--line,var(--d-line2,#ffffff1f)); border-radius:22px; background:var(--surface,var(--d-surface,#15171d)); }
-.ins-card h1 { margin:0; font-size:1.7rem; line-height:1.1; letter-spacing:-.02em; }
-.ins-card h2 { margin:0; font-size:1.02rem; }
-.ins-eyebrow { margin:0; color:var(--accent,var(--d-gold,#f1b01f)); font-size:.68rem; font-weight:800; letter-spacing:.12em; }
-.ins-hero { background:linear-gradient(160deg,color-mix(in srgb,var(--accent,#f1b01f) 14%,var(--surface,var(--d-surface,#15171d))),var(--surface,var(--d-surface,#15171d)) 60%); }
-.ins-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
-.ins-stat { display:grid; align-content:center; gap:3px; min-height:78px; padding:12px 8px; border-radius:16px; background:color-mix(in srgb,currentColor 7%,transparent); text-align:center; }
-.ins-stat strong { font-size:1.35rem; line-height:1.1; overflow-wrap:anywhere; }
-.ins-stat:nth-child(3) strong { font-size:1.02rem; }
-.ins-stat small { color:var(--muted,var(--d-t2,#8a8fa0)); font-size:.68rem; }
-.ins-block { display:grid; gap:10px; }
-.ins-bars, .ins-list { display:grid; gap:9px; margin:0; padding:0; list-style:none; }
-.ins-bars li { display:grid; grid-template-columns:minmax(70px,.9fr) minmax(0,2fr) auto; align-items:center; gap:10px; font-size:.84rem; }
-.ins-bar-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ins-bar-track { display:block; height:8px; overflow:hidden; border-radius:99px; background:color-mix(in srgb,currentColor 12%,transparent); }
-.ins-bar-track i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--accent,#f1b01f),color-mix(in srgb,var(--accent,#f1b01f) 55%,#fff)); }
-.ins-bars strong { min-width:1.4em; text-align:right; font-size:.84rem; }
-.ins-list li { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:13px; background:color-mix(in srgb,currentColor 6%,transparent); font-size:.88rem; }
-.ins-check { display:grid; place-items:center; flex:none; width:22px; height:22px; border-radius:50%; background:color-mix(in srgb,var(--accent,#f1b01f) 22%,transparent); color:var(--accent,var(--d-gold,#f1b01f)); font-size:.75rem; font-weight:800; }
-.ins-empty { margin:0; padding:12px 14px; border-radius:13px; background:color-mix(in srgb,currentColor 6%,transparent); color:var(--muted,var(--d-t2,#8a8fa0)); font-size:.82rem; line-height:1.4; }
-.ins-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:4px; }
-.ins-actions .button { flex:1 1 140px; justify-content:center; min-height:46px; }
-.ins-card details { padding:12px 14px; border-radius:14px; background:color-mix(in srgb,currentColor 6%,transparent); }
-.ins-card summary { cursor:pointer; font-weight:700; }
-.ins-card details p { margin:8px 0 0; color:var(--muted,var(--d-t2,#8a8fa0)); font-size:.84rem; line-height:1.45; }
-
 /* Status manager */
 .status-group { display:grid; gap:8px; margin-top:16px; }
 .status-group h3 { margin:0 4px; font-size:.95rem; }
