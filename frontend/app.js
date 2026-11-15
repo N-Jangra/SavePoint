@@ -2604,7 +2604,7 @@
   function syncBackupSchedule() {
     const plugin = window.Capacitor?.Plugins?.BackupScheduler;
     if (!plugin) return;
-    if (prefs.backgroundBackups && prefs.backupSchedule === "daily") plugin.schedule?.().catch(() => toast("Could not schedule encrypted backups."));
+    if (prefs.backgroundBackups && prefs.backupSchedule === "daily") plugin.schedule?.({ retention: Number(prefs.backupRetention) || 10 }).catch(() => toast("Could not schedule encrypted backups."));
     else plugin.cancel?.().catch(() => {});
   }
   function applyMixIdentity(item, result) {
@@ -3496,7 +3496,7 @@
     if (ratingChange?.length) persist({ ids: ratingChange });
     if (key === "bottomBarBackground" && value !== "transparent") prefs.bottomBarTransparency = 100;
     persist({ meta: true }); applyPreferences();
-    if (key === "backgroundBackups" || key === "backupSchedule") syncBackupSchedule();
+    if (key === "backgroundBackups" || key === "backupSchedule" || key === "backupRetention") syncBackupSchedule();
     if (key === "ratingFormat") updateRatingOptions();
     if (key === "dashboardStatusFilter") {
       dashboardStatusFilter = value || "all";
