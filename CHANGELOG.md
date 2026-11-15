@@ -18,6 +18,7 @@
 - Profile image pickers list only titles with artwork matching the selected profile-photo or background slot.
 - Quick Setup disables titles already in your library on every step so they cannot be picked again.
 - Games page poster view now shows just the poster, a thin progress bar and the + button, matching the library poster grid (no platform tag, title or hours text).
+- Games page has a fourth **Large** view (two big poster tiles per row, like the Library Large view); the view button now cycles List, Posters, Cards, Large.
 - Recently deleted shows each game as a card with its image (with a loading placeholder), days left, and clear Restore and Delete forever buttons.
 - Bulk metadata lookups now adapt concurrency to Android device and network limits.
 
@@ -28,6 +29,7 @@
 - Profile: the Achievements summary lines up with the other shelves.
 - Games and Profile artwork now follows one order: HowLongToBeat portrait, SteamDB portrait, HowLongToBeat screenshots, SteamDB screenshots, then any other saved picture. A failed image falls back to the next one, and a broken-image icon is never shown.
 - Offline artwork: when a cover or screenshot cannot load from the web, the Games, Profile and Library lists now fall back to the saved copy (the game's folder thumbnail when a data folder is selected, otherwise the IndexedDB copy) instead of showing a broken image. Steam's portrait art is now saved too, and a game-based profile photo is a real image so it can fall back as well. Video trailers still stream and are not saved; Timeline, Statistics and Add/Edit keep their existing fallbacks.
+- Artwork loading pipeline: Games, Library and Profile posters load through a queue (up to 6 at a time, 4 on Android, newest rows first) and are cached in memory and in IndexedDB as small thumbnails, so scrolling no longer refetches pictures that already loaded or leaves older ones blank, and they are also available offline.
 
 ## [0.1.6] — 2026-11-14
 
