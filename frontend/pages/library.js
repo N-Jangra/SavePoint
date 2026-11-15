@@ -22,6 +22,19 @@
   };
   // Sorting 10k+ games is only redone when the library or the sort changes.
   let sortCache = { items: null, revision: null, key: "", rows: [] };
+  let facetCache = { items: null, revision: null, status: "", value: null };
+  function filterFacets(items, revision, statusFilter) {
+    if (facetCache.items === items && facetCache.revision === revision && facetCache.status === statusFilter && facetCache.value) return facetCache.value;
+    const statuses = [...new Set([...statusOrder, ...items.map(item => item.status).filter(Boolean)])].filter(status => items.some(item => item.status === status));
+    const tagScope = statusFilter === "all" ? items : items.filter(item => item.status === statusFilter);
+    const tags = [...new Set(tagScope.flatMap(tagsOf))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    const platformCounts = new Map();
+    items.forEach(item => platformsOf(item).forEach(name => platformCounts.set(name, (platformCounts.get(name) || 0) + 1)));
+    const platforms = [...platformCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 14).map(([name]) => name);
+    const value = { statuses, tags, platforms };
+    facetCache = { items, revision, status: statusFilter, value };
+    return value;
+  }
   function sortedItems(items, sort, revision) {
     if (sortCache.items === items && sortCache.revision === revision && sortCache.key === sort) return sortCache.rows;
     sortCache = { items, revision, key: sort, rows: [...items].sort(sorters[sort] || sorters.alpha) };
@@ -57,14 +70,14 @@
   }
   function tileFor(item, view, esc) {
     const { imgMarkup, posterButton } = window.SplitAppPages.profileArt;
-    if (view !== "list") return posterButton(item, esc);
     const goal = goalOf(item), hours = hoursOf(item), done = String(item.status).toLowerCase() === "completed";
     const percent = done ? 100 : goal ? Math.min(100, Math.round(hours / goal * 100)) : 0;
+    if (view !== "list") return posterButton(item, esc);
     const meta = [item.platform, item.status].filter(Boolean).join(" · ");
-    return `<button type="button" class="library-row" data-open-details data-action="details" data-id="${esc(item.id)}" aria-label="Open ${esc(item.title)}"><span class="library-row-art">${imgMarkup(item, esc)}</span><span class="library-row-copy"><strong>${esc(item.title)}${item.favorite ? ' <i class="library-row-heart" aria-label="Favorite">♥</i>' : ""}</strong><small>${esc(meta)}</small><span class="library-row-bar"><i style="width:${percent}%"></i></span></span><span class="library-row-hours">${goal ? `${Math.round(hours * 10) / 10}/${Math.round(goal * 10) / 10} h` : `${Math.round(hours * 10) / 10} h`}</span></button>`;
+    return `<button type="button" class="library-row" data-open-details data-action="details" data-id="${esc(item.id)}" aria-label="Open ${esc(item.title)}"><span class="library-row-art">${imgMarkup(item, esc)}</span><span class="library-row-copy"><strong>${esc(item.title)}${item.favorite ? ' <i class="library-row-heart" aria-label="Favorite">♥</i>' : ""}</strong><small>${esc(meta)}</small><span class="library-row-bar" data-status="${esc(String(item.status || "").toLowerCase().replace(/\s+/g, "-"))}"><i style="width:${percent}%"></i></span></span><span class="library-row-hours">${goal ? `${Math.round(hours * 10) / 10}/${Math.round(goal * 10) / 10} h` : `${Math.round(hours * 10) / 10} h`}</span></button>`;
   }
   window.SplitAppPages.library = context => {
-    const { items = [], esc } = context;
+    const { items = [], esc, libraryStatusGroups = false } = context;
     const state = context.libraryState || {};
     const routeStatus = String(context.libraryStatus || "");
     const statusFilter = routeStatus || state.status || "all";
@@ -72,34 +85,41 @@
     virtualSources.clear();
     const rows = filterRows({ ...context, libraryState: { ...state, status: statusFilter, favorites: false } });
     lastRows = rows;
-    const statuses = [...new Set([...statusOrder, ...items.map(item => item.status).filter(Boolean)])].filter(status => items.some(item => item.status === status));
-    const tagScope = items.filter(item => statusFilter === "all" || item.status === statusFilter);
-    const tags = [...new Set(tagScope.flatMap(tagsOf))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-    const platformCounts = new Map();
-    items.forEach(item => platformsOf(item).forEach(name => platformCounts.set(name, (platformCounts.get(name) || 0) + 1)));
-    const platforms = [...platformCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 14).map(([name]) => name);
+    const { statuses, tags, platforms } = filterFacets(items, context.dataRevision, statusFilter);
     const sortKey = sorters[state.sort] ? state.sort : "alpha", sortLabel = SORTS.find(([key]) => key === sortKey)[1];
-    const filtersApplied = sortKey !== "alpha" || (statusFilter && statusFilter !== "all" && !(typeof location !== "undefined" && /[?&]status=/.test(location.hash))) || (state.platform && state.platform !== "all") || Boolean(state.tag);
+    // A status route is a collection page (Playing, Backlog, etc.), not an
+    // extra filter layered over the collection. Alphabetical is the neutral
+    // default, so keep the compact Filters control until a custom sort or
+    // another optional filter is actually selected.
+    const filtersApplied = sortKey !== "alpha" || (state.platform && state.platform !== "all") || Boolean(state.tag) || Boolean(state.favorites);
     const viewDef = VIEWS.find(([key]) => key === view);
     const chip = (name, value, label, current) => `<button type="button" class="library-chip${current === value ? " active" : ""}" data-library-${name}="${esc(value)}" aria-pressed="${current === value}">${esc(label)}</button>`;
     const libraryTitle = statusFilter === "all" ? "All games" : statusFilter === "Completed" ? "Completed games" : statusFilter;
     const dialog = `<dialog class="choice-dialog profile-filter-dialog library-filter-dialog" id="library-filter-dialog"><div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">${esc(libraryTitle.toUpperCase())}</p><h2>Filters</h2></div><button type="button" class="choice-dialog-close" data-library-filter-close aria-label="Close">×</button></header><div class="library-filter-body"><section><h3>Sort by</h3><div class="library-chips">${SORTS.map(([key, label]) => chip("sort", key, label, sortKey)).join("")}</div></section>${statusFilter === "all" ? `<section><h3>Status</h3><div class="library-chips">${chip("status", "all", "All", statusFilter)}${statuses.map(status => chip("status", status, status, statusFilter)).join("")}</div></section>` : ""}${platforms.length ? `<section><h3>Platform</h3><div class="library-chips">${chip("platform", "all", "All", state.platform || "all")}${platforms.map(name => chip("platform", name, name, state.platform || "all")).join("")}</div></section>` : ""}${tags.length ? `<section><h3>Tags</h3><div class="library-chips">${chip("tag", "", "All tags", state.tag || "")}${tags.map(name => chip("tag", name, name, state.tag || "")).join("")}</div></section>` : ""}</div><footer class="choice-dialog-actions library-filter-actions"><button type="button" class="button secondary" data-library-reset>Reset</button><button type="button" class="button primary" data-library-filter-close>Show ${rows.length} ${rows.length === 1 ? "game" : "games"}</button></footer></dialog>`;
     let content;
+    const gridFor = (list, group = "library") => {
+      if (list.length < VIRTUAL_MIN) return `<div class="profile-collection-grid library-grid is-${view}">${list.map(item => tileFor(item, view, esc)).join("")}</div>`;
+      const id = group === "library" ? "library" : `library-${group.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
+      virtualSources.set(id, { count: list.length, tile: index => tileFor(list[index], view, esc) });
+      return `<div class="profile-collection-grid library-grid is-virtual is-${view}" data-virtual-grid="${esc(id)}" data-virtual-total="${list.length}"${view === "list" ? ' data-virtual-row="74"' : ""} aria-label="${list.length} ${esc(group)} games"></div>`;
+    };
     if (!rows.length) {
       const restoring = Boolean(context.libraryLoading);
       content = restoring
         ? `<div class="profile-empty profile-list-empty" role="status" aria-live="polite"><i data-lucide="loader-circle" aria-hidden="true"></i><strong>Loading your games…</strong><span>Your saved collection is being restored.</span></div>`
         : `<div class="profile-empty profile-list-empty"><i data-lucide="library" aria-hidden="true"></i><strong>${items.length ? "No games match" : "No games yet"}</strong><span>${items.length ? "Change the search or the filters." : "Add games from Explore, or add one manually from your profile."}</span>${items.length ? "" : '<button type="button" data-go="discover">Explore games</button>'}</div>`;
-    } else if (rows.length < VIRTUAL_MIN) {
-      content = `<div class="profile-collection-grid library-grid is-${view}">${rows.map(item => tileFor(item, view, esc)).join("")}</div>`;
-    } else {
-      virtualSources.set("library", { count: rows.length, tile: index => tileFor(rows[index], view, esc) });
-      content = `<div class="profile-collection-grid library-grid is-virtual is-${view}" data-virtual-grid="library" data-virtual-total="${rows.length}"${view === "list" ? ' data-virtual-row="74"' : ""} aria-label="${rows.length} games"></div>`;
-    }
+    } else if (libraryStatusGroups && statusFilter === "all") {
+      const ordered = [...statusOrder.filter(status => status !== "Completed"), "Completed"];
+      const groups = ordered.map(status => ({ status, rows: rows.filter(item => item.status === status) })).filter(group => group.rows.length);
+      content = groups.length ? `<div class="profile-status-groups library-status-groups">${groups.map(group => `<section class="profile-status-group library-status-group"><h3>${esc(group.status)} <span>${group.rows.length}</span></h3>${gridFor(group.rows, group.status)}</section>`).join("")}</div>` : "";
+    } else content = gridFor(rows);
     const filterControl = filtersApplied
       ? `<footer class="profile-filter-bar"><button type="button" class="profile-filter-icon" data-library-filters aria-label="Open filters"><i data-lucide="sliders-horizontal" aria-hidden="true"></i></button><button type="button" class="profile-sort-pill" data-library-filters aria-label="Sort by ${esc(sortLabel)}">${esc(sortLabel)} <i data-lucide="chevron-down" aria-hidden="true"></i></button><button type="button" class="profile-filter-reset" data-library-reset aria-label="Reset filters">Reset</button></footer>`
       : `<button type="button" class="profile-filter-pill" data-library-filters><i data-lucide="sliders-horizontal" aria-hidden="true"></i><span>Filters</span></button>`;
-    return `<section class="profile-page profile-list-page library-page"><header class="profile-list-header"><button type="button" data-go="profile" aria-label="Back to profile"><i data-lucide="chevron-left" aria-hidden="true"></i></button><h2>${esc(libraryTitle)} <small>${rows.length}</small></h2><div class="profile-list-header-actions"><button type="button" class="profile-visibility-toggle" data-library-view aria-label="View: ${viewDef[1]}. Tap to change" title="${viewDef[1]} view · tap to cycle"><i data-lucide="${viewDef[2]}" aria-hidden="true"></i></button><button type="button" class="profile-visibility-toggle" data-library-share aria-label="Share this list" title="Share"${rows.length ? "" : " disabled"}><i data-lucide="share-2" aria-hidden="true"></i></button></div></header><label class="profile-collection-search library-search"><i data-lucide="search" aria-hidden="true"></i><input type="search" data-library-search value="${esc(state.query || "")}" placeholder="Search ${libraryTitle.toLowerCase()}" autocomplete="off" aria-label="Search ${libraryTitle.toLowerCase()}"></label>${content}${filterControl}${dialog}</section>`;
+    const groupingToggle = statusFilter === "all"
+      ? `<button type="button" class="profile-visibility-toggle${libraryStatusGroups ? " is-active" : ""}" data-library-groups aria-label="${libraryStatusGroups ? "Show all games in one grid" : "Group games by status"}" aria-pressed="${libraryStatusGroups}"><i data-lucide="eye" aria-hidden="true"></i></button>`
+      : "";
+    return `<section class="profile-page profile-list-page library-page"><header class="profile-list-header"><button type="button" data-go="profile" aria-label="Back to profile"><i data-lucide="chevron-left" aria-hidden="true"></i></button><h2>${esc(libraryTitle)}</h2><div class="profile-list-header-actions">${groupingToggle}<button type="button" class="profile-visibility-toggle" data-library-view data-view="${view}" aria-label="${viewDef[1]} view. Tap to change layout"><i data-lucide="${viewDef[2]}" aria-hidden="true"></i></button><button type="button" class="profile-visibility-toggle" data-library-share aria-label="Share this list"${rows.length ? "" : " disabled"}><i data-lucide="share-2" aria-hidden="true"></i></button></div></header><label class="profile-collection-search library-search"><i data-lucide="search" aria-hidden="true"></i><input type="search" data-library-search value="${esc(state.query || "")}" placeholder="Search ${libraryTitle.toLowerCase()}" autocomplete="off" aria-label="Search ${libraryTitle.toLowerCase()}"></label>${content}${filterControl}${dialog}</section>`;
   };
   window.SplitAppPages.virtualGrid = id => { const source = virtualSources.get(id); return source ? { count: source.count, tile: source.tile } : null; };
   window.SplitAppPages.libraryRows = () => lastRows;

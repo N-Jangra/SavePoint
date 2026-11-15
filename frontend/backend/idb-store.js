@@ -2,7 +2,7 @@
 // so a save touches only changed games instead of rewriting one huge JSON blob
 // into localStorage (5 MB cap, synchronous, blocks the UI thread).
 (root => {
-  const DB_NAME = "savepoint_library", VERSION = 3;
+  const DB_NAME = "savepoint_library", VERSION = 5;
   let dbPromise = null;
   // Keep compact signatures instead of a second full JSON copy of every game.
   // With 10k records the old cache duplicated the complete library in JS heap.
@@ -33,6 +33,24 @@
           items.createIndex("createdAt", "createdAt");
         }
         if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+        // Keep rich provider details out of the list records. The library can
+        // paint from compact game records immediately and hydrate details only
+        // for a full restore or when a game's detail page is opened.
+        const details = db.objectStoreNames.contains("details") ? request.transaction.objectStore("details") : db.createObjectStore("details", { keyPath: "id" });
+        if (request.oldVersion < 5 && db.objectStoreNames.contains("items")) {
+          const cursorRequest = request.transaction.objectStore("items").openCursor();
+          cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result;
+            if (!cursor) return;
+            const record = cursor.value;
+            if (record?.cachedDetails && typeof record.cachedDetails === "object") {
+              details.put({ id: String(record.id), value: record.cachedDetails });
+              delete record.cachedDetails;
+              cursor.update(record);
+            }
+            cursor.continue();
+          };
+        }
         // Device-local artwork cache: one small Blob per game/artwork kind, read in one fast batch.
         const thumbs = db.objectStoreNames.contains("thumbs") ? request.transaction.objectStore("thumbs") : db.createObjectStore("thumbs", { keyPath: "key" });
         if (!thumbs.indexNames.contains("at")) {
@@ -48,6 +66,10 @@
             cursor.continue();
           };
         }
+        // Full detail artwork has a separate, persistent cache. The bounded
+        // `thumbs` store is also used by list cards and shares, so gallery and
+        // still images must not be evicted by its thumbnail LRU.
+        if (!db.objectStoreNames.contains("images")) db.createObjectStore("images", { keyPath: "key" });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -59,10 +81,17 @@
   const result = request => new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
 
   // Returns { items, history, preferences, empty } or throws when IndexedDB is unusable.
-  async function loadAll() {
+  async function loadAll({ withDetails = true } = {}) {
     const db = await open();
-    const tx = db.transaction(["items", "meta"], "readonly");
-    const [items, meta] = await Promise.all([result(tx.objectStore("items").getAll()), result(tx.objectStore("meta").get("state"))]);
+    const stores = withDetails ? ["items", "meta", "details"] : ["items", "meta"];
+    const tx = db.transaction(stores, "readonly");
+    const reads = [result(tx.objectStore("items").getAll()), result(tx.objectStore("meta").get("state"))];
+    if (withDetails) reads.push(result(tx.objectStore("details").getAll()));
+    const [items, meta, detailRows = []] = await Promise.all(reads);
+    if (withDetails && detailRows.length) {
+      const byId = new Map(detailRows.map(row => [String(row.id), row.value]));
+      items.forEach(item => { const value = byId.get(String(item.id)); if (value) item.cachedDetails = value; });
+    }
     known.clear();
     items.forEach(item => known.set(String(item.id), signature(item)));
     return { items, history: meta?.history || [], preferences: meta?.preferences || {}, empty: !items.length && !meta };
@@ -71,16 +100,21 @@
   // Writes only games whose content changed and deletes games that are gone.
   async function save({ items, history, preferences }) {
     const db = await open();
-    const tx = db.transaction(["items", "meta"], "readwrite");
+    const tx = db.transaction(["items", "meta", "details"], "readwrite");
     const store = tx.objectStore("items");
+    const detailStore = tx.objectStore("details");
     const next = new Map();
     for (const item of items) {
       if (item?.id == null) continue;
       const id = String(item.id), snapshot = signature(item);
       next.set(id, snapshot);
-      if (known.get(id) !== snapshot) store.put({ ...item, id });
+      if (known.get(id) !== snapshot) {
+        const { cachedDetails, ...compact } = item;
+        store.put({ ...compact, id });
+        if (cachedDetails && typeof cachedDetails === "object") detailStore.put({ id, value: cachedDetails });
+      }
     }
-    for (const id of known.keys()) if (!next.has(id)) store.delete(id);
+    for (const id of known.keys()) if (!next.has(id)) { store.delete(id); detailStore.delete(id); }
     tx.objectStore("meta").put({ key: "state", history, preferences });
     await done(tx);
     known.clear(); next.forEach((snapshot, id) => known.set(id, snapshot));
@@ -89,16 +123,23 @@
   // Touches only the given games (plus the small meta record). No scan of the library.
   async function saveSome({ changed = [], removedIds = [], history, preferences }) {
     const db = await open();
-    const tx = db.transaction(["items", "meta"], "readwrite");
+    const tx = db.transaction(["items", "meta", "details"], "readwrite");
     const store = tx.objectStore("items");
+    const detailStore = tx.objectStore("details");
     const writes = [];
     for (const item of changed) {
       if (item?.id == null) continue;
       const id = String(item.id), snapshot = signature(item);
       if (known.get(id) === snapshot) continue;
-      store.put({ ...item, id }); writes.push([id, snapshot]);
+      const { cachedDetails, ...compact } = item;
+      store.put({ ...compact, id });
+      if (Object.prototype.hasOwnProperty.call(item, "cachedDetails")) {
+        if (cachedDetails && typeof cachedDetails === "object") detailStore.put({ id, value: cachedDetails });
+        else detailStore.delete(id);
+      }
+      writes.push([id, snapshot]);
     }
-    for (const id of removedIds) { store.delete(String(id)); }
+    for (const id of removedIds) { store.delete(String(id)); detailStore.delete(String(id)); }
     tx.objectStore("meta").put({ key: "state", history, preferences });
     await done(tx);
     writes.forEach(([id, snapshot]) => known.set(id, snapshot));
@@ -161,7 +202,32 @@
     tx.objectStore("thumbs").clear(); await done(tx);
   }
 
-  const core = Object.freeze({ open, loadAll, save, saveSome, getThumbs, putThumbs, listThumbKeys, trimThumbs, clearThumbs });
+  // Detail artwork rows are deliberately independent from the bounded list
+  // thumbnail cache. Entries are [[key, sig]] and [[key, sig, blob]].
+  async function getImages(entries) {
+    const db = await open(), store = db.transaction("images", "readonly").objectStore("images");
+    const rows = await Promise.all(entries.map(([key]) => result(store.get(key)).catch(() => null)));
+    const hits = [];
+    rows.forEach((row, index) => { if (row?.blob && row.sig === entries[index][1]) hits.push([row.key, row.blob]); });
+    return hits;
+  }
+  async function putImages(entries) {
+    if (!entries.length) return;
+    const db = await open(), tx = db.transaction("images", "readwrite"), store = tx.objectStore("images");
+    entries.forEach(([key, sig, blob]) => store.put({ key, sig, blob }));
+    await done(tx);
+  }
+  async function clearImages() {
+    const db = await open(), tx = db.transaction("images", "readwrite");
+    tx.objectStore("images").clear(); await done(tx);
+  }
+
+  async function getDetails(id) {
+    const db = await open(), row = await result(db.transaction("details", "readonly").objectStore("details").get(String(id)));
+    return row?.value || null;
+  }
+
+  const core = Object.freeze({ open, loadAll, save, saveSome, getThumbs, putThumbs, listThumbKeys, trimThumbs, clearThumbs, getImages, putImages, clearImages, getDetails });
   root.SplitAppIDBCore = core;
   if (typeof window === "undefined") return; // inside the data worker: expose the core only
 
@@ -200,7 +266,7 @@
   }
   root.SplitAppIDB = Object.freeze({
     open: () => call("open").then(() => undefined),
-    loadAll: () => call("loadAll"),
+    loadAll: options => call("loadAll", options),
     save: data => call("save", data),
     saveSome: data => call("saveSome", data),
     getThumbs: entries => call("getThumbs", entries),
@@ -208,6 +274,10 @@
     listThumbKeys: () => call("listThumbKeys"),
     trimThumbs: max => call("trimThumbs", max),
     clearThumbs: () => call("clearThumbs"),
+    getImages: entries => call("getImages", entries),
+    putImages: entries => call("putImages", entries),
+    clearImages: () => call("clearImages"),
+    getDetails: id => call("getDetails", id),
     // Merge several sources' details off the main thread (used by background sync).
     merge: (entries, title, item) => {
       const target = ensureWorker();

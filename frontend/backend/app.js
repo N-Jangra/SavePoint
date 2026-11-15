@@ -106,8 +106,11 @@
       }
       if (!candidate.paths.some(existing => existing.length === path.length && existing.every((part, index) => part === path[index]))) candidate.paths.push(path);
     };
-    add(["image"], item.localPortraitData || item.localThumbnailData || item.image || item.cachedDetails?.portraitImage);
+    add(["image"], item.customCover || item.image || item.cachedDetails?.portraitImage || item.localPortraitData || item.localThumbnailData);
     add(["backdrop"], item.localLandscapeData || item.backdrop || item.cachedDetails?.landscapeImage || item.cachedDetails?.backgroundImage);
+    // Steam's portrait art is not stored on the game, but it is the preferred list cover, so keep a copy for offline use.
+    const steamId = String((item.sourceIds || {}).steamdb || (item.metadataSource === "steamdb" ? item.providerId : "") || "").replace(/^app:/, "");
+    if (/^\d+$/.test(steamId)) add(["steamPortrait"], `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${steamId}/library_600x900.jpg`);
     const imageKey = /(image|thumbnail|backdrop|cover|poster|artwork)/i;
     const visit = (value, path = []) => {
       if (Array.isArray(value)) {
@@ -125,6 +128,104 @@
     };
     visit(item);
     return candidates;
+  }
+
+  const imageHash = value => {
+    const text = String(value || ""); let first = 0x811c9dc5, second = 0x9e3779b9;
+    for (let index = 0; index < text.length; index++) { const code = text.charCodeAt(index); first = Math.imul(first ^ code, 0x01000193); second = Math.imul(second ^ (code + index), 0x85ebca6b); }
+    return `${text.length}:${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`;
+  };
+  const imageCacheRef = (item, path, source) => ({ key: `${String(item.id)}:image:${imageHash(JSON.stringify(path))}`, sig: imageHash(source) });
+  const imageObjectUrls = new Map();
+  const maxLiveImageUrls = 256;
+  window.addEventListener("pagehide", () => { imageObjectUrls.forEach(url => URL.revokeObjectURL(url)); imageObjectUrls.clear(); });
+  function imageObjectUrl(key, sig, blob) {
+    const cacheId = `${key}|${sig}`;
+    if (imageObjectUrls.has(cacheId)) {
+      const url = imageObjectUrls.get(cacheId);
+      imageObjectUrls.delete(cacheId); imageObjectUrls.set(cacheId, url);
+      return url;
+    }
+    imageObjectUrls.set(cacheId, URL.createObjectURL(blob));
+    while (imageObjectUrls.size > maxLiveImageUrls) {
+      const oldest = imageObjectUrls.keys().next().value;
+      URL.revokeObjectURL(imageObjectUrls.get(oldest)); imageObjectUrls.delete(oldest);
+    }
+    return imageObjectUrls.get(cacheId);
+  }
+  function thumbnailBlob(image) {
+    if (image?.blob instanceof Blob) return image.blob;
+    if (!image?.base64Content) return null;
+    try { const binary = atob(image.base64Content), bytes = new Uint8Array(binary.length); for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index); return new Blob([bytes], { type: image.mimeType || "image/webp" }); } catch (_) { return null; }
+  }
+
+  async function cacheItemImages(item, maxEntries = 0) {
+    const api = window.SplitAppIDB;
+    if (!item?.id || imageStorage === "online" || !api?.getImages || !api?.putImages) return 0;
+    const candidates = collectImageCandidates(item);
+    if (!candidates.length) return 0;
+    const refs = candidates.flatMap(candidate => candidate.paths.map(path => ({ candidate, path, ...imageCacheRef(item, path, candidate.source) })));
+    let hits = new Map();
+    try { hits = new Map(await api.getImages(refs.map(ref => [ref.key, ref.sig]))); } catch (_) {}
+    const legacyRefs = refs.filter(ref => !hits.has(ref.key));
+    if (legacyRefs.length && api.getThumbs) {
+      try {
+        const legacy = await api.getThumbs(legacyRefs.map(ref => [ref.key, ref.sig]));
+        legacy.forEach(([key, blob]) => hits.set(key, blob));
+        if (legacy.length) await api.putImages(legacy.map(([key, blob]) => { const ref = legacyRefs.find(row => row.key === key); return [key, ref.sig, blob]; }));
+      } catch (_) {}
+    }
+    const writes = [];
+    for (const candidate of candidates) {
+      const related = refs.filter(ref => ref.candidate === candidate), existing = related.map(ref => hits.get(ref.key)).find(Boolean);
+      let blob = existing || null;
+      if (!blob && (navigator.onLine || /^data:image\//i.test(candidate.source))) {
+        try { blob = thumbnailBlob(await makeThumbnail(candidate.source)); } catch (_) {}
+      }
+      if (!blob) continue;
+      related.forEach(ref => { if (!hits.has(ref.key)) writes.push([ref.key, ref.sig, blob]); });
+    }
+    if (writes.length) {
+      try { await api.putImages(writes); } catch (_) {}
+    }
+    return writes.length;
+  }
+
+  // Offline recovery for list pages: the best saved copy (IndexedDB image store) of this game's artwork, in the caller's preferred order.
+  async function cachedItemArt(item, order = []) {
+    const api = window.SplitAppIDB;
+    if (!item?.id || !api?.getImages) return "";
+    const refs = collectImageCandidates(item).flatMap(candidate => candidate.paths.map(path => ({ candidate, ...imageCacheRef(item, path, candidate.source) })));
+    if (!refs.length) return "";
+    let hits;
+    try { hits = new Map(await api.getImages(refs.map(ref => [ref.key, ref.sig]))); } catch (_) { return ""; }
+    const rank = source => { const at = order.indexOf(source); return at < 0 ? 1e6 : at; };
+    const best = refs.filter(ref => hits.has(ref.key)).sort((a, b) => rank(a.candidate.source) - rank(b.candidate.source))[0];
+    return best ? imageObjectUrl(best.key, best.sig, hits.get(best.key)) : "";
+  }
+
+  let libraryImageWarmup = null;
+  async function cacheLibraryImages(items) {
+    if (libraryImageWarmup) return libraryImageWarmup;
+    if (!Array.isArray(items) || imageStorage === "online") return 0;
+    libraryImageWarmup = (async () => {
+      let cached = 0;
+      const queue = items.filter(item => item?.id && collectImageCandidates(item).length);
+      for (const item of queue) {
+        while (document.hidden) await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => {
+          if (window.requestIdleCallback) window.requestIdleCallback(() => resolve(), { timeout: 1200 });
+          else setTimeout(resolve, 30);
+        });
+        // Existing data-URL artwork can be migrated offline; remote images are
+        // fetched only when the device reports connectivity. Each title's
+        // gallery is committed together into the dedicated IndexedDB image store.
+        cached += await cacheItemImages(item).catch(() => 0);
+        if (queue.length > 1) await new Promise(resolve => setTimeout(resolve, 60));
+      }
+      return cached;
+    })().finally(() => { libraryImageWarmup = null; });
+    return libraryImageWarmup;
   }
 
   function itemFingerprint(item) {
@@ -293,22 +394,60 @@
   }
 
   async function loadItemImages(item) {
+    const result = {};
+    const candidates = collectImageCandidates(item);
+    const refs = candidates.flatMap(candidate => candidate.paths.map(path => ({ candidate, path, ...imageCacheRef(item, path, candidate.source) })));
+    const cached = new Map();
+    if (refs.length && window.SplitAppIDB?.getImages) {
+      try {
+        const hits = await window.SplitAppIDB.getImages(refs.map(ref => [ref.key, ref.sig]));
+        hits.forEach(([key, blob]) => cached.set(key, blob));
+        refs.forEach(ref => { const blob = cached.get(ref.key); if (blob) result[ref.path.join(".")] = imageObjectUrl(ref.key, ref.sig, blob); });
+      } catch (_) {}
+    }
+    const legacyRefs = refs.filter(ref => !cached.has(ref.key));
+    if (legacyRefs.length && window.SplitAppIDB?.getThumbs) {
+      try {
+        const legacy = await window.SplitAppIDB.getThumbs(legacyRefs.map(ref => [ref.key, ref.sig]));
+        legacy.forEach(([key, blob]) => cached.set(key, blob));
+        if (legacy.length && window.SplitAppIDB.putImages) {
+          await window.SplitAppIDB.putImages(legacy.map(([key, blob]) => { const ref = legacyRefs.find(row => row.key === key); return [key, ref.sig, blob]; }));
+        }
+        refs.forEach(ref => { const blob = cached.get(ref.key); if (blob && !result[ref.path.join(".")]) result[ref.path.join(".")] = imageObjectUrl(ref.key, ref.sig, blob); });
+      } catch (_) {}
+    }
+    if (refs.length && refs.every(ref => cached.has(ref.key))) return result;
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
     const uri = await getFolderUri({ prompt: false });
-    if (!uri || !plugin?.listFiles || !plugin?.readBinaryFile || !Array.isArray(item?.localImageFiles)) return {};
+    if (!uri || !plugin?.listFiles || !plugin?.readBinaryFile || !Array.isArray(item?.localImageFiles)) {
+      if (navigator.onLine && refs.some(ref => !cached.has(ref.key))) cacheItemImages(item).catch(() => {});
+      return result;
+    }
     const folder = (await getGamesIndex(plugin, uri)).get(itemDirectoryName(item));
     const files = folder ? (await plugin.listFiles({ uri: folder.uri }))?.files || [] : [];
-    const result = {};
+    const localByPath = new Map(), cacheWrites = [];
     for (const image of item.localImageFiles) {
+      const missingPaths = (image.paths || []).filter(path => !result[path.join(".")]);
+      if (!missingPaths.length) continue;
       const file = files.find(entry => entry.name === image.fileName && entry.uri);
       if (!file) continue;
       try {
         const value = await plugin.readBinaryFile({ uri: file.uri });
         if (!value?.base64Content) continue;
         const dataUrl = `data:${image.mimeType || "image/jpeg"};base64,${value.base64Content}`;
-        for (const path of image.paths || []) result[path.join(".")] = dataUrl;
+        for (const path of missingPaths) { result[path.join(".")] = dataUrl; localByPath.set(path.join("."), dataUrl); }
       } catch (error) { console.warn(`Could not read local image ${image.fileName}`, error); }
     }
+    if (localByPath.size && refs.length && window.SplitAppIDB?.putImages) {
+      for (const ref of refs) {
+        if (cached.has(ref.key)) continue;
+        const dataUrl = localByPath.get(ref.path.join("."));
+        if (!dataUrl) continue;
+        try { const blob = await (await fetch(dataUrl)).blob(); cacheWrites.push([ref.key, ref.sig, blob]); result[ref.path.join(".")] = imageObjectUrl(ref.key, ref.sig, blob); } catch (_) {}
+      }
+      if (cacheWrites.length) window.SplitAppIDB.putImages(cacheWrites).catch(() => {});
+    }
+    if (navigator.onLine && refs.some(ref => !cached.has(ref.key))) cacheItemImages(item).catch(() => {});
     return result;
   }
 
@@ -356,7 +495,7 @@
         if (typeof bitmap.close === "function") bitmap.close();
         output = await new Promise(resolve => canvas.toBlob(resolve, "image/webp", 0.88)) || original;
       } catch (_) { output = original; }
-      return { base64Content: await blobAsBase64(output), mimeType: output.type || original.type || "image/jpeg" };
+      return { base64Content: await blobAsBase64(output), mimeType: output.type || original.type || "image/jpeg", blob: output };
     } catch (error) {
       const match = source.match(/^data:([^;,]+);base64,(.*)$/s);
       if (match) return { base64Content: match[2], mimeType: match[1] };
@@ -424,6 +563,11 @@
             if (image?.base64Content) {
               await plugin.writeNestedBinaryFile({ uri, dirPath, fileName, base64Content: image.base64Content });
               localImageFiles.push({ paths: candidate.paths, fileName, mimeType: image.mimeType });
+              const blob = thumbnailBlob(image);
+              if (blob && window.SplitAppIDB?.putImages) {
+                const cacheRows = candidate.paths.map(path => { const ref = imageCacheRef(item, path, candidate.source); return [ref.key, ref.sig, blob]; });
+                await window.SplitAppIDB.putImages(cacheRows).catch(() => {});
+              }
             } else {
               imageWritten = false;
             }
@@ -724,7 +868,7 @@
     };
     if (idbHealthy) {
       try {
-        const stored = await window.SplitAppIDB.loadAll();
+        const stored = await window.SplitAppIDB.loadAll({ withDetails: !fast });
         if (!stored.empty) {
           data = { items: stored.items, history: stored.history.length ? stored.history : data.history, preferences: { ...data.preferences, ...stored.preferences } };
         } else if (data.items.length) {
@@ -1121,6 +1265,9 @@
     chooseFolder,
     getFolderUri: () => getFolderUri({ prompt: false }),
     loadItemImages,
+    cacheItemImages,
+    cachedItemArt,
+    cacheLibraryImages,
     hydrateThumbnails,
     flushFolderWrites: () => Promise.all([flushFolderNow(), folderSnapshotQueue, folderWriteQueue]),
     setImageStorage,

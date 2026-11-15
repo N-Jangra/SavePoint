@@ -31,6 +31,7 @@
         ? `<button type="button" class="watchlist-check" data-games-start="${esc(item.id)}" aria-label="Start playing ${esc(item.title)}" title="Move to Ongoing">+</button>`
         : `<span class="watchlist-airdate">${esc(upcomingLabel(item))}</span>`)
       : `<button type="button" class="watchlist-check" data-action="progress" data-id="${esc(item.id)}" aria-label="Add playtime to ${esc(item.title)}" title="Add playtime">+</button>`;
+    const completed = statusOf(item) === "completed";
     const thumb = art.imgMarkup(item, esc);
     const platform = item.platform ? esc(item.platform) : "";
     if (view === "cards") {
@@ -40,8 +41,8 @@
       return `<article class="watchlist-card is-card-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${open}><div class="watchlist-card-art">${land}</div><div class="watchlist-card-shade"></div><div class="watchlist-card-top"><span>${esc(label)}</span>${platform ? `<small>${platform}</small>` : ""}</div><div class="watchlist-card-copy"><strong>${esc(item.title)}</strong><span>${esc(sub)}</span></div>${check}<span class="watchlist-card-progress"><i style="width:${upcoming ? 0 : percent}%"></i></span></article>`;
     }
     if (view === "posters") {
-      const count = upcoming ? "" : `<span class="watchlist-poster-progress-count">${goal ? `${hoursText(hours)} / ${hoursText(goal)} h` : `${hoursText(hours)} h`}</span><span class="watchlist-poster-progress"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%"></i></span>`;
-      return `<article class="watchlist-card is-poster-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${open}><div class="watchlist-thumb">${thumb}</div><span class="watchlist-poster-shade" aria-hidden="true"></span><span class="watchlist-poster-episode${upcoming ? " is-upcoming" : ""}">${esc(upcoming ? releaseLabel(item) : platform || "GAME")}</span><span class="watchlist-poster-title">${esc(item.title)}</span>${count}${check}</article>`;
+      const bar = upcoming ? "" : `<span class="watchlist-poster-bar" aria-hidden="true"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%"></i></span>`;
+      return `<article class="watchlist-card is-poster-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${open}><div class="watchlist-thumb">${thumb}</div>${bar}${check}</article>`;
     }
     const line = upcoming ? (platform || (statusOf(item) === "backlog" ? "In your backlog" : "Upcoming release")) : (goal ? `${hoursText(hours)} / ${hoursText(goal)} h played` : `${hoursText(hours)} h played`);
     const sub = upcoming ? (statusOf(item) === "backlog" ? "Backlog" : "Not released yet") : [platform, `${percent}%`].filter(Boolean).join(" · ");
