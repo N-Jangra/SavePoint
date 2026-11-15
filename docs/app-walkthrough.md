@@ -24,6 +24,11 @@ The bottom bar can be configured for visible destinations, ordering, alignment, 
 - **Statistics (`#statistics`):** collection overview with dedicated playtime, library, activity, and ratings views.
 - **Explore (`#explore`):** entry point for metadata providers, Mix fetch, Timeline, and Statistics.
 - **Settings (`#settings`):** configure appearance, navigation, dashboard/tracking behavior, backups, metadata sources, and diagnostics.
+- **Artwork order:** Games and Profile show the HowLongToBeat portrait first, then the SteamDB portrait, then HowLongToBeat screenshots, then SteamDB screenshots, then any other saved picture; if one fails to load the next is tried.
+- **Offline artwork:** covers and screenshots are saved while online, to each game's folder when a data folder is selected and to the IndexedDB image store. When a picture cannot load from the web, the Games, Profile and Library lists (including a game-based profile photo) use the saved copy in the same preference order, and the details page shows saved gallery pictures. This needs the game to have been online once and Image storage not set to Online only. Video trailers stream and are not saved; Timeline, Statistics and Add/Edit use their own older fallbacks.
+- **Recently deleted (`#settings/trash`):** deleted games stay 30 days as cards with their image, days left, Restore and Delete forever.
+- **Statuses (`#settings/status-manager`):** add your own status options, rename or remove them, and hide built-in ones (Backlog and Completed always stay). Custom statuses appear in pickers and filters and get a Profile shelf linking to `#library?status=<name>`.
+- **Achievements (`#achievements`):** level card plus category rows; **View all** (`#achievements/g-<category>`) shows every badge with locked ones greyed out, each badge has its own page (`#achievements/a-<id>`) with goal, rarity, XP, unlock date and a **Share badge image** button, and `#achievements/levels` lists levels with military-style insignia (only the next two levels show XP to go; later ones show a lock).
 
 ## Metadata and local data
 

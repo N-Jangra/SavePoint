@@ -8,6 +8,7 @@
 - `app.js` — routing, library state, event handling, settings, and JSON import/export.
 - `components/library.js` — reusable library cards and category controls.
 - `pages/` — Games home, profile and favorites, full library, Explore/Discover/Mix, Details, Add, Search, import/export, Timeline, Statistics, and Settings renderers.
+- `pages/achievements.js` and `pages/insights.js` — offline achievements (categories, per-rank pages, badge sharing), What's new and help pages.
 - `backend/app.js` — app-specific state load/save bridge, including optional Capacitor encrypted storage.
 - `backend/features/metadata.js` — five-provider registry and preference normalization.
 - `backend/features/sources.js` — frontend helpers for source settings.
