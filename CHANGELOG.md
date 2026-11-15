@@ -7,6 +7,7 @@
 - User-cancelled Android storage-folder selection is logged as a warning rather than an application error, including matching entries from older log history.
 - Encrypted mirror sync retains deletion markers until replacement records are published, preventing deleted data from reappearing after an interrupted write.
 - Large chunked exports stream from their temporary file into Downloads instead of loading the complete file into memory.
+- Daily encrypted background backups now honor the selected retention count and remove older `.sqdb` files.
 
 ### Changed
 
