@@ -989,3 +989,12 @@ html body .profile-reorder-arrows button:disabled { opacity:.28; }
 /* Game-based profile photo: an <img> (so it can fall back to the saved offline copy) instead of a CSS background */
 .profile-avatar .avatar-img img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center top; border-radius:50%; }
 .profile-avatar .avatar-img .profile-art-placeholder { position:absolute; inset:0; }
+
+/* Games page "Large" view: two big poster tiles per row, like the Library Large view */
+.watchlist-content.is-large .watchlist-section { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding-inline:12px; }
+.watchlist-content.is-large .watchlist-section > h3,
+.watchlist-content.is-large .watchlist-section > .watchlist-section-heading,
+.watchlist-content.is-large .watchlist-section > .watchlist-browse { grid-column:1 / -1; }
+.watchlist-content.is-large .watchlist-section > .watchlist-section-heading { width:100%; }
+.watchlist-loading-skeleton.is-large { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.watchlist-loading-skeleton.is-large > span { aspect-ratio:2 / 3; }

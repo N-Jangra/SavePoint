@@ -40,7 +40,7 @@
       const sub = upcoming ? (statusOf(item) === "backlog" ? "Waiting in your backlog" : "Not released yet") : (goal ? `${hoursText(hours)} / ${hoursText(goal)} h played` : `${hoursText(hours)} h played`);
       return `<article class="watchlist-card is-card-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${open}><div class="watchlist-card-art">${land}</div><div class="watchlist-card-shade"></div><div class="watchlist-card-top"><span>${esc(label)}</span>${platform ? `<small>${platform}</small>` : ""}</div><div class="watchlist-card-copy"><strong>${esc(item.title)}</strong><span>${esc(sub)}</span></div>${check}<span class="watchlist-card-progress"><i style="width:${upcoming ? 0 : percent}%"></i></span></article>`;
     }
-    if (view === "posters") {
+    if (view === "posters" || view === "large") {
       const bar = upcoming ? "" : `<span class="watchlist-poster-bar" aria-hidden="true"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%"></i></span>`;
       return `<article class="watchlist-card is-poster-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${open}><div class="watchlist-thumb">${thumb}</div>${bar}${check}</article>`;
     }
@@ -55,9 +55,9 @@
   window.SplitAppPages.games = context => {
     const { items = [], esc, gamesTab = "ongoing", gamesView = "list" } = context;
     const tab = gamesTab === "upcoming" ? "upcoming" : "ongoing";
-    const view = ["list", "posters", "cards"].includes(gamesView) ? gamesView : "list";
+    const view = ["list", "posters", "cards", "large"].includes(gamesView) ? gamesView : "list";
     const ongoing = ongoingOf(items), upcoming = upcomingOf(items), rows = tab === "upcoming" ? upcoming : ongoing;
-    const viewIcon = view === "list" ? "list" : view === "posters" ? "layout-grid" : "rectangle-horizontal", viewLabel = view === "list" ? "List" : view === "posters" ? "Posters" : "Cards";
+    const viewIcon = { list: "list", posters: "layout-grid", cards: "rectangle-horizontal", large: "square" }[view], viewLabel = { list: "List", posters: "Posters", cards: "Cards", large: "Large" }[view];
     const toggle = `<button type="button" class="watchlist-view-toggle" data-games-view aria-label="Current view: ${viewLabel}. Tap to change view" title="${viewLabel} view · tap to cycle"><i data-lucide="${viewIcon}" aria-hidden="true"></i></button>`;
     const headingFor = (label, withToggle) => `<div class="watchlist-section-heading"><span class="watchlist-section-heading-spacer" aria-hidden="true"></span><h3>${label}</h3>${withToggle ? toggle : '<span class="watchlist-section-heading-spacer" aria-hidden="true"></span>'}</div>`;
     // Backlog tab: upcoming releases first under their own "Upcoming" heading, then the rest under "Backlog".
