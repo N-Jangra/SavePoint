@@ -184,7 +184,7 @@
   const builtInRouteStatuses = new Set(["Playing", "Backlog", "On Hold", "Dropped", "Completed"]);
   const libraryRouteStatuses = { has: name => builtInRouteStatuses.has(name) || Object.values(statusOptions.custom || {}).some(list => list.includes(name)) };
   const saveLibraryState = () => { try { const { query, ...rest } = libraryState; localStorage.setItem(libraryStore, JSON.stringify(rest)); } catch (_) {} };
-  let gamesTab = (() => { try { return localStorage.getItem(gamesTabStore) === "upcoming" ? "upcoming" : "ongoing"; } catch (_) { return "ongoing"; } })(), gamesView = (() => { try { return ["posters", "cards"].includes(localStorage.getItem(gamesStore)) ? localStorage.getItem(gamesStore) : "list"; } catch (_) { return "list"; } })();
+  let gamesTab = (() => { try { return localStorage.getItem(gamesTabStore) === "upcoming" ? "upcoming" : "ongoing"; } catch (_) { return "ongoing"; } })(), gamesView = (() => { try { return ["posters", "cards", "large"].includes(localStorage.getItem(gamesStore)) ? localStorage.getItem(gamesStore) : "list"; } catch (_) { return "list"; } })();
   let importState = null;
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
   let discoverQuery = "", exploreQuery = "";
@@ -1045,6 +1045,52 @@
     image.src = url; image.style.display = "";
     return true;
   };
+  // ---- Artwork pipeline (Games / Library / Profile lists) ----------------------------------------------------------
+  // The windowed grids redraw their tiles while you scroll. Every poster goes through one shared path: the in-memory URL cache first, then the
+  // saved IndexedDB thumbnail, and only then the network, through a small concurrency-limited queue (newest rows first). A downloaded poster is
+  // shrunk, kept for the session and saved, so scrolling back (or going offline) never refetches or breaks pictures that already loaded.
+  const artQueue = window.SplitAppArtPipeline?.createQueue({ concurrency: nativeAndroid ? 4 : 6 });
+  const artWaiters = new Map(); // cache key|sig -> images waiting for it
+  const artUrlHash = text => { let hash = 0x811c9dc5; for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193); return (hash >>> 0).toString(16); };
+  let artSavedSinceTrim = 0;
+  function applyArtwork(cacheId, url) {
+    const waiting = artWaiters.get(cacheId); artWaiters.delete(cacheId);
+    waiting?.forEach(image => { if (image.isConnected && !image.hasAttribute("src")) setDeferredImageSource(image, url); });
+  }
+  async function fetchArtworkBlob(url) {
+    const controller = typeof AbortController === "function" ? new AbortController() : null, timer = controller ? setTimeout(() => controller.abort(), 12000) : 0;
+    try {
+      const response = await fetch(url, controller ? { signal: controller.signal } : undefined);
+      if (!response.ok) throw new Error(`Image request failed (${response.status})`);
+      const blob = await response.blob();
+      return blob.type && !/^image\//i.test(blob.type) ? null : await shrinkThumbBlob(blob);
+    } finally { if (timer) clearTimeout(timer); }
+  }
+  function queueArtworkLoad(image) {
+    const url = deferredImageSource(image), item = itemById(String(image.dataset.artItem || ""));
+    if (!artQueue || !item || !/^https?:/i.test(url)) { setDeferredImageSource(image, url); return; }
+    const key = thumbKeyOf(item, image.dataset.artMode === "landscape"), sig = `u:${artUrlHash(url)}`, cacheId = `${key}|${sig}`;
+    const warm = thumbUrlCache.get(cacheId);
+    if (warm) { setDeferredImageSource(image, warm); return; }
+    if (!artWaiters.has(cacheId)) artWaiters.set(cacheId, new Set());
+    artWaiters.get(cacheId).add(image);
+    artQueue.add(cacheId, async () => {
+      const saved = (await cachedThumbUrls([[key, sig]])).get(key);
+      if (saved) { applyArtwork(cacheId, saved); return; }
+      if (navigator.onLine === false) { applyArtwork(cacheId, url); return; } // let the normal error path recover a saved copy
+      let blob = null;
+      try { blob = await fetchArtworkBlob(url); } catch (_) {}
+      if (!blob) { applyArtwork(cacheId, url); return; } // blocked or failed: fall back to the browser loading it directly
+      const shown = rememberThumbUrl(key, sig, URL.createObjectURL(blob));
+      applyArtwork(cacheId, shown);
+      if (window.SplitAppIDB?.putThumbs && prefs.imageStorage !== "online") {
+        try {
+          await window.SplitAppIDB.putThumbs([[key, sig, blob]]);
+          if (++artSavedSinceTrim >= 25) { artSavedSinceTrim = 0; await window.SplitAppIDB.trimThumbs?.(prefs.imageCacheMaxEntries); }
+        } catch (_) {}
+      }
+    }, () => { const waiting = artWaiters.get(cacheId); return !waiting || ![...waiting].some(el => el.isConnected); });
+  }
   async function drainDeferredLocalImages() {
     if (deferredImageDrain) return deferredImageDrain;
     deferredImageDrain = (async () => {
@@ -1094,7 +1140,7 @@
     if (!image?.isConnected || image.hasAttribute("src")) return;
     const id = String(image.dataset.localItemId || "");
     const item = id && itemById(id);
-    if (!item) { setDeferredImageSource(image, deferredImageSource(image)); return; }
+    if (!item) { if (!id && image.dataset.artItem && /^https?:/i.test(deferredImageSource(image))) { queueArtworkLoad(image); return; } setDeferredImageSource(image, deferredImageSource(image)); return; }
     const existing = deferredLocalImageRequests.get(id);
     if (existing) { existing.images.add(image); return; }
     const landscape = image.dataset.localImageMode === "landscape";
@@ -4339,7 +4385,7 @@
       if ("libraryTag" in d) { libraryState.tag = d.libraryTag; return reopen(); }
       if ("libraryReset" in d) { Object.assign(libraryState, { sort: "alpha", status: page === "library" && libraryRouteStatuses.has(new URLSearchParams(location.hash.split("?")[1] || "").get("status")) ? new URLSearchParams(location.hash.split("?")[1] || "").get("status") : "all", platform: "all", tag: "", favorites: false }); saveLibraryState(); render(); return; }
     }
-    if (event.target.closest("[data-games-view]")) { gamesView = gamesView === "list" ? "posters" : gamesView === "posters" ? "cards" : "list"; try { localStorage.setItem(gamesStore, gamesView); } catch (_) {} render(); return; }
+    if (event.target.closest("[data-games-view]")) { gamesView = gamesView === "list" ? "posters" : gamesView === "posters" ? "cards" : gamesView === "cards" ? "large" : "list"; try { localStorage.setItem(gamesStore, gamesView); } catch (_) {} render(); return; }
     if (event.target.closest("[data-favorites-more]")) { window.SplitAppPages.showMoreFavorites?.(); render(); return; }
     if (event.target.closest("[data-search-more]")) { window.SplitAppPages.showMoreSearch?.(); render(); return; }
     const gameCard = event.target.closest("[data-watchlist-open]");
