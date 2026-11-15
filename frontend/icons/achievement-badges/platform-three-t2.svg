@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none" role="img" aria-label="platform hopper badge, rank 2">
+  <defs><linearGradient id="a" x1="14" y1="10" x2="82" y2="90"><stop stop-color="#e7f0ff"/><stop offset=".5" stop-color="#879ab8"/><stop offset="1" stop-color="#3f506b"/></linearGradient><linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#25344a"/><stop offset="1" stop-color="#10131c"/></linearGradient></defs>
+  <path d="M48 5 87 27v42L48 91 9 69V27L48 5Z" fill="#10121c" stroke="url(#a)" stroke-width="5"/>
+  <path d="M48 14 79 32v32L48 82 17 64V32l31-18Z" fill="url(#b)" stroke="#fff" stroke-opacity=".5"/>
+  <rect x="22" y="34" width="25" height="34" rx="5" fill="#151d29" stroke="#dce8ff" stroke-width="2.5"/><rect x="27" y="39" width="15" height="19" rx="2" fill="#304966"/><path d="M32 63h5" stroke="#dce8ff" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="50" y="29" width="25" height="39" rx="5" fill="#151d29" stroke="#a9c6ec" stroke-width="2.5"/><rect x="55" y="34" width="15" height="23" rx="2" fill="#304966"/><path d="M60 63h5" stroke="#a9c6ec" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M32 46v5m-2.5-2.5h5m24-2h.1m5 5h.1" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+</svg>
