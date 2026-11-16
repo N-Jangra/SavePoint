@@ -93,9 +93,11 @@
       if(!d) throw new Error("Steam could not load this game's details.");
       const shots=(d.screenshots||[]).slice(0,20).map((shot,index)=>({title:`Screenshot ${index+1}`,image:shot.path_full||shot.path_thumbnail,url:shot.path_full||shot.path_thumbnail}));
       const trailers=(d.movies||[]).slice(0,4).map(m=>{
-        const videoUrl=m.mp4?.max||m.mp4?.["480"]||m.webm?.max||"";
-        const videoType=m.mp4?.max||m.mp4?.["480"]?"video/mp4":m.webm?.max?"video/webm":"";
-        return {title:m.name||"Trailer",image:m.thumbnail,videoUrl,videoType,meta:"Trailer"};
+        // Steam now serves most trailers only as HLS/DASH streams (no mp4/webm). HLS plays natively in the Android/iOS WebView.
+        const mp4=m.mp4?.max||m.mp4?.["480"]||"", webm=m.webm?.max||m.webm?.["480"]||"", hls=m.hls_h264||"";
+        const videoUrl=mp4||webm||hls;
+        const videoType=mp4?"video/mp4":webm?"video/webm":hls?"application/vnd.apple.mpegurl":"";
+        return {title:m.name||"Trailer",image:m.thumbnail,videoUrl,videoType,url:steamUrl,meta:"Trailer"};
       }).filter(m=>m.videoUrl);
       const dlc=(d.dlc||[]).length;
       const req=html=>String(html||"").replace(/<br\s*\/?>/gi," · ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").replace(/^(Minimum|Recommended):\s*/i,"").trim();

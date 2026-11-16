@@ -234,8 +234,8 @@ body[data-theme="light"] .episode-toggle.is-watched { color: #15803d; }
 .detail-icon-button { display:grid; place-items:center; width:36px; height:36px; border:1px solid var(--ios-card-border, var(--line)); border-radius:50%; background:var(--surface); color:var(--muted); cursor:pointer; padding:0; }
 .detail-heading-actions .detail-delete-button { width:36px; height:36px; border:1px solid #ef444455; background:#ef44440f; }
 
-.detail-video-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:14px; }
-.detail-video-card { display:grid; gap:9px; min-width:0; padding:10px; border:1px solid var(--line); border-radius:14px; background:var(--surface-2); }
+.detail-video-list { display:grid; grid-template-columns:1fr; gap:18px; }
+.detail-video-card { display:grid; gap:8px; min-width:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
 .detail-video-card video { display:block; width:100%; aspect-ratio:16/9; border-radius:9px; background:#080a0f; object-fit:contain; }
 .detail-video-card > strong { color:var(--legacy-text); font-size:.86rem; }
 
@@ -254,3 +254,14 @@ body[data-theme="light"] .episode-toggle.is-watched { color: #15803d; }
 .detail-image-modal.is-rotated figure img { position:absolute; top:50%; left:50%; translate:-50% -50%; rotate:90deg; max-width:calc(100dvh - 150px); max-height:calc(100vw - 24px); }
 .detail-image-modal[data-rotate="ccw"] figure img { rotate:-90deg; }
 .detail-image-modal figure img { transition:opacity .2s ease,transform .22s ease,rotate .22s ease; }
+.detail-video-card .detail-video-fallback { display:none; color:var(--accent-text,var(--accent)); font-size:.8rem; font-weight:600; }
+.detail-video-card.is-failed .detail-video-fallback { display:block; }
+.detail-video-card.is-failed video { opacity:.5; }
+
+.detail-video-stage { position:relative; display:block; width:100%; aspect-ratio:16/9; padding:0; overflow:hidden; border:0; border-radius:12px; background:#080a0f; cursor:pointer; }
+.detail-video-stage img { display:block; width:100%; height:100%; object-fit:cover; }
+.detail-video-play { position:absolute; inset:0; display:grid; place-items:center; }
+.detail-video-play i, .detail-video-play svg { width:54px; height:54px; padding:15px; border-radius:50%; background:#000a; color:#fff; box-sizing:border-box; }
+.detail-video-card video { display:block; width:100%; aspect-ratio:16/9; border-radius:12px; background:#000; object-fit:contain; }
+.detail-video-card .detail-video-fallback[hidden] { display:none; }
+.detail-video-card.is-failed .detail-video-fallback { display:block; }

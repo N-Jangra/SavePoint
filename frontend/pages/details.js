@@ -40,7 +40,10 @@
             const videoUrl = safeUrl(entry.videoUrl || entry.url);
             const poster = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image);
             if (!videoUrl) return "";
-            return `<article class="detail-video-card"><video controls playsinline preload="none"${poster ? ` poster="${esc(poster)}"` : ""} aria-label="Play ${esc(entry.title || "game trailer")}"><source src="${esc(videoUrl)}"${entry.videoType === "video/webm" ? " type=\"video/webm\"" : " type=\"video/mp4\""}></video><strong>${esc(entry.title || "Trailer")}</strong></article>`;
+            const mime = /\.m3u8(\?|$)/i.test(videoUrl) || entry.videoType === "application/vnd.apple.mpegurl" ? "application/vnd.apple.mpegurl" : entry.videoType === "video/webm" || /\.webm(\?|$)/i.test(videoUrl) ? "video/webm" : "video/mp4";
+            const openUrl = safeUrl(entry.url) || videoUrl;
+            // Tap-to-play: the saved link is kept with the game, so the thumbnail always shows; the player starts on tap (online) and falls back to the link.
+            return `<article class="detail-video-card" data-video-src="${esc(videoUrl)}" data-video-type="${esc(mime)}" data-video-open="${esc(openUrl)}"><button type="button" class="detail-video-stage" data-video-play aria-label="Play ${esc(entry.title || "trailer")}">${poster ? `<img src="${esc(poster)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : ""}<span class="detail-video-play" aria-hidden="true"><i data-lucide="play"></i></span></button><strong>${esc(entry.title || "Trailer")}</strong><a class="detail-video-fallback" href="${esc(openUrl)}" target="_blank" rel="noopener noreferrer" hidden>Can't play here · Open the video ↗</a></article>`;
           }).join("")}</div>`
         : section.kind === "carousel"
         ? `<div class="detail-carousel">${items.map((entry, entryIndex) => {
