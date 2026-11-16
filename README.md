@@ -25,6 +25,8 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 | Performance | Load library batches and defer off-screen artwork until it approaches the viewport, keeping large image-heavy collections responsive. |
 | Offline use | Keep library data locally and cache provider details/artwork where the selected platform and storage settings allow; if a list cover cannot load offline, the saved copy from the game's folder or IndexedDB is used. Video trailers stream when played and are not copied into the library folder. |
 
+- Imports and exports show a floating percentage button that reopens the import page (or an export sheet), plus Android notification progress.
+
 ## Metadata sources
 
 Built-in source availability and priority are managed in **Settings → Metadata Sources**.
@@ -42,7 +44,7 @@ Provider data varies by game and source. RAWG and IGDB are disabled until config
 
 ### Artwork and video behavior
 
-When Mix fetch has a HowLongToBeat match, its portrait cover is preferred for the game's portrait cover slot. Other source artwork remains available as a fallback, and landscape artwork is kept for wide hero backgrounds. Steam trailers use the browser's inline video player and stream from Steam when played (`preload="none"`); SavePoint stores the trailer URL with cached details but does not save the video file in the library folder.
+When Mix fetch has a HowLongToBeat match, its portrait cover is preferred for the game's portrait cover slot. Other source artwork remains available as a fallback, and landscape artwork is kept for wide hero backgrounds. Steam trailers show as tap-to-play thumbnails: mp4/webm play natively, and Steam's HLS streams play through the bundled `frontend/vendor/hls.min.js` (hls.js) with a loader that restores the real playlist URL under Capacitor's HTTP layer. Offline, or if a stream cannot play, an "Open the video" link saved with the game is shown. Change cover lists on-device copies of every saved picture, so it works offline.
 
 ## Screens and routes
 
@@ -101,9 +103,9 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.9` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.10` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
 
-The current 0.1.9 release APK is available at `android/app/build/outputs/apk/release/app-release.apk` after the signed Gradle release build.
+The current 0.1.10 release APK is available at `android/app/build/outputs/apk/release/app-release.apk` after the signed Gradle release build.
 
 ## Repository layout
 
@@ -147,7 +149,7 @@ SavePoint/
 | Property | Value |
 |---|---|
 | Package | `savepoint` |
-| Version | `0.1.9` |
+| Version | `0.1.10` |
 | Capacitor / Android application ID | `com.cuemark.savepoint` |
 | Capacitor web directory | `frontend/` |
 | Browser state key | `splitapp_savepoint_v1` |

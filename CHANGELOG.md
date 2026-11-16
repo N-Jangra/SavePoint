@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.1.10] — 2026-11-17
+
+### Added
+
+- Floating transfer button (like the sync button) while an import or export runs: it shows the percentage and reopens the import page, or an export progress sheet, so a mistaken Back never loses track of a running transfer.
+- Android notification progress for imports (reading → saving → complete/failed) on the export notification channel; once a file has been read and is waiting on the review page the notification becomes a normal "tap to review" notice.
+- Trailers play inside the app: tap-to-play thumbnails, bundled hls.js for Steam's HLS streams (Steam no longer returns mp4/webm), and an "Open the video" fallback link when a stream cannot play or the device is offline.
+- Change cover shows on-device copies of every saved picture, so the picker works offline and says so when a game has none saved.
+
+### Fixed
+
+- Import progress bar stayed empty: progress now advances through saving and image caching, and "Reading backup" has a determinate bar driven by the bytes read from the file.
+- Library posters use the same per-status progress colours as the profile shelves (including Upcoming) instead of a fixed gold.
+- Closing the app during an export no longer leaves a permanent notification: progress is cancelled on destroy, stale ones are swept on launch and the notification expires by itself if the process is killed.
+- Steam trailers were dropped entirely because only HLS/DASH URLs are returned; hls.js playback now restores the real playlist URL that Capacitor's HTTP layer strips.
+- Game details top bar is fully transparent on phones; the glossy "top bar" rule from ui-polish no longer applies to it.
+- Fast scrolling no longer reaches empty space: virtual grids rebuild a screenful before the drawn edge with a larger buffer, and the Home "load more" starts about 1500px ahead.
+- A render that would produce identical page HTML is skipped so thumbnails are not recreated.
+- Exports read a game's images concurrently and imports decode and save several games at once.
+
+### Changed
+
+- Achievements: removed Platform hopper and the Genre loyalist family (Favourite flavour, Genre devotee, Genre master). The share action on a badge is an icon in the top bar.
+- Sync page offers Clear updated, Clear failed and Clear all.
+- Grouping All games by status (eye button) orders sections Upcoming, Playing, On Hold, Completed, Dropped, Backlog; custom statuses follow On Hold and are no longer left out.
+- Import review shows only the file, counts and duplicates; the game preview list and restore notes were removed.
+- Bump Android and app version metadata for this release.
+
 ## [0.1.9] — 2026-11-15
 
 ### Fixed

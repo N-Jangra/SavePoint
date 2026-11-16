@@ -48,3 +48,10 @@ The key and cache names are app-specific to SavePoint. This local storage model 
 Next to `games/`, `.nomedia` and `database.json`, `savepoint-db/` holds `logcat.json` and `library-history.json`: the full history, newest first (capped at 20,000 entries each). The device keeps only the latest 200 logcat entries and 400 history entries for quick display; the Logcat and Library history pages load the full files and can search all of it. Clear them from either page or from Settings → Storage ("Clear logcat", "Clear library history"), which empties the files too. Without a chosen storage folder, only the recent local copy exists.
 
 Both pages also have **From** and **To** date pickers (inclusive, whole days) that combine with the text search; "Clear dates" resets them.
+
+## Transfers: progress, notifications and images (0.1.10)
+
+- `.sqx`/JSON imports report **bytes read** from the file while reading (`SplitAppBackupStream.parseFile(file, { onBytes })`), then count games saved and images cached. The same percentage drives the import page, the floating transfer button and the Android notification (`ShareIntent` plugin, `kind: "import"`).
+- Export and import move a game's images concurrently (up to 4 per game; imports process 3 games at once, 2 on low-memory devices). Images travel inside the file as data URLs and are written back to the artwork cache by path.
+- An ongoing export/import notification is cancelled when the activity is destroyed, swept on the next launch, and expires after two minutes without updates.
+- Trailer links (`videos` sections: mp4, webm or HLS) are stored with the game in `cachedDetails`, so they remain available as fallback links offline.
