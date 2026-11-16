@@ -177,3 +177,24 @@ test("grouping All games by status orders Upcoming, Playing, On Hold, Completed,
   const order = [...html.matchAll(/library-status-group"><h3>([^<]+?) <span>/g)].map(match => match[1]);
   assert.deepEqual(order, ["Upcoming", "Playing", "On Hold", "Wishlist", "Completed", "Dropped", "Backlog"]);
 });
+
+test("achievements reuse their last result until the library changes", () => {
+  const achievements = load(["frontend/pages/achievements.js"]).SplitAppAchievements;
+  const items = [{ id: "1", title: "A", category: "game", status: "Completed", progress: 10, goal: 10, updatedAt: 1 }];
+  const first = achievements.entries(items, {}), again = achievements.entries(items, {});
+  assert.deepEqual(JSON.parse(JSON.stringify(first)), JSON.parse(JSON.stringify(again)));
+  assert.ok(first.find(row => row.id === "first-game-t1").unlocked);
+  items.push({ id: "2", title: "B", category: "game", status: "Completed", progress: 5, goal: 5, updatedAt: 2 });
+  const grown = achievements.entries(items, {});
+  assert.equal(grown.find(row => row.id === "first-game-t1").current, 2, "a changed library is recomputed");
+  items[1].favorite = true; items[1].updatedAt = 3;
+  assert.equal(achievements.entries(items, {}).find(row => row.id === "favorite-five-t1").current, 1, "edits are picked up");
+});
+
+test("the achievements page has no endless placeholder animation and skips off-screen sections", () => {
+  const css = read("frontend/styles/savepoint-ui.css");
+  assert.doesNotMatch(css, /\.ach-art-wrap::before[^}]*animation:ach-shimmer/);
+  assert.match(css, /\.ach-section \{ content-visibility:auto; contain-intrinsic-size:auto 190px; \}/);
+  assert.match(css, /\.ach-grid > \.ach-badge \{ content-visibility:auto;/);
+  assert.match(read("frontend/pages/achievements.js"), /loading="lazy" decoding="async"/);
+});
