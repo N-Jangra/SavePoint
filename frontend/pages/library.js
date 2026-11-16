@@ -109,7 +109,9 @@
         ? `<div class="profile-empty profile-list-empty" role="status" aria-live="polite"><i data-lucide="loader-circle" aria-hidden="true"></i><strong>Loading your games…</strong><span>Your saved collection is being restored.</span></div>`
         : `<div class="profile-empty profile-list-empty"><i data-lucide="library" aria-hidden="true"></i><strong>${items.length ? "No games match" : "No games yet"}</strong><span>${items.length ? "Change the search or the filters." : "Add games from Explore, or add one manually from your profile."}</span>${items.length ? "" : '<button type="button" data-go="discover">Explore games</button>'}</div>`;
     } else if (libraryStatusGroups && statusFilter === "all") {
-      const ordered = [...statusOrder.filter(status => status !== "Completed"), "Completed"];
+      // Grouped order: Upcoming, Playing, On Hold, (custom statuses), Completed, Dropped, Backlog.
+      const lead = ["Upcoming", "Playing", "On Hold"], tail = ["Completed", "Dropped", "Backlog"];
+      const ordered = [...lead, ...[...new Set(rows.map(item => item.status).filter(Boolean))].filter(status => ![...lead, ...tail].includes(status)), ...tail];
       const groups = ordered.map(status => ({ status, rows: rows.filter(item => item.status === status) })).filter(group => group.rows.length);
       content = groups.length ? `<div class="profile-status-groups library-status-groups">${groups.map(group => `<section class="profile-status-group library-status-group"><h3>${esc(group.status)} <span>${group.rows.length}</span></h3>${gridFor(group.rows, group.status)}</section>`).join("")}</div>` : "";
     } else content = gridFor(rows);

@@ -50,6 +50,7 @@ body[data-page="dashboard"] .topbar h1 { background: none; color: var(--legacy-t
 .progress-line[data-status="on-hold"] span,.demo-poster-progress[data-status="on-hold"] i { background:var(--status-color-on-hold); }
 .progress-line[data-status="dropped"] span,.demo-poster-progress[data-status="dropped"] i { background:var(--status-color-dropped); }
 .progress-line[data-status="completed"] span,.demo-poster-progress[data-status="completed"] i { background:var(--status-color-completed); }
+.progress-line[data-status="upcoming"] span,.demo-poster-progress[data-status="upcoming"] i { background:var(--status-color-upcoming); }
 .collection-welcome { border-radius: 20px; box-shadow: var(--shadow); }
 .collection-welcome h2, .collection-section-heading h2 { font-family: var(--font-heading); }
 .collection-overview > div { border-radius: 15px; box-shadow: var(--shadow); }
@@ -2574,3 +2575,11 @@ body .group-share-btn,body[data-icon-style=inline] .group-share-btn{border:1px s
 .log-filter-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .status-group .status-icon-action { display:inline-grid; place-items:center; width:44px; min-width:44px; height:44px; padding:0; }
 .status-group .status-icon-action svg { width:19px; height:19px; }
+
+/* Achievement detail: share is an icon in the top bar. */
+.ach-share-icon{display:grid;place-items:center;flex:none;width:38px;height:38px;padding:0;border:1px solid var(--line,#ffffff22);border-radius:50%;background:var(--surface-2,#ffffff12);color:inherit;cursor:pointer}
+.ach-share-icon:active{transform:scale(.94)}
+.ach-share-icon svg{width:18px;height:18px}
+
+.transfer-fab{bottom:calc(158px + env(safe-area-inset-bottom));border:0;cursor:pointer}
+.transfer-fab[hidden]{display:none}
