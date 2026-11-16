@@ -19,6 +19,7 @@
 - Fast scrolling no longer reaches empty space: virtual grids rebuild a screenful before the drawn edge with a larger buffer, and the Home "load more" starts about 1500px ahead.
 - A render that would produce identical page HTML is skipped so thumbnails are not recreated.
 - Exports read a game's images concurrently and imports decode and save several games at once.
+- Achievements page is lighter and no longer laggy: the badge calculation is cached until the library changes, badge placeholders no longer run endless shimmer animations (main-thread time while opening and scrolling dropped from about 3.3 s to 1.0 s on a phone), and off-screen sections and tiles are skipped by layout and painting.
 
 ### Changed
 

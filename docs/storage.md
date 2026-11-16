@@ -55,3 +55,8 @@ Both pages also have **From** and **To** date pickers (inclusive, whole days) th
 - Export and import move a game's images concurrently (up to 4 per game; imports process 3 games at once, 2 on low-memory devices). Images travel inside the file as data URLs and are written back to the artwork cache by path.
 - An ongoing export/import notification is cancelled when the activity is destroyed, swept on the next launch, and expires after two minutes without updates.
 - Trailer links (`videos` sections: mp4, webm or HLS) are stored with the game in `cachedDetails`, so they remain available as fallback links offline.
+
+## Achievements page performance (0.1.10)
+
+- `entries()` caches its last result keyed by the library array, its length, the sum of `updatedAt` stamps and the favourite count; a changed library recomputes. The profile, the achievements page, award checks and shares all share that result.
+- Badge placeholders are static (no `ach-shimmer` animation), `.ach-section` and grid tiles use `content-visibility:auto`, and badge images are `loading="lazy" decoding="async"`.
