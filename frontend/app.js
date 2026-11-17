@@ -45,6 +45,7 @@
     : "profile";
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
+    splashStyle: "a", splashSize: 100, splashName: null,
     theme: "system", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", libraryMemory: "auto", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "rise", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarCorners: "sharp", bottomBarLabels: "icons-only", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { games: "gamepad-2", discover: "compass", profile: "user-round" },
     navLayoutVersion: 4, navBar: { order: ["games", "discover", "profile"], visible: { games: true, discover: true, profile: true } },
@@ -520,7 +521,38 @@
     const node = $("#toast"); node.classList.remove("has-action"); node.textContent = message; node.classList.add("show");
     clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("show"), 2300);
   }
+  // The boot screen runs before the library loads, so the chosen opening animation is mirrored to its own localStorage key.
+  // The choice lives in its own localStorage entry (the boot screen reads it too). Restores of the library/preferences from the backup folder
+  // can bring back an older copy of `prefs`, so the entry - not prefs - is the source of truth and prefs follow it.
+  const SPLASH_KEY = "savepoint_splash_style", SPLASH_IDS = ["a", "b", "c", "d"];
+  function syncSplashStyle() {
+    let saved = "";
+    try { saved = localStorage.getItem(SPLASH_KEY) || ""; } catch (_) {}
+    if (SPLASH_IDS.includes(saved)) prefs.splashStyle = saved;
+    else { try { localStorage.setItem(SPLASH_KEY, SPLASH_IDS.includes(prefs.splashStyle) ? prefs.splashStyle : "a"); } catch (_) {} prefs.splashStyle = SPLASH_IDS.includes(prefs.splashStyle) ? prefs.splashStyle : "a"; }
+  }
+  const SPLASH_LAYOUT_KEY = "savepoint_splash_layout";
+  function splashLayout(style = prefs.splashStyle) {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(SPLASH_LAYOUT_KEY) || "{}") || {}; } catch (_) {}
+    return { size: Math.min(130, Math.max(50, Number(saved.size) || 100)), name: typeof saved.name === "boolean" ? saved.name : style === "a" };
+  }
+  // Bridge used by the opening-animation page (pages/splash-studio.js).
+  window.SplashHost = {
+    layout: () => splashLayout(),
+    style: () => prefs.splashStyle || "a",
+    layoutSaved: () => { try { return typeof JSON.parse(localStorage.getItem(SPLASH_LAYOUT_KEY) || "{}").name === "boolean"; } catch (_) { return false; } },
+    toast: message => toast(message),
+    save({ id, size, name }) {
+      if (SPLASH_IDS.includes(id)) { try { localStorage.setItem(SPLASH_KEY, id); } catch (_) {} setPreference("splashStyle", id); }
+      if (size === undefined) { toast("Opening screen saved."); return; }
+      try { localStorage.setItem(SPLASH_LAYOUT_KEY, JSON.stringify({ size, name })); } catch (_) {}
+      setPreference("splashSize", size); setPreference("splashName", name);
+      toast("Opening screen saved.");
+    }
+  };
   function applyPreferences() {
+    syncSplashStyle();
     document.body.dataset.page = page;
     const selectedTheme = prefs.theme === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "amoled" : "light") : prefs.theme;
     const palette = themePalettes[selectedTheme] || themePalettes.dark;
@@ -778,6 +810,7 @@
     return value;
   }
   function pageContext() {
+    syncSplashStyle();
     let logEntries = [], changeLog = [];
     const onLogPage = page === "settings" && (settingsGroup === "logcat" || settingsGroup === "history");
     if (onLogPage) loadFullLog(settingsGroup);

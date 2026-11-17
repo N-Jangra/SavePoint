@@ -31,6 +31,10 @@ The bottom bar can be configured for visible destinations, ordering, alignment, 
 - **Statuses (`#settings/status-manager`):** add your own status options, rename or remove them, and hide built-in ones (Backlog and Completed always stay). Custom statuses appear in pickers and filters and get a Profile shelf linking to `#library?status=<name>`.
 - **Achievements (`#achievements`):** level card plus category rows; **View all** (`#achievements/g-<category>`) shows every badge with locked ones greyed out, each badge has its own page (`#achievements/a-<id>`) with goal, rarity, XP, unlock date and a **Share badge image** button, and `#achievements/levels` lists levels with military-style insignia (only the next two levels show XP to go; later ones show a lock).
 
+## Opening animation
+
+Settings → Personalize → Opening animation is a live studio: the stage previews the selected style, swipeable cards choose between A Default (the original launch screen, fixed size and wording), B Power up, C Button pulse and D Neon draw, and the 2. Size & name tab sets a 50–130% logo size and whether "SavePoint" shows under the logo (B–D only). Test boot plays the draft full screen (browser full-screen mode on the web) and closes itself or on tap/Esc. Reset and Save are round buttons above the bottom bar; nothing changes until Save, and the choice applies at the next launch. B–D are muted MP4/WebM videos with a still poster shown while they load (the poster also stands in on devices without video support); reduced motion keeps the plain splash. The choice and layout live in their own localStorage entries (`savepoint_splash_style`, `savepoint_splash_layout`) so restores cannot reset them.
+
 ## Metadata and local data
 
 Built-in sources are FreeToGame, Steam + SteamDB, HowLongToBeat, RAWG, and IGDB. RAWG requires an API key; IGDB requires Twitch Client ID and access token. Custom JSON sources can be configured in Metadata Sources. Browser HowLongToBeat searches use the local preview proxy; Android can use its provider consent/session integration. See [metadata sources](metadata.md) and [metadata analysis](metadata-analysis.md).

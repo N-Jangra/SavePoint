@@ -198,3 +198,29 @@ test("the achievements page has no endless placeholder animation and skips off-s
   assert.match(css, /\.ach-grid > \.ach-badge \{ content-visibility:auto;/);
   assert.match(read("frontend/pages/achievements.js"), /loading="lazy" decoding="async"/);
 });
+
+test("Settings > Animations offers an opening animation picker with previews", () => {
+  const settings = read("frontend/pages/settings.js");
+  assert.doesNotMatch(settings, /\["Opening animation", "splashStyle"/, "it is no longer a row inside Animations");
+  assert.match(settings, /const openingCard = card\("play-circle", "Opening animation"[^;]*"#settings\/splash-style"\)/);
+  assert.match(settings, /indexGroup\("Personalize", personalize, openingCard\)/);
+  assert.match(settings, /if \(settingsGroup === "splash-style"\) return renderSplashStyle\(\)/);
+  for (const id of ["a", "b", "c", "d"]) assert.match(settings, new RegExp(`id: "${id}", label:`));
+  assert.match(settings, /window\.SplashStudio\.render\(/);
+  const studio = read("frontend/pages/splash-studio.js");
+  for (const hook of ["data-ss-preset", "data-ss-chip", "data-ss-reset", "data-ss-save", "data-ss-test", "ss-size", "ss-name"]) assert.ok(studio.includes(hook), `${hook} in the studio`);
+  for (const name of ["power-up", "button-pulse", "neon-draw"]) for (const ext of ["mp4", "webm", "jpg"]) assert.ok(fs.statSync(path.join(root, `frontend/splash/${name}.${ext}`)).size > 1000, `${name}.${ext} ships with the app`);
+});
+
+test("the chosen opening animation is mirrored for the boot screen and used by it", () => {
+  const app = read("frontend/app.js"), html = read("frontend/index.html");
+  assert.match(app, /const SPLASH_KEY = "savepoint_splash_style"/);
+  assert.match(app, /function syncSplashStyle\(\)/);
+  assert.match(app, /function applyPreferences\(\) \{\s*syncSplashStyle\(\);/, "the saved entry wins over restored preferences");
+  assert.match(app, /localStorage\.setItem\(SPLASH_KEY, id\)[^;]*;[^;]*setPreference\("splashStyle", id\)/);
+  assert.match(app, /window\.SplashHost = \{/);
+  assert.match(html, /localStorage\.getItem\("savepoint_splash_style"\)/);
+  assert.match(html, /b: "splash\/power-up\.gif", c: "splash\/button-pulse\.gif", d: "splash\/neon-draw\.gif"/);
+  assert.match(html, /<video poster=/, "the opening screen plays as video");
+  assert.match(html, /if \(!off && gifs\[style\]\)/, "reduced motion keeps the plain splash");
+});
