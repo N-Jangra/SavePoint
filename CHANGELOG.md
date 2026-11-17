@@ -12,6 +12,7 @@
 
 ### Fixed
 
+- Add Game page: the header now spans the full width and stays pinned while scrolling, and Cancel / Save Game sit flush at the bottom instead of floating above an empty gap (the bottom bar is hidden on this page).
 - Import progress bar stayed empty: progress now advances through saving and image caching, and "Reading backup" has a determinate bar driven by the bytes read from the file.
 - Library posters use the same per-status progress colours as the profile shelves (including Upcoming) instead of a fixed gold.
 - Closing the app during an export no longer leaves a permanent notification: progress is cancelled on destroy, stale ones are swept on launch and the notification expires by itself if the process is killed.
