@@ -18,7 +18,7 @@ The bottom bar can be configured for visible destinations, ordering, alignment, 
 - **Discover (`#discover`):** search one provider or all enabled sources, browse source suggestions, open a game's details preview, or add it to the library. Saved entries show their library state.
 - **Mix fetch (`#mix`):** experimental combined search across enabled sources. Results retain provider references; adding a result merges available provider metadata into one library record.
 - **Details (`#details?id=…`):** review and edit tracking status, rating, playtime and goal, plus cached/provider details such as artwork, screenshots, tags, links, requirements, and achievements when supplied.
-- **Add Game (`#add`):** create or edit a game manually, or search enabled metadata providers to autofill its fields.
+- **Add Game (`#add`):** create or edit a game manually, or search enabled metadata providers to autofill its fields. The header spans the full width and stays pinned at the top; the bottom bar is hidden here and Cancel / Save Game sit flush at the bottom of the screen.
 - **Sharing:** the Share button on each Home group opens an Images | PDF popup (themed image pages with per-page and page-count controls, or one PDF list of every game). The Share button in a game's details top bar builds a PDF or image of that game from its saved metadata. Saving writes to Downloads; sharing uses the Android share sheet.
 - **Timeline (`#timeline`):** browse status-change activity, with date and game filters.
 - **Statistics (`#statistics`):** collection overview with dedicated playtime, library, activity, and ratings views.
@@ -30,6 +30,10 @@ The bottom bar can be configured for visible destinations, ordering, alignment, 
 - **Recently deleted (`#settings/trash`):** deleted games stay 30 days as cards with their image, days left, Restore and Delete forever.
 - **Statuses (`#settings/status-manager`):** add your own status options, rename or remove them, and hide built-in ones (Backlog and Completed always stay). Custom statuses appear in pickers and filters and get a Profile shelf linking to `#library?status=<name>`.
 - **Achievements (`#achievements`):** level card plus category rows; **View all** (`#achievements/g-<category>`) shows every badge with locked ones greyed out, each badge has its own page (`#achievements/a-<id>`) with goal, rarity, XP, unlock date and a **Share badge image** button, and `#achievements/levels` lists levels with military-style insignia (only the next two levels show XP to go; later ones show a lock).
+
+## Opening animation
+
+Settings → Personalize → Opening animation is a live studio: the stage previews the selected style, swipeable cards choose between A Default (the original launch screen, fixed size and wording), B Power up, C Button pulse and D Neon draw, and the 2. Size & name tab sets a 50–130% logo size and whether "SavePoint" shows under the logo (B–D only). Test boot plays the draft full screen (browser full-screen mode on the web) and closes itself or on tap/Esc. Reset and Save are round buttons above the bottom bar; nothing changes until Save, and the choice applies at the next launch. B–D are muted MP4/WebM videos with a still poster shown while they load (the poster also stands in on devices without video support); reduced motion keeps the plain splash. The choice and layout live in their own localStorage entries (`savepoint_splash_style`, `savepoint_splash_layout`) so restores cannot reset them.
 
 ## Metadata and local data
 

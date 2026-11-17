@@ -21,9 +21,12 @@ SavePoint is a local-first game library and playtime tracker for web and Android
 | Statuses and recovery | Add, rename or hide status options in Settings (custom statuses get their own Profile shelf), and restore deleted games for 30 days. |
 | Achievements | Category rows with View all grids, one page per bronze/silver/gold achievement, Medal Kings, Badge Collector and level insignia, and badge sharing as an image. |
 | Quick setup | First-run wizard (completed, to play, playing, on hold, dropped) with Steam + SteamDB trending tiles and HowLongToBeat search; completed picks fill progress from available playtime metadata, and titles already in your library are greyed out and cannot be picked. |
+| Opening animation | Settings → Personalize → Opening animation: pick the launch animation (A Default, B Power up, C Button pulse, D Neon draw) on a live stage, adjust logo size and whether the app name shows (not for A, the original launch screen), Test boot, then Save. Animations play as video with a still poster. |
 | Settings | Customize appearance and navigation; configure metadata sources, storage, memory (poster cache size), backups, tracking, and diagnostics. |
 | Performance | Load library batches and defer off-screen artwork until it approaches the viewport, keeping large image-heavy collections responsive. |
 | Offline use | Keep library data locally and cache provider details/artwork where the selected platform and storage settings allow; if a list cover cannot load offline, the saved copy from the game's folder or IndexedDB is used. Video trailers stream when played and are not copied into the library folder. |
+
+- Imports and exports show a floating percentage button that reopens the import page (or an export sheet), plus Android notification progress.
 
 ## Metadata sources
 
@@ -42,7 +45,7 @@ Provider data varies by game and source. RAWG and IGDB are disabled until config
 
 ### Artwork and video behavior
 
-When Mix fetch has a HowLongToBeat match, its portrait cover is preferred for the game's portrait cover slot. Other source artwork remains available as a fallback, and landscape artwork is kept for wide hero backgrounds. Steam trailers use the browser's inline video player and stream from Steam when played (`preload="none"`); SavePoint stores the trailer URL with cached details but does not save the video file in the library folder.
+When Mix fetch has a HowLongToBeat match, its portrait cover is preferred for the game's portrait cover slot. Other source artwork remains available as a fallback, and landscape artwork is kept for wide hero backgrounds. Steam trailers show as tap-to-play thumbnails: mp4/webm play natively, and Steam's HLS streams play through the bundled `frontend/vendor/hls.min.js` (hls.js) with a loader that restores the real playlist URL under Capacitor's HTTP layer. Offline, or if a stream cannot play, an "Open the video" link saved with the game is shown. Change cover lists on-device copies of every saved picture, so it works offline.
 
 ## Screens and routes
 
@@ -101,9 +104,9 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.9` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.10` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
 
-The current 0.1.9 release APK is available at `android/app/build/outputs/apk/release/app-release.apk` after the signed Gradle release build.
+The current 0.1.10 release APK is available at `android/app/build/outputs/apk/release/app-release.apk` after the signed Gradle release build.
 
 ## Repository layout
 
@@ -147,7 +150,7 @@ SavePoint/
 | Property | Value |
 |---|---|
 | Package | `savepoint` |
-| Version | `0.1.9` |
+| Version | `0.1.10` |
 | Capacitor / Android application ID | `com.cuemark.savepoint` |
 | Capacitor web directory | `frontend/` |
 | Browser state key | `splitapp_savepoint_v1` |

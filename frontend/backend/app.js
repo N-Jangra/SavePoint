@@ -1170,14 +1170,14 @@
     const transferImages = {};
     try {
       const loaded = await loadItemImages(item);
-      for (const [path, source] of Object.entries(loaded || {})) {
-        if (!source) continue;
+      await Promise.all(Object.entries(loaded || {}).map(async ([path, source]) => {
+        if (!source) return;
         if (/^data:image\//i.test(source)) transferImages[path] = source;
         else if (/^blob:/i.test(source)) {
           const blob = await (await fetch(source)).blob();
           transferImages[path] = `data:${blob.type || "image/webp"};base64,${await blobAsBase64(blob)}`;
         }
-      }
+      }));
     } catch (error) { console.warn(`Could not package saved artwork for ${item.title || item.id}`, error); }
     return { ...portableItem(item), backupRef: backupRefOf(item), ...(Object.keys(transferImages).length ? { transferImages } : {}) };
   }

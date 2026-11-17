@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.1.10] — 2026-11-17
+
+### Added
+
+- Floating transfer button (like the sync button) while an import or export runs: it shows the percentage and reopens the import page, or an export progress sheet, so a mistaken Back never loses track of a running transfer.
+- Android notification progress for imports (reading → saving → complete/failed) on the export notification channel; once a file has been read and is waiting on the review page the notification becomes a normal "tap to review" notice.
+- Trailers play inside the app: tap-to-play thumbnails, bundled hls.js for Steam's HLS streams (Steam no longer returns mp4/webm), and an "Open the video" fallback link when a stream cannot play or the device is offline.
+- Opening animation studio (Settings → Personalize → Opening animation; the choice is stored in its own entry so restores cannot reset it): a live stage previews the selected style, with swipeable style cards (A Default, B Power up, C Button pulse, D Neon draw), a 50–130% logo-size slider with quick buttons, a "Show app name below logo" toggle, a Test boot button that plays the choice full screen (browser full-screen mode on the web), and round Reset and Save buttons above the bottom bar. Nothing changes until Save. A is the app's original launch screen (controller, "SavePoint", "Loading your collection" and dots) at its fixed size, so it has no size or name controls and ignores any saved layout. The choice is applied at the next app start; animated options hold the opening screen for about 3.8 seconds, and reduced motion keeps the plain splash.
+- Change cover shows on-device copies of every saved picture, so the picker works offline and says so when a game has none saved.
+
+### Fixed
+
+- Add Game page: the header now spans the full width and stays pinned while scrolling, and Cancel / Save Game sit flush at the bottom instead of floating above an empty gap (the bottom bar is hidden on this page).
+- Import progress bar stayed empty: progress now advances through saving and image caching, and "Reading backup" has a determinate bar driven by the bytes read from the file.
+- Library posters use the same per-status progress colours as the profile shelves (including Upcoming) instead of a fixed gold.
+- Closing the app during an export no longer leaves a permanent notification: progress is cancelled on destroy, stale ones are swept on launch and the notification expires by itself if the process is killed.
+- Steam trailers were dropped entirely because only HLS/DASH URLs are returned; hls.js playback now restores the real playlist URL that Capacitor's HTTP layer strips.
+- Game details top bar is fully transparent on phones; the glossy "top bar" rule from ui-polish no longer applies to it.
+- Fast scrolling no longer reaches empty space: virtual grids rebuild a screenful before the drawn edge with a larger buffer, and the Home "load more" starts about 1500px ahead.
+- A render that would produce identical page HTML is skipped so thumbnails are not recreated.
+- Exports read a game's images concurrently and imports decode and save several games at once.
+- Achievements page is lighter and no longer laggy: the badge calculation is cached until the library changes, badge placeholders no longer run endless shimmer animations (main-thread time while opening and scrolling dropped from about 3.3 s to 1.0 s on a phone), and off-screen sections and tiles are skipped by layout and painting.
+
+### Changed
+
+- Opening animations play as muted MP4/WebM video with a still poster image while loading (hardware decoded, so they stay smooth while the app starts on phones); the GIF is no longer bundled, the poster is the fallback when a device cannot play video, and the animation files shrank from about 12 MB to about 0.4 MB (the debug APK from about 18 MB to about 6 MB).
+- Achievements: removed Platform hopper and the Genre loyalist family (Favourite flavour, Genre devotee, Genre master). The share action on a badge is an icon in the top bar.
+- Sync page offers Clear updated, Clear failed and Clear all.
+- Grouping All games by status (eye button) orders sections Upcoming, Playing, On Hold, Completed, Dropped, Backlog; custom statuses follow On Hold and are no longer left out.
+- Import review shows only the file, counts and duplicates; the game preview list and restore notes were removed.
+- Bump Android and app version metadata for this release.
+
 ## [0.1.9] — 2026-11-15
 
 ### Fixed

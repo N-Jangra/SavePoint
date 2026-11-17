@@ -63,6 +63,7 @@
   <script defer src="pages/statistics-detailed.js"></script>
   <script defer src="pages/statistics.js"></script>
   <script defer src="pages/settings.js"></script>
+  <script defer src="pages/splash-studio.js"></script>
   <script defer src="pages/import-preview.js"></script>
   <script defer src="pages/export.js"></script>
   <script defer src="components/share-perf.js"></script>
@@ -86,6 +87,22 @@
       var splash = document.getElementById("boot-splash");
       splash.style.setProperty("--boot-speed", String(mult));
       var start = Date.now(), minMs = off ? 0 : 1200 * mult, done = false;
+      // Optional animated opening screens (chosen in Settings > Animations > Opening animation); A keeps the built-in splash.
+      try {
+        var gifs = { b: "splash/power-up.gif", c: "splash/button-pulse.gif", d: "splash/neon-draw.gif" }, style = localStorage.getItem("savepoint_splash_style") || "a";
+        var lay = {}; try { lay = JSON.parse(localStorage.getItem("savepoint_splash_layout") || "{}") || {}; } catch (e) {}
+        var k = Math.min(130, Math.max(50, Number(lay.size) || 100)) / 100, showName = typeof lay.name === "boolean" ? lay.name : style === "a";
+        if (!off && gifs[style]) {
+          var tv = document.createElement("video"), vx = tv.canPlayType('video/mp4; codecs="avc1.42E01E"') ? "mp4" : tv.canPlayType('video/webm; codecs="vp9"') ? "webm" : "";
+          // Played as muted video (hardware decoded, so it stays smooth while the app loads); the GIF is the fallback.
+          splash.innerHTML = '<div class="boot-inner boot-gif"><video poster="' + gifs[style].replace(/\.gif$/, ".jpg") + '" src="' + gifs[style].replace(/\.gif$/, "." + (vx || "mp4")) + '" muted autoplay playsinline preload="auto" disablepictureinpicture style="display:block;width:min(80vw,' + Math.round(360 * k) + 'px);height:auto"></video>' + (showName ? '<h1>SavePoint</h1>' : '') + '</div>';
+          var vid = splash.querySelector("video"); vid.muted = true;
+          var useGif = function () { var im = document.createElement("img"); im.alt = ""; im.src = gifs[style].replace(/\.gif$/, ".jpg"); im.style.cssText = vid.style.cssText + ";animation:none"; vid.replaceWith(im); };
+          vid.addEventListener("error", useGif, { once: true });
+          if (!vx) useGif(); var pr = vid.isConnected && vid.play(); if (pr && pr.catch) pr.catch(function () { if (vid.isConnected) useGif(); });
+          minMs = 3800;
+        }
+      } catch (e) {}
       window.SavePointSplash = { ready: function () {
         if (done) return; done = true;
         setTimeout(function () {

@@ -362,7 +362,7 @@ test("Achievements are linked from the profile menu and progress badges open det
   assert.equal(by("first-game-t1").unlocked, true);
   assert.equal(by("first-game-t2").unlocked, false);
   assert.equal(by("first-completion-t1").unlocked, true);
-  assert.equal(by("platform-three-t1").current, 2);
+  assert.equal(by("platform-three-t1"), undefined, "the Platform hopper achievement is removed");
   assert.equal(new Set(rows.map(row => row.id)).size, rows.length, "every achievement has its own id");
   const unlocked = rows.filter(row => row.unlocked);
   assert.equal(achievements.progression(rows).earned, unlocked.length);

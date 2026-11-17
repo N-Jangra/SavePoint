@@ -45,6 +45,7 @@
     : "profile";
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
+    splashStyle: "a", splashSize: 100, splashName: null,
     theme: "system", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", libraryMemory: "auto", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "rise", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6355f8", categoryColors: {},
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarCorners: "sharp", bottomBarLabels: "icons-only", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { games: "gamepad-2", discover: "compass", profile: "user-round" },
     navLayoutVersion: 4, navBar: { order: ["games", "discover", "profile"], visible: { games: true, discover: true, profile: true } },
@@ -520,7 +521,38 @@
     const node = $("#toast"); node.classList.remove("has-action"); node.textContent = message; node.classList.add("show");
     clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("show"), 2300);
   }
+  // The boot screen runs before the library loads, so the chosen opening animation is mirrored to its own localStorage key.
+  // The choice lives in its own localStorage entry (the boot screen reads it too). Restores of the library/preferences from the backup folder
+  // can bring back an older copy of `prefs`, so the entry - not prefs - is the source of truth and prefs follow it.
+  const SPLASH_KEY = "savepoint_splash_style", SPLASH_IDS = ["a", "b", "c", "d"];
+  function syncSplashStyle() {
+    let saved = "";
+    try { saved = localStorage.getItem(SPLASH_KEY) || ""; } catch (_) {}
+    if (SPLASH_IDS.includes(saved)) prefs.splashStyle = saved;
+    else { try { localStorage.setItem(SPLASH_KEY, SPLASH_IDS.includes(prefs.splashStyle) ? prefs.splashStyle : "a"); } catch (_) {} prefs.splashStyle = SPLASH_IDS.includes(prefs.splashStyle) ? prefs.splashStyle : "a"; }
+  }
+  const SPLASH_LAYOUT_KEY = "savepoint_splash_layout";
+  function splashLayout(style = prefs.splashStyle) {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(SPLASH_LAYOUT_KEY) || "{}") || {}; } catch (_) {}
+    return { size: Math.min(130, Math.max(50, Number(saved.size) || 100)), name: typeof saved.name === "boolean" ? saved.name : style === "a" };
+  }
+  // Bridge used by the opening-animation page (pages/splash-studio.js).
+  window.SplashHost = {
+    layout: () => splashLayout(),
+    style: () => prefs.splashStyle || "a",
+    layoutSaved: () => { try { return typeof JSON.parse(localStorage.getItem(SPLASH_LAYOUT_KEY) || "{}").name === "boolean"; } catch (_) { return false; } },
+    toast: message => toast(message),
+    save({ id, size, name }) {
+      if (SPLASH_IDS.includes(id)) { try { localStorage.setItem(SPLASH_KEY, id); } catch (_) {} setPreference("splashStyle", id); }
+      if (size === undefined) { toast("Opening screen saved."); return; }
+      try { localStorage.setItem(SPLASH_LAYOUT_KEY, JSON.stringify({ size, name })); } catch (_) {}
+      setPreference("splashSize", size); setPreference("splashName", name);
+      toast("Opening screen saved.");
+    }
+  };
   function applyPreferences() {
+    syncSplashStyle();
     document.body.dataset.page = page;
     const selectedTheme = prefs.theme === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "amoled" : "light") : prefs.theme;
     const palette = themePalettes[selectedTheme] || themePalettes.dark;
@@ -778,6 +810,7 @@
     return value;
   }
   function pageContext() {
+    syncSplashStyle();
     let logEntries = [], changeLog = [];
     const onLogPage = page === "settings" && (settingsGroup === "logcat" || settingsGroup === "history");
     if (onLogPage) loadFullLog(settingsGroup);
@@ -927,7 +960,7 @@
         dashboardLoadPending = false;
         if (button.isConnected && button.dataset.offset < button._dashboardItems.length) dashboardLazyObserver.observe(button);
       });
-    }), { rootMargin: "0px" });
+    }), { rootMargin: "0px 0px 1500px 0px" });
     loaders.forEach(button => dashboardLazyObserver.observe(button));
   }
   function deferredImageSource(image) {
@@ -1235,11 +1268,13 @@
     if (!(metrics.row > 0)) return false;
     const total = source.count, rows = Math.ceil(total / metrics.columns);
     const top = -grid.getBoundingClientRect().top, viewport = window.innerHeight || document.documentElement.clientHeight || 800;
-    const buffer = viewport * 1.5;
+    const buffer = viewport * 2.5;
     const first = Math.max(0, Math.min(rows, Math.floor((top - buffer) / metrics.row)));
     const last = Math.max(first, Math.min(rows, Math.ceil((top + viewport + buffer) / metrics.row)));
     const needFirst = Math.max(0, Math.floor(top / metrics.row)), needLast = Math.min(rows, Math.ceil((top + viewport) / metrics.row));
-    if (!force && entry.start !== undefined && entry.columns === metrics.columns && entry.row === metrics.row && needFirst >= entry.start && needLast <= entry.end) return false;
+    // Rebuild while the visible rows are still a screenful away from the edge of the drawn window (not after they have run past it), so a fast flick never reaches empty space.
+    const lead = Math.max(2, Math.ceil(viewport / metrics.row));
+    if (!force && entry.start !== undefined && entry.columns === metrics.columns && entry.row === metrics.row && (needFirst - lead >= entry.start || entry.start === 0) && (needLast + lead <= entry.end || entry.end >= rows)) return false;
     const start = Math.max(0, first - 2), end = Math.min(rows, last + 2);
     entry.start = start; entry.end = end; entry.columns = metrics.columns; entry.row = metrics.row;
     grid.style.gridAutoRows = `${metrics.tile}px`;
@@ -1421,8 +1456,13 @@
       if (changed) { persist(); if (page === "timeline") render(); }
     })().finally(() => { timelineThumbnailLookup = null; });
   }
+  // A re-render that would produce exactly the HTML already on screen (startup restores, metadata/artwork updates...) is skipped:
+  // swapping the grid recreates every poster <img>, which blanks and reloads all thumbnails (the visible "blink").
+  const STABLE_RENDER_PAGES = new Set(["dashboard", "library", "games", "profile", "favorites"]);
+  let lastPageHtml = "", lastPageHtmlRoute = "";
   function render() {
     document.body.dataset.page = page;
+    paintTransferFab();
     { const fab = document.getElementById("sync-fab"); if (fab) fab.hidden = !syncJob || syncJob.fabHidden || page === "sync" || page === "add"; }
     $("#page-title").textContent = titles[page];
     const topbarActions = $("#topbar-actions");
@@ -1473,7 +1513,13 @@
     const context = pageContext();
     if (page === "dashboard") context.dashboardSortedItems = dashboardSortedItems(context);
     const keepScrollY = preservePageState && (page === "dashboard" || page === "sync") ? window.scrollY : null;
-    content.innerHTML = window.SplitAppPages[page](context);
+    const nextHtml = window.SplitAppPages[page](context);
+    if (preservePageState && STABLE_RENDER_PAGES.has(page) && lastPageHtmlRoute === route && nextHtml === lastPageHtml && content.firstElementChild && !content.querySelector("[data-virtual-grid]")) {
+      observeDeferredImages(content); // the observer was disconnected above; pending posters keep loading
+      return;
+    }
+    lastPageHtml = STABLE_RENDER_PAGES.has(page) ? nextHtml : ""; lastPageHtmlRoute = STABLE_RENDER_PAGES.has(page) ? route : "";
+    content.innerHTML = nextHtml;
     if (page === "setup" && !setupStarted) beginSetup(); else if (page !== "setup") setupStarted = false;
     if (selectMode) { if (page !== "dashboard") exitSelectMode(); else applySelectionUI(); }
     if (keepScrollY) window.scrollTo({ top: keepScrollY, behavior: "auto" });
@@ -3692,7 +3738,7 @@
     exportRunning = true;
     try { return await exportListBody(options); }
     catch (error) { const message = String(error?.message || error); if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Export failed: ${message}`); } }
-    finally { exportRunning = false; }
+    finally { exportRunning = false; setTransfer(null); }
   }
   async function exportListBody({ silent = false, password = "", share = false } = {}) {
     const backend = window.SplitAppBackend;
@@ -3704,6 +3750,7 @@
         if (!silent && !share) toast("Choose where to save your library…");
         const result = await backend.exportLibrary({ items: exportItems, history, preferences: prefs }, { mode: silent ? "folder" : share ? "share" : "ask", password, onProgress: (done, total, status) => {
           if (status?.notificationsAllowed === false) { toast("Allow notifications to see export progress while SavePoint is in the background."); lastToast = Date.now(); return; }
+          setTransfer("export", total ? done / total * 100 : 0, "Exporting backup");
           if (Date.now() - lastToast > 700 && done < total) { lastToast = Date.now(); toast(`Exporting… ${Math.round(done / total * 100)}%`); }
         } });
         toast(share ? "Encrypted transfer ready to share." : password ? `Encrypted transfer saved: ${result.fileName}. Share it from the location you chose.` : silent ? `Backup saved: ${result.fileName}` : `Exported ${exportItems.length} ${exportItems.length === 1 ? "game" : "games"}${!exportOptions.ratings ? " without ratings" : ""}.`);
@@ -3757,6 +3804,12 @@
     }
     return copy;
   }
+  // Runs `worker` over `list` with at most `limit` in flight (order of results is kept).
+  async function mapPool(list, limit, worker) {
+    const out = new Array(list.length); let next = 0;
+    await Promise.all(Array.from({ length: Math.min(limit, list.length) }, async () => { for (;;) { const at = next++; if (at >= list.length) return; out[at] = await worker(list[at], at); } }));
+    return out;
+  }
   async function cacheImportedTransferImages(item) {
     const images = item?.transferImages;
     if (!images || typeof images !== "object") return;
@@ -3768,9 +3821,8 @@
       for (let index = 0; index < signatureText.length; index++) { const code = signatureText.charCodeAt(index); sourceHash = Math.imul(sourceHash ^ code, 0x01000193); sourceSecond = Math.imul(sourceSecond ^ (code + index), 0x85ebca6b); }
       return { path: path.join("."), key: `${String(item.id)}:image:${text.length}:${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`, sig: `${signatureText.length}:${(sourceHash >>> 0).toString(16)}${(sourceSecond >>> 0).toString(16)}` };
     })) || [];
-    for (const [path, dataUrl] of Object.entries(images)) {
-      if (typeof dataUrl !== "string" || !/^data:image\//i.test(dataUrl)) continue;
-      const blob = await dataUrlToBlob(dataUrl);
+    const decoded = await mapPool(Object.entries(images).filter(([, dataUrl]) => typeof dataUrl === "string" && /^data:image\//i.test(dataUrl)), 4, async ([path, dataUrl]) => [path, await dataUrlToBlob(dataUrl)]);
+    for (const [path, blob] of decoded) {
       if (!blob) continue;
       const imagePath = path.split(".");
       const source = imagePath.reduce((value, part) => value?.[part], item);
@@ -3833,6 +3885,7 @@
   }
   async function importList(file) {
     if (!file) return;
+    importNotify("startExportNotification", { total: 100, done: 0, message: "Reading backup", filename: file.name || "backup" });
     importState = { phase: "reading", fileName: file.name || "Library backup", fileSize: Number(file.size) || 0, incoming: [], fresh: [], skipped: 0, completed: 0, synced: 0, failed: 0, error: "" };
     goto("import-preview");
     try {
@@ -3843,7 +3896,7 @@
       // Big JSON backups are read one title at a time from the stream instead of as one giant string; any problem falls back to the whole-file path.
       let streamed = null;
       if ((encryptedTransfer || (/\.(json|gz)$/i.test(file.name || "") && file.size > 2 * 1024 * 1024)) && window.SplitAppBackupStream) {
-        try { streamed = await window.SplitAppBackupStream.parseFile(file, { password: transferPassword }); } catch (error) { if (encryptedTransfer) throw error; streamed = null; }
+        try { streamed = await window.SplitAppBackupStream.parseFile(file, { password: transferPassword, onBytes: (done, total) => { const pct = total ? Math.min(100, Math.round(done / total * 100)) : 0; const bar = $("#import-read-bar"), label = $("#import-read-percent"); if (bar) bar.style.width = `${pct}%`; if (label) label.textContent = `${pct}%`; setTransfer("import", pct, "Reading backup"); if (Date.now() - importNotifyAt > 600) { importNotifyAt = Date.now(); importNotify("updateExportNotification", { total: 100, done: pct, message: "Reading backup", filename: file.name || "backup" }); } } }); } catch (error) { if (encryptedTransfer) throw error; streamed = null; }
       }
       const text = streamed ? "" : await readBackupText(file);
       const asList = !streamed && (/\.(txt|csv)$/i.test(file.name || "") || !/^\s*[\[{]/.test(text));
@@ -3897,23 +3950,99 @@
       let importedHistory = fileHistory.filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
       if (!importedHistory.length) importedHistory = fresh.filter(item => ["Dropped", "Completed", "On Hold", "Playing", "Upcoming"].includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
       importState = { ...importState, phase: "preview", incoming: normalized, fresh, similar: split.similar, patches, importedHistory, preferences: data.preferences && typeof data.preferences === "object" ? data.preferences : null, skipped: normalized.length - fresh.length - split.similar.length };
+      if (!(prefs.restorePreview === false && fresh.length)) setTransfer("import", 100, "Ready to review");
+      if (!(prefs.restorePreview === false && fresh.length)) importNotify("finishExportNotification", { success: true, message: `Backup read: ${fresh.length} new ${fresh.length === 1 ? "game" : "games"}. Tap to review and restore.` });
       render();
       if (prefs.restorePreview === false && fresh.length) continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not finish the restore."; render(); } });
     } catch (error) {
-      importState = { ...importState, phase: "error", error: error.message || "Could not import this file." };
+      importState = { ...importState, phase: "error", error: error.message || "Could not import this file." }; setTransfer(null);
+      importNotify("finishExportNotification", { success: false, message: error.message || "Could not import this file." });
       render();
     }
+  }
+  // Floating progress button for a running import/export (like the sync button): reopens the import page, or shows export progress, so a
+  // mistaken Back never loses track of a transfer that is still running.
+  let transferJob = null;
+  function setTransfer(kind, percent = 0, label = "") { transferJob = kind ? { kind, percent: Math.max(0, Math.min(100, Math.round(percent))), label } : null; paintTransferFab(); }
+  function paintTransferFab() {
+    let node = $("#transfer-fab");
+    const show = Boolean(transferJob) && !(transferJob?.kind === "import" && page === "import-preview") && page !== "add";
+    if (!node && transferJob) {
+      node = document.createElement("button"); node.id = "transfer-fab"; node.type = "button"; node.className = "sync-fab transfer-fab"; node.innerHTML = '<span class="sync-fab-pie"><b></b></span>';
+      node.addEventListener("click", openTransferStatus); document.body.appendChild(node);
+    }
+    if (!node) return;
+    node.hidden = !show;
+    if (transferJob) {
+      node.style.setProperty("--p", transferJob.percent + "%"); node.querySelector("b").textContent = transferJob.percent + "%";
+      node.setAttribute("aria-label", `${transferJob.kind === "import" ? "Import" : "Export"} ${transferJob.percent}%. ${transferJob.label}. Open details.`);
+      const bar = $("#transfer-dialog-bar"); if (bar) bar.style.width = transferJob.percent + "%";
+      const text = $("#transfer-dialog-text"); if (text) text.textContent = `${transferJob.label} · ${transferJob.percent}%`;
+    }
+  }
+  function openTransferStatus() {
+    if (!transferJob) return;
+    if (transferJob.kind === "import") { goto("import-preview"); return; }
+    let dialog = $("#transfer-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "transfer-dialog"; dialog.className = "choice-dialog"; document.body.appendChild(dialog); }
+    dialog.innerHTML = '<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">EXPORT</p><h2>Creating your backup</h2></div><button class="choice-dialog-close" type="button" data-transfer-close aria-label="Close">×</button></header><div class="ios-sheet-body"><div class="import-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span id="transfer-dialog-bar" style="width:' + transferJob.percent + '%"></span></div><p class="app-info" id="transfer-dialog-text"></p><p class="app-info">Keep SavePoint open until the export finishes. You can close this and keep using the app.</p></div>';
+    dialog.onclick = event => { if (event.target === dialog || event.target.closest("[data-transfer-close]")) closePopup(dialog); };
+    showPopup(dialog); paintTransferFab();
+  }
+  // Trailer player: native <video> for mp4/webm, bundled hls.js for Steam's HLS streams (the Android WebView cannot play them natively).
+  let hlsLoader = null;
+  function loadHlsLibrary() {
+    if (window.Hls) return Promise.resolve(window.Hls);
+    return hlsLoader || (hlsLoader = new Promise((resolve, reject) => {
+      const script = document.createElement("script"); script.src = "vendor/hls.min.js";
+      script.onload = () => window.Hls ? resolve(window.Hls) : reject(new Error("hls")); script.onerror = () => reject(new Error("hls load")); document.head.appendChild(script);
+    }).catch(error => { hlsLoader = null; throw error; }));
+  }
+  async function playTrailer(card) {
+    if (!card || card.dataset.playing === "1") return;
+    const src = card.dataset.videoSrc, type = card.dataset.videoType || "", stage = card.querySelector("[data-video-play]");
+    const fail = () => { card.classList.add("is-failed"); const link = card.querySelector(".detail-video-fallback"); if (link) link.hidden = false; };
+    if (!navigator.onLine) { toast("You're offline. The trailer link is saved with this game."); fail(); return; }
+    card.dataset.playing = "1";
+    const video = document.createElement("video"); video.controls = true; video.playsInline = true; video.setAttribute("playsinline", ""); video.autoplay = true;
+    const poster = stage?.querySelector("img")?.getAttribute("src"); if (poster) video.poster = poster;
+    video.addEventListener("error", () => { card.dataset.playing = ""; fail(); }, { once: true });
+    stage?.replaceWith(video);
+    try {
+      if (/mpegurl/i.test(type)) {
+        const Hls = await loadHlsLibrary();
+        if (Hls.isSupported()) {
+          // Capacitor's HTTP layer drops response.url, so relative playlist entries would resolve against https://localhost/: restore the real URL.
+          const BaseLoader = Hls.DefaultConfig.loader;
+          class UrlKeepingLoader extends BaseLoader { load(context, config, callbacks) { const ok = callbacks.onSuccess; super.load(context, config, { ...callbacks, onSuccess: (response, stats, ctx, details) => { if (response) response.url = context.url; ok(response, stats, ctx, details); } }); } }
+          const hls = new Hls({ enableWorker: false, loader: UrlKeepingLoader }); card._hls = hls;
+          hls.on(Hls.Events.ERROR, (_, data) => { if (data?.fatal) { card.dataset.error = `${data.type}:${data.details}`; hls.destroy(); card.dataset.playing = ""; fail(); } });
+          hls.loadSource(src); hls.attachMedia(video);
+        } else video.src = src;
+      } else video.src = src;
+      await video.play().catch(() => {});
+    } catch (_) { card.dataset.playing = ""; fail(); }
+  }
+  // Android notification for imports (same channel as exports, import wording). Silently does nothing off-device or without permission.
+  let importNotifyAt = 0, importNotifyAsked = false;
+  async function importNotify(method, data = {}) {
+    const plugin = window.Capacitor?.Plugins?.ShareIntent; if (!plugin?.[method]) return;
+    try {
+      if (!importNotifyAsked && method === "startExportNotification") { importNotifyAsked = true; await plugin.requestExportNotificationPermission?.(); }
+      await plugin[method]({ id: "import", kind: "import", filename: data.filename || "backup", ...data });
+    } catch (_) {}
   }
   function updateImportProgress(message = "") {
     if (!importState) return;
     const counter = $("#import-progress-count"), label = $("#import-progress-label"), bar = $("#import-progress-bar"), synced = $("#import-progress-synced");
     const total = importState.total || 0, completed = importState.completed || 0;
     const percent = total ? Math.min(100, Math.round(completed / total * 100)) : importState.phase === "complete" ? 100 : 0;
+    if (importState.phase !== "preview") setTransfer("import", percent, message || "Restoring games");
     if (counter) counter.textContent = `${Math.min(completed, total)} / ${total}`;
     const percentLabel = $("#import-progress-percent"); if (percentLabel) percentLabel.textContent = `${percent}%`;
     if (label) label.textContent = message || `Checking ${importState.currentTitle || "next game"}…`;
     if (synced) synced.textContent = `${importState.synced || 0} updated · ${importState.failed || 0} unavailable`;
     if (bar) bar.style.width = `${total ? Math.min(100, completed / total * 100) : importState.phase === "complete" ? 100 : 0}%`;
+    if (Date.now() - importNotifyAt > 600) { importNotifyAt = Date.now(); importNotify("updateExportNotification", { total: 100, done: percent, message: message || "Restoring games", filename: importState.fileName || "backup" }); }
     const progress = $(".import-progress-track");
     if (progress) {
       progress.setAttribute("aria-valuemax", String(total));
@@ -3940,17 +4069,31 @@
       if (transferImages) transferImagesById.set(String(id), transferImages);
     }
     fresh.forEach(item => { delete item._transferImagesPending; });
+    const importTotal = fresh.length;
+    const reportImport = (fraction, message) => {
+      if (!importState) return;
+      importState.completed = Math.min(importTotal, Math.round(importTotal * Math.max(0, Math.min(1, fraction))));
+      updateImportProgress(message);
+    };
+    const imageJobs = [...fresh, ...patchedIds.map(itemById).filter(Boolean)].filter(item => transferImagesById.get(String(item.id)));
+    const saveShare = imageJobs.length ? 0.5 : 1;
+    reportImport(0.02, "Saving imported games…");
+    await new Promise(resolve => requestAnimationFrame(resolve));
     await persist({ ids: [...fresh.map(item => item.id), ...patchedIds] });
-    for (const item of [...fresh, ...patchedIds.map(itemById).filter(Boolean)]) {
-      const transferImages = transferImagesById.get(String(item.id));
-      if (transferImages) await cacheImportedTransferImages({ ...item, transferImages });
-    }
+    reportImport(saveShare, imageJobs.length ? "Saving covers and screenshots…" : "Saving imported games…");
+    let imageDone = 0;
+    await mapPool(imageJobs, Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2 ? 2 : 3, async item => {
+      await cacheImportedTransferImages({ ...item, transferImages: transferImagesById.get(String(item.id)) });
+      imageDone += 1;
+      reportImport(saveShare + (1 - saveShare) * imageDone / imageJobs.length, `Saving covers and screenshots… ${imageDone}/${imageJobs.length}`);
+    });
     const count = fresh.length;
     const updated = (importState.patches || []).length;
     importState = { ...importState, phase: "complete", completed: count, total: count };
+    importNotify("finishExportNotification", { success: true, message: `Imported ${count} ${count === 1 ? "game" : "games"}.` });
     render();
     await new Promise(resolve => setTimeout(resolve, 600));
-    importState = null;
+    importState = null; setTransfer(null);
     goto("dashboard");
     const started = startSyncJob(fresh.filter(item => !hasSavedMetadata(item)));
     if (fresh.length) logChange("imported", `Imported ${fresh.length} ${fresh.length === 1 ? "game" : "games"}: ${titlesOf(fresh)}`, []);
@@ -4152,6 +4295,16 @@
     if (page === "sync") render();
     if (resumeRestored) { syncJob.restoredPending = false; runSyncJob(syncJob); }
     if (!quiet) toast(paused ? "Sync paused." : "Sync resumed.");
+  }
+  // Drop finished rows of one status ("done" = updated, "failed") from the list without touching games that are still queued or syncing.
+  function clearSyncEntries(status) {
+    if (!syncJob) return;
+    syncJob.entries = syncJob.entries.filter(entry => entry.status !== status);
+    if (!syncJob.entries.length) { clearSyncJob(); return; }
+    rebuildSyncIndex(syncJob);
+    if (!syncJob.entries.some(entry => entry.status === "queued" || entry.status === "syncing")) syncJob.finished = true;
+    syncPersistCount = 0;
+    updateSyncUI(); render();
   }
   function clearSyncJob() {
     if (syncJob) {
@@ -4578,6 +4731,8 @@
     if (event.target?.id === "profile-options-dialog") { closePopup(event.target); return; }
     if (event.target.closest("[data-profile-menu-close]")) { closePopup($("#profile-options-dialog")); return; }
     if (event.target.closest("#profile-options-dialog a")) closePopup($("#profile-options-dialog"), { preserveHistory: true });
+    const trailerPlay = event.target.closest("[data-video-play]");
+    if (trailerPlay) { event.preventDefault(); playTrailer(trailerPlay.closest(".detail-video-card")); return; }
     const coverTitle = event.target.closest("[data-cover-title]");
     if (coverTitle) { window.SplitAppPages.browseCover(coverTitle.dataset.coverTitle, coverTitle.dataset.id); render(); window.scrollTo({ top: 0, behavior: "auto" }); return; }
     const coverBack = event.target.closest("[data-cover-back]");
@@ -4658,6 +4813,8 @@
     if (event.target.closest("[data-sync-start]")) { runSyncAction("syncRunNeeded"); return; }
     if (event.target.closest("[data-sync-toggle]")) { setSyncPaused(!syncJob?.paused); return; }
     if (event.target.closest("[data-sync-retry]")) { retrySyncFailures(); return; }
+    const clearStatus = event.target.closest("[data-sync-clear-status]");
+    if (clearStatus) { clearSyncEntries(clearStatus.dataset.syncClearStatus); return; }
     if (event.target.closest("[data-sync-clear]")) { clearSyncJob(); return; }
     if (event.target.closest("[data-sync-more]")) { syncShown += 100; render(); return; }
     if (event.target.closest("[data-review-more]")) { reviewShown += 15; render(); return; }
@@ -4670,7 +4827,7 @@
     if (keepSimilar && importState?.similar) { const row = importState.similar[Number(keepSimilar.dataset.importKeep)]; if (row) row.keep = !row.keep; render(); return; }
     if (event.target.closest("[data-import-similar-more]")) { window.SplitAppPages.showMoreImportSimilar?.(); render(); return; }
     if (event.target.closest("[data-sync-dismiss]")) { if (syncJob?.finished) { syncJob = null; updateSyncUI(); goto("dashboard"); } return; }
-    if (event.target.closest("[data-continue-import]")) { continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not restore this library."; render(); } }); return; }
+    if (event.target.closest("[data-continue-import]")) { continueImport().catch(error => { if (importState) { importState.phase = "restore-error"; importState.error = error.message || "Could not restore this library."; setTransfer(null); render(); } }); return; }
     const exportFormat = event.target.closest("[data-export-format]");
     if (exportFormat) { exportOptions = { ...exportOptions, format: exportFormat.dataset.exportFormat }; render(); return; }
     const exportOpt = event.target.closest("[data-export-opt]");
@@ -4693,7 +4850,7 @@
       if (password !== confirmation) { toast("The passwords do not match."); return; }
       exportList({ password, share: true }); return;
     }
-    if (event.target.closest("[data-cancel-import]")) { importState = null; settingsGroup = "backups"; goto("settings"); return; }
+    if (event.target.closest("[data-cancel-import]")) { importState = null; setTransfer(null); settingsGroup = "backups"; goto("settings"); return; }
     const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { await addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); return; }
     if (event.target.closest("[data-discover-row-add]")) return;
     const sourceDetails = event.target.closest("[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
@@ -5368,22 +5525,32 @@
   }
 
   // ---- Cover picker ----
-  function coverCandidates(item) {
-    const details = item.cachedDetails || {}, urls = [];
+  // Every picture this game has, as { url, src }: `url` is what gets saved as the cover, `src` is what is shown (the on-device copy when one exists, so the picker works offline).
+  function coverCandidates(item, local = {}) {
+    const details = item.cachedDetails || {}, rows = [];
+    const add = (url, ...paths) => {
+      if (!/^https?:/i.test(url || "") || rows.some(row => row.url === url)) return;
+      rows.push({ url, src: paths.map(path => (path === "@portrait" ? item.localPortraitData || item.localThumbnailData : path === "@landscape" ? item.localLandscapeData : local[path])).find(Boolean) || url });
+    };
     const steamId = String((item.sourceIds || {}).steamdb || (item.metadataSource === "steamdb" ? item.providerId : "") || "").replace(/^app:/, "");
-    if (steamId) urls.push(`https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${steamId}/library_600x900.jpg`, `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamId}/library_600x900.jpg`, `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${steamId}/header.jpg`);
-    urls.push(details.portraitImage, details.image, details.landscapeImage, details.backgroundImage, item.image, item.backdrop);
-    (details.sections || []).filter(section => section.kind === "gallery").forEach(section => (section.items || []).slice(0, 30).forEach(entry => urls.push(entry.image)));
-    return [...new Set(urls.filter(url => /^https?:/i.test(url || "")))];
+    if (steamId) ["https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/" + steamId + "/library_600x900.jpg", "https://cdn.cloudflare.steamstatic.com/steam/apps/" + steamId + "/library_600x900.jpg", "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/" + steamId + "/library_hero.jpg"].forEach(url => add(url));
+    add(details.portraitImage, "cachedDetails.portraitImage", "@portrait"); add(details.image, "cachedDetails.image", "@portrait");
+    add(details.landscapeImage, "cachedDetails.landscapeImage", "@landscape"); add(details.backgroundImage, "cachedDetails.backgroundImage", "@landscape");
+    add(item.image, "image", "@portrait"); add(item.backdrop, "backdrop", "@landscape");
+    (details.sections || []).forEach((section, sectionIndex) => { if (section.kind !== "gallery") return; (section.items || []).slice(0, 30).forEach((entry, index) => add(entry.image, `cachedDetails.sections.${sectionIndex}.items.${index}.image`)); });
+    // Only offer pictures that can actually show: online, or with an on-device copy.
+    return navigator.onLine ? rows : rows.filter(row => row.src !== row.url);
   }
-  function openCoverPicker(id) {
+  async function openCoverPicker(id) {
     const item = itemById(String(id)); if (!item) return;
     let dialog = $("#cover-picker-dialog");
     if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "cover-picker-dialog"; dialog.className = "choice-dialog cover-picker-dialog"; document.body.appendChild(dialog); }
-    const urls = coverCandidates(item);
+    let localImages = item.localImageData || {};
+    try { const loaded = await window.SplitAppBackend?.loadItemImages?.(item); if (loaded && Object.keys(loaded).length) { localImages = loaded; item.localImageData = loaded; } } catch (_) {}
+    const urls = coverCandidates(item, localImages);
     dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">COVER</p><h2>${esc(item.title)}</h2></div><button class="choice-dialog-close" type="button" data-cover-close aria-label="Close">×</button></header>
       <div class="cover-picker-body"><p class="fix-match-status">${item.customCover ? "Using your chosen cover." : "Pick a cover; it stays even after syncs."}</p>
-      <div class="cover-picker-grid">${urls.map(url => `<button type="button" class="cover-choice${item.customCover === url ? " is-current" : ""}" data-cover-url="${esc(url)}"><img src="${esc(url)}" alt="" loading="lazy" onerror="this.closest('button').hidden=true"></button>`).join("")}</div>
+      <div class="cover-picker-grid">${urls.length ? urls.map(({ url, src }) => `<button type="button" class="cover-choice${item.customCover === url ? " is-current" : ""}" data-cover-url="${esc(url)}"><img src="${esc(src)}" alt="" loading="lazy" onerror="this.closest('button').hidden=true"></button>`).join("") : `<p class="fix-match-status">No saved pictures for this game yet. Open it once online to save them for offline use.</p>`}</div>
       ${item.customCover ? '<button type="button" class="button secondary" data-cover-auto>Use automatic cover</button>' : ""}</div>`;
     dialog.onclick = event => {
       if (event.target === dialog || event.target.closest("[data-cover-close]")) { closePopup(dialog); return; }
