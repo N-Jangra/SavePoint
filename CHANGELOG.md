@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- Games page: swiping left or right anywhere on the page switches between Ongoing and Upcoming again on phones (the swipe handler was missing); a mouse drag works on desktop.
+- Trailers for games saved before trailers existed: opening a Steam or Mix game with no Trailers section refreshes it once while online so the playback links are added (no need to resync from the Sync page). Trailers are hidden while offline (or in offline metadata mode) and reappear when the connection returns.
 - Add Game page: the header now spans the full width and stays pinned while scrolling, and Cancel / Save Game sit flush at the bottom instead of floating above an empty gap (the bottom bar is hidden on this page).
 - Import progress bar stayed empty: progress now advances through saving and image caching, and "Reading backup" has a determinate bar driven by the bytes read from the file.
 - Library posters use the same per-status progress colours as the profile shelves (including Upcoming) instead of a fixed gold.

@@ -3100,9 +3100,14 @@
   function detailCacheIsFresh(item) {
     const stamp = Number(item?.cachedDetails?.fetchedAt || item?.cachedDetails?.facts?.fetchedAt || item?.facts?.fetchedAt) || 0;
     if (!stamp) return false;
+    // Games saved before trailers existed have no Trailers section: refresh them once (when online) so the playback links are added.
+    if (item?.category === "game" && ["steamdb", "mix"].includes(item.metadataSource) && !item.trailersTriedAt && !(item.cachedDetails?.sections || []).some(section => section?.kind === "videos")) return false;
     const maxAge = { daily: 86400000, weekly: 604800000, monthly: 2592000000, never: Infinity }[prefs.metadataRefreshInterval] ?? 604800000;
     return Date.now() - stamp < maxAge;
   }
+  // Trailers are only shown while online: re-render the open game when the connection changes (coming back online also fetches missing ones).
+  window.addEventListener("offline", () => { if (page === "details") render(); });
+  window.addEventListener("online", () => { if (page === "details") { render(); loadDetails(); } });
   async function loadDetails({ force = false } = {}) {
     const isPreview = Boolean(detailPreview);
     const item = detailPreview || itemById(detailItemId);
@@ -3179,7 +3184,7 @@
             completionTargetHours: item.completionTargetHours
           };
           if (upgradedToMix) applyMixIdentity(item, loaded);
-          item.cachedDetails = loaded;
+          item.cachedDetails = loaded; item.trailersTriedAt = Date.now();
           if (item.metadataSource === "mix") {
             item.mixSources = loaded.mixSources || item.mixSources;
             item.mixSourceKeys = loaded.facts?.sources || item.mixSourceKeys || [];
@@ -4685,7 +4690,7 @@
     const startButton = event.target.closest("[data-games-start]");
     if (startButton) { event.stopPropagation(); const item = itemById(startButton.dataset.gamesStart); if (item) setItemStatus(item, "Playing").then(changed => { if (changed) { toast(`${item.title} moved to Ongoing.`); render(); } }); return; }
     const gamesTabButton = event.target.closest("[data-games-tab]");
-    if (gamesTabButton) { gamesTab = gamesTabButton.dataset.gamesTab === "upcoming" ? "upcoming" : "ongoing"; try { localStorage.setItem(gamesTabStore, gamesTab); } catch (_) {} render(); window.scrollTo({ top: 0, behavior: "auto" }); return; }
+    if (gamesTabButton) { changeGamesTab(gamesTabButton.dataset.gamesTab); return; }
     if (event.target.closest("[data-discover-view-toggle]")) { const next = document.body.dataset.discoverView === "list" ? "grid" : "list"; document.body.dataset.discoverView = next; try { localStorage.setItem(`${config.key}_discover_view`, next); } catch (_) {} return; }
     const reqTab = event.target.closest("[data-req-tab]");
     if (reqTab) { const box = reqTab.closest(".detail-requirements"); box.querySelectorAll("[data-req-tab]").forEach(b => { const on = b === reqTab; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); }); box.querySelectorAll("[data-req-panel]").forEach(panel => { panel.hidden = panel.dataset.reqPanel !== reqTab.dataset.reqTab; }); return; }
@@ -4914,6 +4919,35 @@
     if (input.matches("[data-source-api-key]")) { prefs.apiKeys[input.dataset.sourceApiKey] = input.value.trim(); persist({ meta: true }); }
     if (input.matches("[data-setting-action=import]")) { const file = input.files?.[0]; input.value = ""; importList(file); }
   });
+  // Games page: swipe left/right anywhere on the page to switch between Ongoing and Upcoming (touch and mouse drag).
+  function changeGamesTab(tab) {
+    const next = tab === "upcoming" ? "upcoming" : "ongoing";
+    if (next === gamesTab) return;
+    gamesTab = next; try { localStorage.setItem(gamesTabStore, gamesTab); } catch (_) {}
+    render(); window.scrollTo({ top: 0, behavior: "auto" });
+  }
+  let gamesSwipe = null;
+  const gamesSwipeStart = (x, y, target, id) => {
+    if (page !== "games" || !target?.closest?.(".games-page") || target.closest("input, select, textarea, dialog, [data-games-view], .watchlist-view-toggle")) { gamesSwipe = null; return; }
+    gamesSwipe = { id, x, y, tab: gamesTab };
+  };
+  const gamesSwipeEnd = (x, y, id) => {
+    const swipe = gamesSwipe; if (!swipe || (id != null && swipe.id != null && swipe.id !== id)) return;
+    gamesSwipe = null;
+    const dx = x - swipe.x, dy = y - swipe.y;
+    if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.15) return;
+    if (dx < 0 && swipe.tab === "ongoing") changeGamesTab("upcoming");
+    else if (dx > 0 && swipe.tab === "upcoming") changeGamesTab("ongoing");
+  };
+  document.addEventListener("touchstart", event => {
+    if (event.touches.length !== 1) { gamesSwipe = null; return; }
+    const touch = event.touches[0]; gamesSwipeStart(touch.clientX, touch.clientY, event.target, touch.identifier);
+  }, { passive: true });
+  document.addEventListener("touchend", event => { const touch = event.changedTouches[0]; if (touch) gamesSwipeEnd(touch.clientX, touch.clientY, touch.identifier); }, { passive: true });
+  document.addEventListener("touchcancel", () => { gamesSwipe = null; }, { passive: true });
+  document.addEventListener("pointerdown", event => { if (event.pointerType === "mouse" && event.isPrimary && event.button === 0) gamesSwipeStart(event.clientX, event.clientY, event.target, event.pointerId); }, { passive: true });
+  document.addEventListener("pointerup", event => { if (event.pointerType === "mouse") gamesSwipeEnd(event.clientX, event.clientY, event.pointerId); }, { passive: true });
+  document.addEventListener("pointercancel", () => { gamesSwipe = null; }, { passive: true });
   let navTouchDrag = null;
   const handleNavTouchMove = event => {
     const drag = navTouchDrag;

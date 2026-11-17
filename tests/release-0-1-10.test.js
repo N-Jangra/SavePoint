@@ -224,3 +224,11 @@ test("the chosen opening animation is mirrored for the boot screen and used by i
   assert.match(html, /<video poster=/, "the opening screen plays as video");
   assert.match(html, /if \(!off && gifs\[style\]\)/, "reduced motion keeps the plain splash");
 });
+
+test("trailers are hidden offline and older Steam games fetch them once when opened online", () => {
+  const app = read("frontend/app.js"), details = read("frontend/pages/details.js");
+  assert.match(app, /item\.trailersTriedAt/);
+  assert.match(app, /section\?\.kind === "videos"/);
+  assert.match(app, /window\.addEventListener\("offline"/);
+  assert.match(details, /showTrailers/);
+});

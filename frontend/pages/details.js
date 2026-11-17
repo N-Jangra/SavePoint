@@ -121,7 +121,9 @@
         : `<label class="detail-rating-select"><span>Rating</span><span class="detail-select-wrap"><select data-detail-rating-select aria-label="Rating"><option value="0">No rating</option>${Array.from({ length: 10 }, (_, index) => `<option value="${index + 1}" ${Number(item.rating) === index + 1 ? "selected" : ""}>${index + 1} / 10</option>`).join("")}</select><i data-lucide="chevron-down" aria-hidden="true"></i></span></label>`;
 
       const watchedSet = new Set((item.watchedEpisodeIds || []).map(String));
-      const indexedSections = sections.map((section, index) => ({ section, index })), taken = new Set();
+      // Trailers need a connection: hide them while offline (or in offline metadata mode); the saved links come back when online.
+      const online = typeof navigator === "undefined" || navigator.onLine !== false, showTrailers = online && prefs?.metadataMode !== "offline";
+      const indexedSections = sections.map((section, index) => ({ section, index })).filter(({ section }) => section.kind !== "videos" || showTrailers), taken = new Set();
       const takeSlot = pattern => indexedSections.filter(({ section, index }) => !taken.has(index) && pattern.test(section.title || "") && taken.add(index));
       const slots = { media: takeSlot(/^(screenshots|trailers)/i), achievements: takeSlot(/^achievements/i), series: takeSlot(/^(same series|editions)/i), team: takeSlot(/^development team/i) };
       slots.other = indexedSections.filter(({ index }) => !taken.has(index));
