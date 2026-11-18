@@ -137,25 +137,26 @@
       const id=encode(item.providerId), base=`https://api.rawg.io/api/games/${id}`, k=`key=${encode(key)}`;
       // Details first; every extra list is optional and fetched in parallel so one failure never blocks the page.
       const opt=path=>get(`${base}/${path}${path.includes("?")?"&":"?"}${k}`,s).catch(()=>null);
-      const [d, gallery, stores, series, additions, achievements, team]=await Promise.all([
+      const [d, gallery, stores, series, additions, achievements]=await Promise.all([
         get(`${base}?${k}`,s), opt("screenshots?page_size=12"), opt("stores"), opt("game-series?page_size=10"),
-        opt("additions?page_size=10"), opt("achievements?page_size=8"), opt("development-team?page_size=10")
+        opt("additions?page_size=10"), opt("achievements?page_size=40")
       ]);
+      // RAWG pages achievements (max 40 per page): follow "next" so the full list is available, capped for very large games.
+      let achPage=achievements, achRows=[...(achievements?.results||[])];
+      for(let n=0; n<2 && achPage?.next && achRows.length<120; n++){ achPage=await get(achPage.next,s).catch(()=>null); achRows.push(...(achPage?.results||[])); }
       const screenshots=(gallery?.results||[]).map((shot,index)=>({title:`Screenshot ${index+1}`,image:shot.image,url:shot.image})).filter(shot=>shot.image);
       const landscapeImage=d.background_image_additional||screenshots[0]?.image||"";
       const storeNames=new Map((d.stores||[]).map(row=>[row.store?.id,row.store?.name]));
       const storeLinks=(stores?.results||[]).filter(row=>row.url).map(row=>({name:storeNames.get(row.store_id)||"Store",url:row.url}));
       const links=[]; if(d.metacritic_url) links.push({label:"Metacritic",url:d.metacritic_url}); if(d.reddit_url) links.push({label:"Reddit",url:d.reddit_url});
       links.push({label:"RAWG page",url:`https://rawg.io/games/${d.slug}`});
-      const related=list=>(list?.results||[]).map(row=>({title:row.name,meta:[row.released?.slice(0,4),row.rating?`★ ${row.rating}`:""].filter(Boolean).join(" · "),image:row.background_image||"",url:`https://rawg.io/games/${row.slug}`}));
+      const related=list=>(list?.results||[]).map(row=>({title:row.name,meta:[row.released?.slice(0,4),row.rating?`★ ${row.rating}`:""].filter(Boolean).join(" · "),image:row.background_image||"",url:`https://rawg.io/games/${row.slug}`,source:"rawg",providerId:String(row.id||row.slug)}));
       const sections=[];
       if(screenshots.length) sections.push({title:"Screenshots",kind:"gallery",items:screenshots});
       const seriesItems=related(series); if(seriesItems.length) sections.push({title:"Same series",kind:"carousel",items:seriesItems});
       const additionItems=related(additions); if(additionItems.length) sections.push({title:"Editions & DLC",kind:"carousel",items:additionItems});
-      const achItems=(achievements?.results||[]).map(row=>({title:row.name,meta:row.percent?`${row.percent}% of players`:"",description:row.description,image:row.image||""}));
-      if(achItems.length) sections.push({title:`Achievements (${d.parent_achievements_count||d.achievements_count||achItems.length})`,kind:"list",collapsed:true,items:achItems});
-      const teamItems=(team?.results||[]).map(row=>({title:row.name,meta:(row.positions||[]).map(x=>x.name).join(", "),image:row.image||"",url:`https://rawg.io/creators/${row.slug}`}));
-      if(teamItems.length) sections.push({title:"Development team",kind:"list",collapsed:true,items:teamItems});
+      const achItems=achRows.map(row=>({title:row.name,meta:row.percent?`${row.percent}% of players`:"",description:row.description,image:row.image||""}));
+      if(achItems.length) sections.push({title:`Achievements (${d.parent_achievements_count||d.achievements_count||achItems.length})`,kind:"list",paged:true,items:achItems});
       const ratingBreakdown=(d.ratings||[]).map(row=>({label:row.title[0].toUpperCase()+row.title.slice(1),percent:Math.round(row.percent*10)/10,id:row.id}));
       const pc=(d.platforms||[]).find(x=>x.platform?.slug==="pc")?.requirements||{};
       const req=text=>String(text||"").replace(/^(Minimum|Recommended):\s*/i,"").replace(/\s+/g," ").trim();
