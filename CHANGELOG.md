@@ -23,6 +23,7 @@
 - RAWG no longer times out as easily: requests are spaced 0.15 s apart and the unused development-team request is gone.
 - RAWG achievements loaded only 8 of many; up to 120 now load, and games saved with the short list refresh once.
 - Achievements page is lighter on phones: no per-badge shadow or grey filters in lists, no loading shimmer, isolated scrolling rows.
+- Background sync no longer drops slower sources: it waits up to 45 s (was 14 s) for sources that look a game up by title, and a source counts as checked only once its details arrived, so a slow RAWG or Steam lookup is retried instead of skipped. Games added through Quick Setup now pick up every source on their own.
 
 ## [0.1.10] — 2026-11-17
 
