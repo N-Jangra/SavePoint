@@ -132,7 +132,7 @@ test("Quick Setup search shows the first source results while the other source i
   assert.doesNotMatch(html, /setup-skeleton/);
   const empty = window.SplitAppPages.setup({ setup: { step: 0, mode: "", query: "hades", loading: true, error: "", rows: [], selected: new Map(), picks: [] }, esc });
   assert.equal((empty.match(/setup-skeleton/g) || []).length, 9);
-  assert.match(app, /\["howlongtobeat", "steamdb"\]\.map\(async sourceKey/);
+  assert.match(app, /\["howlongtobeat"\]\.map\(async sourceKey/);
   assert.match(app, /setupState\.rows = withLibraryStatus\(partial\);\s*setGrid\(\)/);
 });
 
@@ -151,7 +151,7 @@ test("Explore shares its query across Normal and Mix Fetch and clears it only wh
   assert.match(styles, /body\[data-page="discover"\] \.explore-bar, body\[data-page="mix"\] \.explore-bar \{ margin-inline: calc\(var\(--gutter, 16px\) \* -1\)/);
   assert.match(styles, /body\[data-page="mix"\] \.mix-page > \.explore-bar \{ margin-inline: calc\(var\(--gutter, 16px\) \* -1\)/,
     "the final Mix-specific rule must override its earlier zero margin and match Normal's full-bleed tab bar");
-  assert.match(app, /setupSearchTimer = setTimeout\(loadSetupRows, 160\)/);
+  assert.match(app, /setupSearchTimer = setTimeout\(loadSetupRows, 450\)/);
   assert.match(app, /event\.key !== "Enter" && event\.keyCode !== 13[\s\S]*?loadSetupRows\(\)/);
 });
 
