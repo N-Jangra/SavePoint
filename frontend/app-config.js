@@ -23,5 +23,5 @@ window.APP_CONFIG = {
       ]
     }
   ],
-  "version": "0.1.10"
+  "version": "0.2.0"
 };

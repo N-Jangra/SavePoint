@@ -60,3 +60,10 @@ Both pages also have **From** and **To** date pickers (inclusive, whole days) th
 
 - `entries()` caches its last result keyed by the library array, its length, the sum of `updatedAt` stamps and the favourite count; a changed library recomputes. The profile, the achievements page, award checks and shares all share that result.
 - Badge placeholders are static (no `ach-shimmer` animation), `.ach-section` and grid tiles use `content-visibility:auto`, and badge images are `loading="lazy" decoding="async"`.
+
+## Game details, RAWG and profile (0.2.0)
+
+- RAWG details load up to 120 achievements (40 per page) and keep them in the game's `cachedDetails` (IndexedDB, like every other detail section). Games saved by an older version only held 8, so they are refreshed once when opened online. RAWG requests are spaced 0.15 s apart instead of the 1.2 s used for other hosts, because one game page needs several calls.
+- API keys are entered only on a source's options page (`#settings/source-options?id=<source>`); the Metadata Sources list no longer shows key fields.
+- Hidden profile sections are stored in `localStorage` as `savepoint_profile_hidden_sections` (an array of section keys); they are excluded from the profile page but stay in the reorder sheet.
+- Quick Setup keeps a per-session cache of HowLongToBeat search results and cancels the previous request when you keep typing.

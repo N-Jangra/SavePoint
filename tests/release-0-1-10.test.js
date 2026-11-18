@@ -17,14 +17,8 @@ function load(files, extra = {}) {
   return window;
 }
 
-test("0.1.10 changelog, docs and version metadata agree", () => {
-  assert.equal(JSON.parse(read("package.json")).version, "0.1.10");
-  assert.match(read("frontend/app-config.js"), /"version": "0\.1\.10"/);
-  assert.match(read("android/app/build.gradle"), /versionName "0\.1\.10"/);
-  assert.match(read("android/app/build.gradle"), /versionCode 110/);
+test("0.1.10 changelog and storage notes remain",() => {
   assert.match(read("CHANGELOG.md"), /## \[0\.1\.10\] — 2026-11-17/);
-  assert.match(read("README.md"), /\| Version \| `0\.1\.10` \|/);
-  assert.match(read("docs/README.md"), /SavePoint 0\.1\.10/);
   assert.match(read("docs/storage.md"), /Transfers: progress, notifications and images \(0\.1\.10\)/);
 });
 

@@ -36,8 +36,8 @@ Built-in source availability and priority are managed in **Settings → Metadata
 |---|---|---|
 | FreeToGame | Free-to-play catalog, descriptions, screenshots, platform and requirements where available. | No key required. |
 | Steam + SteamDB | Steam search and game details, store links, price, artwork, screenshots, categories and requirements. | No key required. |
-| HowLongToBeat | Main story, main plus extras, completionist estimates and community details. | Browser preview uses the local proxy; Android can use the provider consent/session integration. |
-| RAWG | Game catalog, ratings, artwork, screenshots, genres, platforms, achievements and related titles. | Configure a personal API key in Settings. [RAWG API](https://rawg.io/apidocs) |
+| HowLongToBeat | Main story, main plus extras, completionist estimates and community details; Discover also lists its Popular and Latest on Xbox Game Pass shelves. | Browser preview uses the local proxy; Android can use the provider consent/session integration. |
+| RAWG | Game catalog, ratings, artwork, screenshots, genres, platforms, the full achievements list and related titles (series and DLC open in the app). | Add a personal API key under Settings → Metadata Sources → RAWG (shown with a show/hide eye). [RAWG API](https://rawg.io/apidocs) |
 | IGDB | Game catalog, ratings, covers, screenshots, genres, platforms, modes, credits and website links. | Configure a Twitch Client ID and access token in source options. [Twitch authentication](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/) |
 | Custom JSON | Search and optional detail fields from a user-configured JSON endpoint. | Configure field mappings in **Settings → Metadata Sources → Add JSON**. |
 
@@ -104,9 +104,9 @@ cd android
 ./gradlew assembleDebug
 ```
 
-The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.1.10` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
+The debug APK is generated at `android/app/build/outputs/apk/debug/app-debug.apk`. For a signed release, run `python3 compile_apk.py` (add `--version 0.2.0` to set the version, or `--debug` for a debug APK); it writes `dist/savepoint-<version>-release.apk` and signs it when `android/keystore.properties` exists. More details: [requirements and build instructions](docs/requirements.md).
 
-The current 0.1.10 release APK is available at `android/app/build/outputs/apk/release/app-release.apk` after the signed Gradle release build.
+The current 0.2.0 release APK is available at `android/app/build/outputs/apk/release/app-release.apk` after the signed Gradle release build.
 
 ## Repository layout
 
@@ -150,7 +150,7 @@ SavePoint/
 | Property | Value |
 |---|---|
 | Package | `savepoint` |
-| Version | `0.1.10` |
+| Version | `0.2.0` |
 | Capacitor / Android application ID | `com.cuemark.savepoint` |
 | Capacitor web directory | `frontend/` |
 | Browser state key | `splitapp_savepoint_v1` |
