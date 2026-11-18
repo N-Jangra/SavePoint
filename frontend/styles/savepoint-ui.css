@@ -988,3 +988,33 @@ html body[data-page="details"] .demo-cinema-page .demo-detail-heading {
 .ach-section { content-visibility:auto; contain-intrinsic-size:auto 190px; }
 .ach-grid > .ach-badge, .ach-row > .ach-badge { contain:layout style; }
 .ach-grid > .ach-badge { content-visibility:auto; contain-intrinsic-size:auto 132px; }
+[data-profile-section][hidden] { display:none !important; }
+body[data-page="statistics"] { touch-action: pan-y; }
+/* Achievements performance: per-image filters (drop-shadow, grayscale) are very costly in Android WebView, so lists use cheap opacity instead. */
+.achievements-page .ach-badge-art, .achievements-page .ach-tier-art, .achievements-page .achievement-art:not(.is-large) { filter:none; will-change:auto; }
+.achievements-page .ach-badge.is-locked .ach-badge-art, .achievements-page .ach-tier.is-locked .ach-tier-art, .achievements-page .ach-tier.is-next .ach-tier-art, .achievements-page .achievement-art.is-locked:not(.is-large) { filter:none; opacity:.35; }
+.achievements-page .ach-art-wrap::before { animation:none; }
+.achievements-page .ach-row { scroll-snap-type:none; overscroll-behavior-x:contain; contain:layout paint; }
+.achievements-page .ach-badge { contain:layout paint; }
+.achievements-page .ach-badge:hover { background:none; }
+.ach-grid, .ach-tiers { content-visibility:auto; contain-intrinsic-size:auto 600px; }
+/* Game details: store pills, flat achievements list, show-more button */
+.detail-store-list { display:flex; flex-wrap:wrap; gap:8px; }
+body .demo-cinema-page .detail-store-pill { display:inline-flex; align-items:center; min-height:36px; padding:0 14px; border:1px solid var(--d-line2); border-radius:999px; background:var(--d-elev); color:var(--d-t1,inherit); font:700 12px var(--d-font,inherit); text-decoration:none; white-space:nowrap; }
+.detail-store-pill:active { transform:scale(.97); }
+.detail-section:has(.detail-show-more) .detail-source-list { gap:0; }
+.detail-section:has(.detail-show-more) .detail-source-item { border:0; border-radius:0; background:none; border-bottom:1px solid var(--d-line,#ffffff14); padding-inline:0; }
+.detail-show-more { display:block; width:100%; margin-top:10px; padding:11px; border:1px solid var(--d-line2); border-radius:12px; background:var(--d-elev); color:var(--d-gold); font-weight:700; }
+.source-api-key-option .source-api-key-field { margin-top:6px; }
+.source-key-eye { display:grid; place-items:center; width:34px; min-width:34px; height:30px; padding:0; border:0; background:transparent; color:var(--muted); }
+.source-key-eye svg { width:18px; height:18px; }
+body .source-api-key-option { display:grid; gap:8px; }
+body .source-api-key-option .source-api-key-field { display:flex; align-items:center; gap:8px; width:100%; min-height:0; margin:0; padding:0; border:0; border-radius:0; background:none; }
+body .source-api-key-option .source-api-key-field input { flex:1 1 auto; min-width:0; width:auto; box-sizing:border-box; }
+body .source-api-key-option .source-key-eye { flex:none; width:44px; min-width:44px; height:44px; border:1px solid var(--d-line2,var(--line)); border-radius:12px; background:var(--d-elev,var(--surface)); color:var(--d-t1,inherit); }
+/* Where to buy: same flat look as Tags (no outer box, same pills) */
+body .demo-cinema-page .detail-section.detail-stores { margin:0 0 16px; padding:0; border:0; border-radius:0; background:none; box-shadow:none; }
+body .demo-cinema-page .detail-stores > h3 { margin:0 0 10px; }
+body .demo-cinema-page .detail-store-pill { color:var(--d-gold); }
+html body .demo-title-page .detail-section.detail-stores, html body .demo-cinema-page .detail-section.detail-stores { padding:0 !important; border:0 !important; border-radius:0 !important; background:none !important; box-shadow:none !important; }
+button.detail-carousel-card { font:inherit; color:inherit; text-align:left; cursor:pointer; appearance:none; }

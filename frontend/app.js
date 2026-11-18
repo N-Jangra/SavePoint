@@ -162,7 +162,7 @@
   // Quick setup wizard state (see pages/setup.js).
   const SETUP_DONE_KEY = `${(window.SplitAppBackend?.storageKey || `splitapp_${config.key}_v1`)}_setup_done`;
   const setupState = { mode: "", step: 0, query: "", rows: [], loading: false, error: "", selected: new Map(), picks: Array.from({ length: 5 }, () => new Map()) };
-  let setupStarted = false, setupFromFavorites = false, setupRequest = 0, setupSearchTimer = 0; const setupTrending = { rows: null, promise: null };
+  const setupSearchCache = new Map(); let setupAbort = null, setupStarted = false, setupFromFavorites = false, setupRequest = 0, setupSearchTimer = 0; const setupTrending = { rows: null, promise: null };
   let history = Array.isArray(stored.history) ? stored.history : [];
   const [initialHashPath, initialHashQuery = ""] = location.hash.slice(1).split("?");
   const initialRoute = initialHashPath.split("/");
@@ -2729,7 +2729,8 @@
     if (prefs.metadataMode === "offline") { setupState.rows = []; setupState.loading = false; setupState.error = "Quick setup needs an internet connection."; setGrid(); return; }
     if (query) setupState.rows = [];
     setupState.loading = true; setGrid();
-    const settings = { ...detailSettings(), metadataSources: { ...(prefs.metadataSources || {}), steamdb: true, howlongtobeat: true }, bypassSourceHealth: true };
+    setupAbort?.abort(); setupAbort = query && typeof AbortController === "function" ? new AbortController() : null;
+    const settings = { ...detailSettings(), metadataSources: { ...(prefs.metadataSources || {}), steamdb: true, howlongtobeat: true }, bypassSourceHealth: true, ...(setupAbort ? { signal: setupAbort.signal } : {}) };
     try {
       let rows;
       if (query) {
@@ -2741,9 +2742,11 @@
           setupState.rows = withLibraryStatus(partial);
           setGrid();
         };
-        await Promise.all(["howlongtobeat", "steamdb"].map(async sourceKey => {
+        await Promise.all(["howlongtobeat"].map(async sourceKey => {
           try {
-            const found = await window.SplitAppDiscovery.searchSource(query, category, settings, sourceKey);
+            const cacheKey = `${sourceKey}|${query.toLowerCase()}`;
+            const found = setupSearchCache.get(cacheKey) || await window.SplitAppDiscovery.searchSource(query, category, settings, sourceKey);
+            if (found?.length) setupSearchCache.set(cacheKey, found);
             if (request !== setupRequest) return;
             resultsBySource.set(sourceKey, found || []);
             publishPartial();
@@ -2855,7 +2858,7 @@
   document.addEventListener("input", event => {
     if (!event.target.matches?.("[data-setup-search]")) return;
     setupState.query = event.target.value; clearTimeout(setupSearchTimer);
-    setupSearchTimer = setTimeout(loadSetupRows, 160);
+    setupSearchTimer = setTimeout(loadSetupRows, 450);
   });
   document.addEventListener("keydown", event => {
     if (page !== "setup" || !event.target.matches?.("[data-setup-search]") || (event.key !== "Enter" && event.keyCode !== 13)) return;
@@ -3102,6 +3105,7 @@
     if (!stamp) return false;
     // Games saved before trailers existed have no Trailers section: refresh them once (when online) so the playback links are added.
     if (item?.category === "game" && ["steamdb", "mix"].includes(item.metadataSource) && !item.trailersTriedAt && !(item.cachedDetails?.sections || []).some(section => section?.kind === "videos")) return false;
+    if (item?.metadataSource === "rawg" && (item.cachedDetails?.sections || []).some(section => /^achievements/i.test(section?.title || "") && !section.paged)) return false; // older saves only kept 8 achievements
     const maxAge = { daily: 86400000, weekly: 604800000, monthly: 2592000000, never: Infinity }[prefs.metadataRefreshInterval] ?? 604800000;
     return Date.now() - stamp < maxAge;
   }
@@ -4491,7 +4495,8 @@
       if (keyInput) {
         const reveal = keyInput.type === "password";
         keyInput.type = reveal ? "text" : "password";
-        sourceKeyToggle.textContent = reveal ? "Hide" : "Show";
+        if (sourceKeyToggle.classList.contains("source-key-eye")) { sourceKeyToggle.innerHTML = `<i data-lucide="${reveal ? "eye-off" : "eye"}" aria-hidden="true"></i>`; window.lucide?.createIcons?.({ root: sourceKeyToggle, attrs: { "aria-hidden": "true" } }); }
+        else sourceKeyToggle.textContent = reveal ? "Hide" : "Show";
         sourceKeyToggle.setAttribute("aria-label", `${reveal ? "Hide" : "Show"} ${sourceKey} API key`);
       }
       return;
@@ -4715,6 +4720,18 @@
     const gameCard = event.target.closest("[data-watchlist-open]");
     if (gameCard && !event.target.closest("button, a, input, select, textarea")) { openDetails(gameCard.dataset.watchlistOpen); return; }
     // ---- Profile ----
+    const sectionEye = event.target.closest("[data-section-eye]");
+    if (sectionEye) {
+      const key = sectionEye.closest("[data-order-key]")?.dataset.orderKey; let hidden = [];
+      try { hidden = JSON.parse(localStorage.getItem("savepoint_profile_hidden_sections") || "[]"); } catch (_) {}
+      hidden = hidden.includes(key) ? hidden.filter(entry => entry !== key) : [...hidden, key];
+      try { localStorage.setItem("savepoint_profile_hidden_sections", JSON.stringify(hidden)); } catch (_) {}
+      const off = hidden.includes(key), section = $(`[data-profile-section="${key}"]`);
+      sectionEye.setAttribute("aria-pressed", String(off)); sectionEye.setAttribute("aria-label", `${off ? "Show" : "Hide"} ${sectionEye.closest("[data-order-key]").querySelector("strong").textContent} on profile`);
+      sectionEye.innerHTML = `<i data-lucide="${off ? "eye-off" : "eye"}" aria-hidden="true"></i>`; window.lucide?.createIcons({ root: sectionEye, attrs: { "aria-hidden": "true" } });
+      if (section) section.hidden = off; else if (!off) { render(); showPopup($("#profile-reorder-dialog"), { silent: true }); }
+      return;
+    }
     if (event.target.closest("[data-open-profile-menu]")) { showPopup($("#profile-options-dialog")); return; }
     if (event.target.closest("[data-profile-reorder-open]")) { closePopup($("#profile-options-dialog"), { preserveHistory: true }); showPopup($("#profile-reorder-dialog")); return; }
     if (event.target?.id === "profile-reorder-dialog" || event.target.closest("[data-profile-reorder-close]")) { closePopup($("#profile-reorder-dialog")); return; }
@@ -4730,6 +4747,23 @@
         const sectionList = $(`[data-profile-sections]`);
         keys.forEach(key => { const section = sectionList?.querySelector(`[data-profile-section="${key}"]`); if (section) sectionList.append(section); });
       }
+      return;
+    }
+    const related = event.target.closest("[data-detail-related]");
+    if (related) {
+      const source = related.dataset.relatedSource || "rawg", providerId = related.dataset.detailRelated;
+      const saved = items.find(row => row.metadataSource === source && String(row.providerId) === String(providerId) || String(row.sourceIds?.[source] || "") === String(providerId));
+      if (saved) { openDetails(saved.id); return; }
+      detailStack.push(detailSnapshot()); if (detailStack.length > 10) detailStack.shift();
+      detailTab = ""; detailPreview = { source, metadataSource: source, category: "game", providerId, title: related.dataset.relatedTitle, image: related.dataset.relatedImage, year: related.dataset.relatedYear };
+      detailEditMode = false; detailItemId = null; detailData = null; detailError = ""; render(); window.scrollTo({ top: 0, behavior: "instant" }); historyPush(true); loadDetails();
+      return;
+    }
+    const showMore = event.target.closest("[data-detail-show-more]");
+    if (showMore) {
+      const step = Number(showMore.dataset.detailShowMore) || 10, hiddenRows = [...showMore.parentElement.querySelectorAll("[data-page-extra][hidden]")];
+      hiddenRows.slice(0, step).forEach(row => { row.hidden = false; });
+      if (hiddenRows.length <= step) showMore.remove(); else showMore.textContent = `Show more (${hiddenRows.length - step} left)`;
       return;
     }
     if (event.target.closest("[data-profile-add]")) { goto("add"); return; }
@@ -4928,6 +4962,7 @@
   }
   let gamesSwipe = null;
   const gamesSwipeStart = (x, y, target, id) => {
+    if (page === "statistics" && !statsSubpage && !target?.closest?.("input, select, textarea, dialog, [data-stats-view], #bottom-bar, nav")) { gamesSwipe = { id, x, y, tab: statsView, stats: true }; return; }
     if (page !== "games" || !target?.closest?.(".games-page") || target.closest("input, select, textarea, dialog, [data-games-view], .watchlist-view-toggle")) { gamesSwipe = null; return; }
     gamesSwipe = { id, x, y, tab: gamesTab };
   };
@@ -4936,6 +4971,7 @@
     gamesSwipe = null;
     const dx = x - swipe.x, dy = y - swipe.y;
     if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.15) return;
+    if (swipe.stats) { const next = dx < 0 ? "detailed" : "overall"; if (next !== statsView) { statsView = next; render(); window.scrollTo({ top: 0, behavior: "auto" }); } return; }
     if (dx < 0 && swipe.tab === "ongoing") changeGamesTab("upcoming");
     else if (dx > 0 && swipe.tab === "upcoming") changeGamesTab("ongoing");
   };
@@ -4944,7 +4980,9 @@
     const touch = event.touches[0]; gamesSwipeStart(touch.clientX, touch.clientY, event.target, touch.identifier);
   }, { passive: true });
   document.addEventListener("touchend", event => { const touch = event.changedTouches[0]; if (touch) gamesSwipeEnd(touch.clientX, touch.clientY, touch.identifier); }, { passive: true });
-  document.addEventListener("touchcancel", () => { gamesSwipe = null; }, { passive: true });
+  // Android WebView fires touchcancel once it starts a scroll, so judge the swipe by the last touchmove position.
+  document.addEventListener("touchmove", event => { const touch = event.touches[0]; if (gamesSwipe && touch) { gamesSwipe.lx = touch.clientX; gamesSwipe.ly = touch.clientY; } }, { passive: true });
+  document.addEventListener("touchcancel", () => { const swipe = gamesSwipe; if (swipe && swipe.lx != null) gamesSwipeEnd(swipe.lx, swipe.ly, swipe.id); gamesSwipe = null; }, { passive: true });
   document.addEventListener("pointerdown", event => { if (event.pointerType === "mouse" && event.isPrimary && event.button === 0) gamesSwipeStart(event.clientX, event.clientY, event.target, event.pointerId); }, { passive: true });
   document.addEventListener("pointerup", event => { if (event.pointerType === "mouse") gamesSwipeEnd(event.clientX, event.clientY, event.pointerId); }, { passive: true });
   document.addEventListener("pointercancel", () => { gamesSwipe = null; }, { passive: true });

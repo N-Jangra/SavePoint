@@ -81,11 +81,11 @@
       try {
         if (job.options.signal?.aborted) throw abortError();
         const result = await wireRequest(job.url, job.options, job.responseType);
-        state.nextAt = Date.now() + 1200;
+        state.nextAt = Date.now() + (state.gap ?? 1200);
         job.resolve(result);
       } catch (error) {
         const cooldown = error?.status === 429 ? Math.max(60_000, Number(error.retryAfterMs) || 0) : error?.name === "AbortError" ? 0 : 1200;
-        state.nextAt = Date.now() + cooldown;
+        state.nextAt = Date.now() + (cooldown === 1200 ? (state.gap ?? 1200) : cooldown);
         job.reject(error);
       }
     }
@@ -94,7 +94,7 @@
   function pacedWireRequest(url, options = {}, responseType = "json") {
     let host = "unknown";
     try { host = new URL(url, location?.href).host || host; } catch (_) {}
-    if (!hostStates.has(host)) hostStates.set(host, { queue: [], running: false, nextAt: 0 });
+    if (!hostStates.has(host)) hostStates.set(host, { queue: [], running: false, nextAt: 0, gap: host === "api.rawg.io" ? 150 : 1200 }); // RAWG tolerates quick requests; a game page needs several
     const state = hostStates.get(host);
     return new Promise((resolve, reject) => {
       const job = { url, options, responseType, resolve, reject, background: options.background === true, signal: options.signal, onAbort: null };
@@ -443,6 +443,22 @@
       const money = row => `${row.currency === "USD" ? "$" : ""}${(row.final_price / 100).toFixed(2)}${row.currency && row.currency !== "USD" ? ` ${row.currency}` : ""}`;
       const pick = (title, list, upcoming = false) => ({ source: "steamdb", title, items: (list?.items || []).filter(row => row.type === 0 || row.type === undefined).slice(0, 12).map(row => result("steamdb", category, `app:${row.id}`, row.name, { image: row.header_image || row.small_capsule_image, url: `https://steamdb.info/app/${row.id}/`, subtitle: row.discounted ? `-${row.discount_percent}% · ${money(row)}` : row.final_price ? money(row) : upcoming ? "Coming soon" : "Free" })) });
       return [pick("Top sellers on Steam", data.top_sellers), pick("New on Steam", data.new_releases), pick("On sale", data.specials), pick("Coming soon", data.coming_soon, true)];
+    });
+    if (want("howlongtobeat")) jobs.push(async () => {
+      // HowLongToBeat's home page embeds its "Popular Games" and "Latest on Xbox Game Pass" lists as page data.
+      const base = "https://howlongtobeat.com";
+      const html = await requestHowLongToBeatText(`${base}/`, { ...settings, headers: { Accept: "text/html", Referer: `${base}/`, ...(await howLongToBeatSessionHeaders()) } });
+      const raw = /__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(String(html || ""))?.[1];
+      const props = raw ? JSON.parse(raw)?.props?.pageProps || {} : {};
+      const hours = value => value ? `${Math.round(value / 360) / 10}h main` : "";
+      const map = (rows, extra = () => "") => (Array.isArray(rows) ? rows : []).filter(row => row.game_id && row.game_name).slice(0, 12).map(row => result("howlongtobeat", category, row.game_id, row.game_name, {
+        year: String(row.release_world || "").slice(0, 4), image: row.game_image ? `${base}/games/${row.game_image}` : "", url: `${base}/game/${row.game_id}`,
+        rating: Number(row.review_score) ? Number(row.review_score) / 10 : 0, subtitle: [extra(row), hours(row.comp_main)].filter(Boolean).join(" · ")
+      }));
+      return [
+        { source: "howlongtobeat", title: "Popular on HowLongToBeat", items: map(props.indexStats?.data?.popularGames, row => row.profile_platform) },
+        { source: "howlongtobeat", title: "Latest on Xbox Game Pass", items: map(props.gamepassData, row => row.xbox_genre) }
+      ];
     });
     if (want("freetogame")) jobs.push(async () => {
       const data = await requestJson("https://www.freetogame.com/api/games?sort-by=popularity", settings);

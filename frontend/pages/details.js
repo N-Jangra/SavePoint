@@ -33,6 +33,7 @@
     };
     const safeImage = value => /^(?:data:image\/[a-z0-9.+-]+;base64,|blob:)/i.test(String(value || "")) ? String(value) : safeUrl(value);
 
+    const PAGE = 10;
     const renderSection = (section, watchedIds = new Set(), canToggleEpisodes = false, item = null, sectionIndex = 0, imageButton = () => "") => {
       const items = section.items || [];
       const body = section.kind === "videos"
@@ -50,6 +51,9 @@
             const href = safeUrl(entry.url);
             const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image);
             const inner = `<span class="detail-carousel-art">${image ? `<img data-deferred-image data-lazy-src="${esc(image)}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}<i data-lucide="image" aria-hidden="true"${image ? " hidden" : ""}></i></span><strong>${esc(entry.title || "Untitled")}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}`;
+            const rawgSlug = /^https?:\/\/rawg\.io\/games\/([^/?#]+)/i.exec(entry.url || "")?.[1];
+            const relatedId = entry.providerId || (item?.metadataSource === "rawg" || entry.source === "rawg" ? rawgSlug : "");
+            if (relatedId) return `<button type="button" class="detail-carousel-card" data-detail-related="${esc(relatedId)}" data-related-source="${esc(entry.source || "rawg")}" data-related-title="${esc(entry.title || "")}" data-related-image="${esc(entry.image || "")}" data-related-year="${esc(String(entry.meta || "").slice(0, 4))}">${inner}</button>`;
             return href ? `<a class="detail-carousel-card" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="detail-carousel-card">${inner}</div>`;
           }).join("")}</div>`
         : section.kind === "gallery"
@@ -67,12 +71,12 @@
               ? `<button class="episode-toggle ${watched ? "is-watched" : ""}" type="button" data-episode-toggle data-episode-id="${esc(episodeId)}" data-episode-title="${title}" aria-pressed="${watched}">${watched ? "Watched ✓" : "Mark watched"}</button>`
               : "";
             const thumbnail = image ? imageButton(image, entry.title || "Source image", `<span class="detail-source-art"><img data-deferred-image data-lazy-src="${esc(image)}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.hidden=true;this.nextElementSibling.hidden=false;this.closest('.detail-source-image')?.removeAttribute('data-detail-image-src');this.closest('.detail-source-image')?.setAttribute('aria-disabled','true')"><i data-lucide="image" aria-hidden="true" hidden></i></span>`, "detail-source-image") : "";
-            const content = `<div class="detail-source-item">${thumbnail}<div><strong>${title}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}${entry.description ? `<p>${esc(entry.description)}</p>` : ""}${href && section.kind !== "episodes" ? `<a class="detail-entry-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>` : ""}${toggle}</div></div>`;
+            const content = `<div class="detail-source-item"${section.paged && entryIndex >= PAGE ? " hidden data-page-extra" : ""}>${thumbnail}<div><strong>${title}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}${entry.description ? `<p>${esc(entry.description)}</p>` : ""}${href && section.kind !== "episodes" ? `<a class="detail-entry-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>` : ""}${toggle}</div></div>`;
             return content;
-          }).join("")}</div>`;
+          }).join("")}</div>${section.paged && items.length > PAGE ? `<button type="button" class="detail-show-more" data-detail-show-more="${PAGE}">Show more (${items.length - PAGE} left)</button>` : ""}`;
       return section.collapsed
         ? `<details class="detail-section detail-collapsible"><summary><h3>${esc(section.title || "More details")}</h3><span aria-hidden="true">›</span></summary>${body}</details>`
-        : `<section class="detail-section${section.kind === "gallery" ? " demo-gallery-section" : ""}"><h3>${esc(section.title || "More details")}</h3>${body}</section>`;
+        : `<section class="detail-section${section.kind === "gallery" ? " demo-gallery-section" : section.kind === "carousel" ? " demo-related-section" : ""}"><h3>${esc(section.title || "More details")}</h3>${body}</section>`;
     };
 
     function renderDetails() {
@@ -131,7 +135,7 @@
       const part = {
         tracking: canProgress ? `<section class="detail-section detail-tracking-section"><h3>Tracking</h3>${detailEditMode ? "" : `<span class="ios-sub">Status</span><div class="ios-pills detail-status-pills" role="group" aria-label="Game status">${statuses.map(status => `<button type="button" class="ios-pill${status === item.status ? " active" : ""}" data-detail-status-btn="${esc(status)}" aria-pressed="${status === item.status}">${esc(status)}</button>`).join("")}</div>`}</section><section class="detail-section detail-rating-section"><h3>My rating</h3><div class="detail-tracking-row">${ratingControl}</div></section><dialog class="choice-dialog detail-delete-dialog" id="detail-delete-dialog"><form method="dialog"><div class="choice-dialog-grabber"></div><h2>Delete ${esc(item.title)}?</h2><p>This removes the game from your collection.</p><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-detail-delete-cancel>Cancel</button><button type="button" class="button primary" data-detail-delete-confirm>Delete</button></footer></form></dialog>` : "",
         media: renderRows(slots.media),
-        stores: (loaded.stores || []).length ? `<section class="detail-section detail-stores"><h3>Where to buy</h3><div class="detail-store-list">${loaded.stores.map(row => safeUrl(row.url) ? `<a class="button secondary small" href="${esc(safeUrl(row.url))}" target="_blank" rel="noopener noreferrer">${esc(row.name)} ↗</a>` : "").join("")}</div></section>` : "",
+        stores: (loaded.stores || []).length ? `<section class="detail-section detail-stores"><h3>Where to buy</h3><div class="detail-store-list">${loaded.stores.map(row => safeUrl(row.url) ? `<a class="detail-store-pill" href="${esc(safeUrl(row.url))}" target="_blank" rel="noopener noreferrer">${esc(row.name)} ↗</a>` : "").join("")}</div></section>` : "",
         tags: (loaded.tags || []).length ? `<section class="detail-section detail-tags-section"><h3>Tags</h3><div class="detail-link-list detail-tag-list">${loaded.tags.map(tag => `<span>${esc(tag)}</span>`).join("")}</div></section>` : "",
         ratings: (loaded.ratingBreakdown || []).length ? `<section class="detail-section detail-rating-breakdown"><h3>Player ratings${loaded.ratingCount ? ` · ${Number(loaded.ratingCount).toLocaleString()}` : ""}</h3><div class="rating-bar" role="img" aria-label="${esc(loaded.ratingBreakdown.map(row => `${row.label} ${row.percent}%`).join(", "))}">${loaded.ratingBreakdown.map((row, index) => `<span class="rating-seg rating-seg-${index % 4}" style="width:${Math.max(2, Number(row.percent) || 0)}%"></span>`).join("")}</div><div class="rating-legend">${loaded.ratingBreakdown.map((row, index) => `<span><i class="rating-seg-${index % 4}"></i>${esc(row.label)} <b>${esc(row.percent)}%</b></span>`).join("")}</div></section>` : "",
         facts: facts.length || fields.length ? `<section class="detail-section"><h3>Details</h3><div class="detail-facts">${facts.map(([label, value]) => `<div><span>${esc(label)}</span><strong>${esc(detailValue(value))}</strong></div>`).join("")}${fields.map(row => `<div><span>${esc(row.label)}</span><strong>${esc(detailValue(row.value))}</strong></div>`).join("")}</div></section>` : "",
@@ -145,7 +149,7 @@
           const tabs = both ? `<div class="req-tabs" role="tablist" aria-label="System requirements"><button type="button" role="tab" class="active" aria-selected="true" data-req-tab="min">Minimum</button><button type="button" role="tab" aria-selected="false" data-req-tab="rec">Recommended</button></div>` : `<p class="req-only">${minimum.length ? "Minimum" : "Recommended"}</p>`;
           return `<section class="detail-section detail-requirements"><h3>System requirements</h3>${tabs}${minimum.length ? table(minimum, "min", false) : ""}${recommended.length ? table(recommended, "rec", Boolean(both)) : ""}</section>`;
         })() : "",
-        achievements: renderRows(slots.achievements),
+        achievements: renderRows(slots.achievements.map(row => ({ ...row, section: { ...row.section, collapsed: false, paged: true } }))),
         languages: (loaded.languages || []).length ? `<details class="detail-section detail-collapsible detail-languages"><summary><h3>Languages (${loaded.languages.length})</h3><span aria-hidden="true">›</span></summary><div class="detail-table-wrap"><table class="detail-table lang-table"><thead><tr><th scope="col">Language</th><th scope="col">Interface</th><th scope="col">Full audio</th></tr></thead><tbody>${loaded.languages.map(row => `<tr><th scope="row">${esc(row.name)}</th><td class="lang-yes">✓</td><td class="${row.audio ? "lang-yes" : "lang-no"}">${row.audio ? "✓" : "—"}</td></tr>`).join("")}</tbody></table></div></details>` : "",
         links: links.length ? `<section class="detail-section detail-links-section"><h3>Links</h3><div class="detail-link-list">${links.map(link => `<a href="${esc(link.href)}" target="_blank" rel="noopener noreferrer">${esc(link.label || link.title || link.site || link.href)} ↗</a>`).join("")}</div></section>` : "",
         series: renderRows(slots.series),
@@ -153,18 +157,16 @@
         other: renderRows(slots.other),
         overview: `<section class="detail-section"><h3>Overview</h3><p class="detail-description">${esc(summary)}</p></section>`
       };
-      const hasRatings = (loaded.ratingBreakdown || []).length > 0, hasAchievements = slots.achievements.length > 0, hasTeam = slots.team.length + slots.series.length > 0;
-      const hasMedia = slots.media.length > 0;
-      const tabs = [["overview", "Overview"], ["details", "Details"], hasMedia && ["media", "Media"], hasRatings && ["ratings", "Ratings"], hasAchievements && ["achievements", "Achievements"], hasTeam && ["team", "Team & series"]].filter(Boolean);
+      const hasRatings = (loaded.ratingBreakdown || []).length > 0, hasAchievements = slots.achievements.length > 0, hasTeam = false;
+      const hasMedia = slots.media.length + slots.series.length > 0;
+      const tabs = [["overview", "Overview"], ["details", "Details"], hasMedia && ["media", "Media"], hasAchievements && ["achievements", "Achievements"]].filter(Boolean);
       const activeTab = tabs.some(([key]) => key === context.detailTab) ? context.detailTab : "overview";
       const panel = (key, html) => `<div class="detail-tab-panel" id="detail-panel-${key}" role="tabpanel" aria-labelledby="detail-tab-${key}" data-detail-panel="${key}"${activeTab === key ? "" : " hidden"}>${html}</div>`;
       const detailBody = `<div class="detail-tabs" role="tablist" aria-label="Game information">${tabs.map(([key, label]) => `<button type="button" id="detail-tab-${key}" role="tab" class="${activeTab === key ? "active" : ""}" aria-selected="${activeTab === key}" aria-controls="detail-panel-${key}" tabindex="${activeTab === key ? "0" : "-1"}" data-detail-tab="${key}">${label}</button>`).join("")}</div>`
-        + panel("overview", [part.overview, part.tracking, part.tags, part.stores].join(""))
+        + panel("overview", [part.overview, part.ratings, part.tracking, part.tags, part.stores].join(""))
         + panel("details", [part.facts, part.requirements, part.other, part.links].join(""))
-        + (hasMedia ? panel("media", part.media) : "")
-        + (hasRatings ? panel("ratings", part.ratings) : "")
-        + (hasAchievements ? panel("achievements", part.achievements) : "")
-        + (hasTeam ? panel("team", part.team + part.series) : "");
+        + (hasMedia ? panel("media", part.media + part.series) : "")
+        + (hasAchievements ? panel("achievements", part.achievements) : "");
       const detailHeading = `<header class="detail-page-heading demo-detail-heading"><button type="button" class="detail-back" ${context.detailStackSize ? "data-detail-back" : `data-go="${esc(detailReturnPage)}"`}><span aria-hidden="true">‹</span> Back</button>${detailPreview ? `<span class="detail-heading-actions">${alreadySaved ? `<button type="button" class="button secondary small detail-preview-add" data-action="open-saved-entry" data-id="${esc(alreadySaved.id)}"><i data-lucide="check" aria-hidden="true"></i><span>In library · Open</span></button>` : `<button type="button" class="button primary small detail-preview-add" data-action="save-detail-item"><i data-lucide="plus" aria-hidden="true"></i><span>Add to library</span></button>`}</span>` : detailEditMode ? `<span class="detail-heading-actions detail-edit-actions"><button type="button" class="button secondary small" data-action="cancel-detail-edit">Cancel</button><button type="button" class="button primary small" data-detail-save>Save</button></span>` : `<span class="detail-heading-actions"><button type="button" class="detail-icon-button" data-action="edit" data-id="${esc(item.id)}" aria-label="Edit entry" title="Edit entry"><i data-lucide="pencil"></i></button><button type="button" class="detail-icon-button detail-favorite-button${item.favorite ? " active" : ""}" data-action="toggle-favorite" data-id="${esc(item.id)}" aria-pressed="${Boolean(item.favorite)}" aria-label="${item.favorite ? "Remove from favorites" : "Add to favorites"}" title="${item.favorite ? "Remove from favorites" : "Add to favorites"}"><i data-lucide="heart"></i></button><button type="button" class="detail-delete-button" data-action="delete-detail" data-id="${esc(item.id)}" aria-label="Delete from collection" title="Delete from collection"><i data-lucide="trash2"></i></button></span>`}</header>`;
       return `<div class="detail-page demo-cinema-page demo-title-page demo-show-page">
         <article class="detail-hero ios-hero">

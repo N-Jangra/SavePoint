@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.2.0] — 2026-11-18
+
+### Added
+
+- Profile: each row in Reorder profile sections has an eye button to hide or show that section on the profile (stored locally; hidden sections stay in the reorder list).
+- Discover: HowLongToBeat adds "Popular on HowLongToBeat" and "Latest on Xbox Game Pass" shelves next to the Steam and other suggestion lists.
+- Statistics: swipe left or right to switch between Overall and Detailed.
+- Game details: Where to buy and Tags share one flat pill style; "Show more" pages the achievements 10 at a time.
+
+### Changed
+
+- Game details: player ratings moved into Overview; Ratings and Team & series tabs removed along with the Development team section; Same series and Editions & DLC now sit in Media as a swipeable poster row and open the game inside the app (saved games open your copy, others open as a preview).
+- RAWG API key is entered only on the source's options page, with a show/hide eye; the Metadata Sources list no longer shows key fields.
+- Achievements are a flat list instead of a collapsible box.
+- Version metadata is 0.2.0 (Android versionCode 200).
+
+### Fixed
+
+- Quick Setup search queries HowLongToBeat only (it no longer also searches Steam), waits 450 ms after typing, cancels the previous request and reuses results for repeated queries.
+- Statistics swipe now works on phones (touch swipes cancelled by scrolling are judged by the last finger position; the page allows only vertical touch panning).
+- RAWG no longer times out as easily: requests are spaced 0.15 s apart and the unused development-team request is gone.
+- RAWG achievements loaded only 8 of many; up to 120 now load, and games saved with the short list refresh once.
+- Achievements page is lighter on phones: no per-badge shadow or grey filters in lists, no loading shimmer, isolated scrolling rows.
+- Background sync no longer drops slower sources: it waits up to 45 s (was 14 s) for sources that look a game up by title, and a source counts as checked only once its details arrived, so a slow RAWG or Steam lookup is retried instead of skipped. Games added through Quick Setup now pick up every source on their own.
+
 ## [0.1.10] — 2026-11-17
 
 ### Added
