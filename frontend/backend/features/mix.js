@@ -10,7 +10,7 @@
   const SOURCE_GRACE_MS = 4000;
   // Background sync (e.g. after Import List) has no one waiting, so give slower sources such as
   // HowLongToBeat time to answer; a short grace dropped them and left only the first (Steam) data.
-  const BACKGROUND_GRACE_MS = 14000;
+  const BACKGROUND_GRACE_MS = 45000; // background sync can wait for slower sources; one answer must not cut the others off after 14 s
   const withTimeout = (promise, ms = 15000) => new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("Timed out")), ms);
     Promise.resolve(promise).then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
@@ -152,10 +152,10 @@
         if (checkedNoMatch) { answered.add(source.key); noMatch.add(source.key); throw new Error("No match"); }
         const rows = await retrying(() => searchSource(title, settings, source.key), settings);
         match = bestMatch(rows, title, item.year);
-        answered.add(source.key);
-        if (!match) { if (rows.length) noMatch.add(source.key); throw new Error("No match"); } // an empty list may just be a blocked source, so it is not remembered
+        if (!match) { answered.add(source.key); if (rows.length) noMatch.add(source.key); throw new Error("No match"); } // an empty list may just be a blocked source, so it is not remembered
       }
       const data = await retrying(() => loadDetails(source.key, match.providerId, { ...item, category, metadataSource: source.key, providerId: match.providerId, title: match.title, image: match.image || item.image, url: match.url || item.url, year: match.year || item.year, description: match.description || item.description }, settings), settings);
+      answered.add(source.key); // only a source whose details arrived counts as checked, so a slow one is retried instead of skipped for good
       const entry = { key: source.key, name: source.name, data, order, providerId: match.providerId };
       completedEntries.push(entry);
       if (typeof onPartial === "function" && [...expected].every(key => completedEntries.some(done => done.key === key))) {
